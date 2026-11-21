@@ -6,12 +6,15 @@ on:
       - 'v*'
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   build-apk:
     name: Build Release APK
     runs-on: ubuntu-24.04
+    outputs:
+      version: ${{ steps.apk.outputs.version }}
+      digest: ${{ steps.apk.outputs.digest }}
 
     steps:
       - name: Checkout repository
@@ -72,27 +75,7 @@ jobs:
             --out "$apk" "$aligned_apk"
           "$build_tools/apksigner" verify --print-certs "$apk"
           echo "version=$version" >> "$GITHUB_OUTPUT"
-
-      - name: Publish GitHub Release
-        shell: bash
-        env:
-          GH_TOKEN: ${{ github.token }}
-          RELEASE_VERSION: ${{ steps.apk.outputs.version }}
-        run: |
-          tag="v$RELEASE_VERSION"
-          apk="app/build/outputs/apk/release/farm-mobile-$RELEASE_VERSION-release.apk"
-          if is_draft="$(gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json isDraft --jq '.isDraft' 2>/dev/null)"; then
-            gh release upload "$tag" "$apk" --repo "$GITHUB_REPOSITORY" --clobber
-            if [[ "$is_draft" == "true" ]]; then
-              gh release edit "$tag" --repo "$GITHUB_REPOSITORY" --draft=false --verify-tag
-            fi
-          else
-            gh release create "$tag" "$apk" \
-              --repo "$GITHUB_REPOSITORY" \
-              --verify-tag \
-              --title "Farm Mobile v$RELEASE_VERSION" \
-              --generate-notes
-          fi
+          echo "digest=sha256:$(sha256sum "$apk" | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
 
       - name: Upload Release APK artifact
         uses: actions/upload-artifact@v4
@@ -100,3 +83,60 @@ jobs:
           name: farm-mobile-${{ steps.apk.outputs.version }}-release
           path: app/build/outputs/apk/release/farm-mobile-${{ steps.apk.outputs.version }}-release.apk
           if-no-files-found: error
+
+  publish-release:
+    name: Publish GitHub Release
+    needs: build-apk
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - name: Download signed APK
+        uses: actions/download-artifact@v6
+        with:
+          name: farm-mobile-${{ needs.build-apk.outputs.version }}-release
+
+      - name: Publish signed APK
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_VERSION: ${{ needs.build-apk.outputs.version }}
+          APK_DIGEST: ${{ needs.build-apk.outputs.digest }}
+        run: |
+          tag="v$RELEASE_VERSION"
+          apk="farm-mobile-$RELEASE_VERSION-release.apk"
+          digest="sha256:$(sha256sum "$apk" | cut -d' ' -f1)"
+          if [[ "$digest" != "$APK_DIGEST" ]]; then
+            echo "::error::Downloaded APK does not match the signed build artifact."
+            exit 1
+          fi
+
+          if release="$(gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json isDraft,isPrerelease,assets 2>/dev/null)"; then
+            if jq -e '(.isDraft | not) and .isPrerelease' <<< "$release" > /dev/null; then
+              echo "::error::The tag already has a published prerelease."
+              exit 1
+            fi
+            existing="$(jq -r --arg apk "$apk" '.assets[] | select(.name == $apk) | (.digest // "missing")' <<< "$release")"
+            if [[ -z "$existing" ]]; then
+              gh release upload "$tag" "$apk" --repo "$GITHUB_REPOSITORY"
+            elif [[ "$existing" != "$digest" ]]; then
+              echo "::error::The existing Release APK differs from the signed build artifact."
+              exit 1
+            fi
+            if jq -e '.isDraft' <<< "$release" > /dev/null; then
+              gh release edit "$tag" --repo "$GITHUB_REPOSITORY" --draft=false --prerelease=false --verify-tag --latest
+            fi
+          else
+            tag_object="$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$tag" --jq '.object | select(.type == "tag") | .sha')"
+            if [[ -z "$tag_object" ]]; then
+              echo "::error::Push an annotated version tag containing the release notes."
+              exit 1
+            fi
+            gh api "repos/$GITHUB_REPOSITORY/git/tags/$tag_object" --jq '.message' > release-notes.md
+            gh release create "$tag" "$apk" \
+              --repo "$GITHUB_REPOSITORY" \
+              --verify-tag \
+              --title "Farm Mobile v$RELEASE_VERSION" \
+              --notes-file release-notes.md \
+              --latest
+          fi

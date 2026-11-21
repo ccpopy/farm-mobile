@@ -6,7 +6,7 @@
 >
 > 本仓库为上游开源服务端 **[liyangpengs/qq-farm-bot](https://github.com/liyangpengs/qq-farm-bot)** 的专用适配版本（初始版本 **v0.0.1**）：
 > - 直接配合 **[liyangpengs/qq-farm-bot](https://github.com/liyangpengs/qq-farm-bot)** 使用，**无需修改上游服务端源码**，也不需要安装额外插件扩展。
-> - 原先私有分支的“插件管理 / 调度任务手动执行 / 持久 API Token”已按上游后端接口调整为**「自动化设置」**（种植与养殖策略、日常农场、日常牧场、施肥管理、好友互动、神秘商人及只读定时状态查看）与**管理员账号密码 / 会话 Token 授权**。
+> - 使用上游的**「自动化设置」**接口管理种植与养殖策略、日常农牧、施肥、好友互动及神秘商人，并可查看定时任务状态。登录支持**管理员账号密码或会话 Token**。
 > - 客户端包名为 `io.github.ccpopy.farmmobile`（应用名展示为「农场助手」），可与私有版客户端同时安装在同一台设备中互不冲突。
 
 ## 核心能力
@@ -43,9 +43,9 @@
    - 在本仓库 **Settings → Secrets and variables → Actions** 配置：
      - `ANDROID_RELEASE_KEYSTORE_BASE64`：PKCS12 签名证书（key alias 须为 `farm-mobile`）的 Base64 内容
      - `ANDROID_RELEASE_KEYSTORE_PASSWORD`：签名证书密码
-   - 核对 `app/build.gradle.kts` 中的 `versionName` 与 `versionCode` 后，推送对应 `v<版本>` 标签（例如 `v0.0.1`）：
+   - 核对 `app/build.gradle.kts` 中的 `versionName` 与 `versionCode` 后，创建带更新说明的 `v<版本>` 标签（例如 `v0.0.1`）：
      ```bash
-     git tag v0.0.1
+     git tag -a v0.0.1 -F release-notes.md --cleanup=verbatim
      git push origin v0.0.1
      ```
-   - 工作流会自动运行 `gradle lintRelease assembleRelease --no-daemon`、签名校验，并创建或更新对应的 GitHub Release，上传 `farm-mobile-<版本>-release.apk` 及保留 Actions Artifact。
+   - 工作流会自动运行 `gradle lintRelease assembleRelease --no-daemon`、签名校验，并以标签说明创建 GitHub Release，上传 `farm-mobile-<版本>-release.apk` 及保留 Actions Artifact。
