@@ -45,7 +45,6 @@ import androidx.compose.material.icons.rounded.ShoppingCart
 import androidx.compose.material.icons.rounded.Star
 import androidx.compose.material.icons.rounded.Stars
 import androidx.compose.material.icons.rounded.Visibility
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -109,6 +108,7 @@ import com.qqfarm.mobile.ui.components.RemoteThumbImage
 import com.qqfarm.mobile.ui.components.formatCompactCount
 import com.qqfarm.mobile.ui.components.formatNumber
 import com.qqfarm.mobile.ui.components.swipeToSwitchTabs
+import com.qqfarm.mobile.ui.components.AppleAlertDialog
 import com.qqfarm.mobile.ui.state.SessionUiState
 import com.qqfarm.mobile.ui.theme.LocalAppleColors
 import kotlinx.coroutines.launch
@@ -547,7 +547,7 @@ fun IllustratedScreen(
 
     upgradeConfirmItem?.let { item ->
         val costText = item.nextStarCosts.joinToString("、") { "${it.name} ×${formatNumber(it.count)}" }
-        AlertDialog(
+        AppleAlertDialog(
             onDismissRequest = { if (!actionBusy) upgradeConfirmItem = null },
             title = { Text(if (item.activated) "确认升星" else "确认激活") },
             text = {
@@ -590,7 +590,7 @@ fun IllustratedScreen(
     }
 
     rulesDialogSeries?.let { (seriesTitle, rules) ->
-        AlertDialog(
+        AppleAlertDialog(
             onDismissRequest = { rulesDialogSeries = null },
             title = { Text("$seriesTitle · 变异概率") },
             text = {

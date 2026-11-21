@@ -41,7 +41,6 @@ import androidx.compose.material.icons.rounded.DeleteSweep
 import androidx.compose.material.icons.rounded.SystemUpdateAlt
 import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.material.icons.rounded.VolumeOff
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -76,6 +75,7 @@ import com.qqfarm.mobile.data.model.ActivityNotifyGroup
 import com.qqfarm.mobile.data.model.ActivityNotifyType
 import com.qqfarm.mobile.data.network.ActivityNotificationManager
 import com.qqfarm.mobile.data.prefs.StoredConfig
+import com.qqfarm.mobile.ui.components.AppleAlertDialog
 import com.qqfarm.mobile.ui.components.AppleFilterChip
 import com.qqfarm.mobile.ui.components.AppleGroupedCard
 import com.qqfarm.mobile.ui.components.AppleHairlineDivider
@@ -83,6 +83,7 @@ import com.qqfarm.mobile.ui.components.AppleSectionHeader
 import com.qqfarm.mobile.ui.components.AppleSegmentedControl
 import com.qqfarm.mobile.ui.components.AppleSettingRow
 import com.qqfarm.mobile.ui.components.AppleSwitchRow
+import com.qqfarm.mobile.ui.components.ServerSwitcherSheet
 import com.qqfarm.mobile.ui.state.AppUpdateViewModel
 import com.qqfarm.mobile.ui.state.SessionUiState
 import com.qqfarm.mobile.ui.theme.LocalAppleColors
@@ -91,6 +92,10 @@ import com.qqfarm.mobile.ui.theme.LocalAppleColors
 fun SettingsScreen(
     session: SessionUiState,
     onOpenReconfigureServer: () -> Unit,
+    onAddServer: () -> Unit,
+    onSwitchServer: (String) -> Unit,
+    onRenameServer: (String, String) -> Unit,
+    onRemoveServer: (String) -> Unit,
     onOpenAccountSwitcher: () -> Unit,
     onOpenAutomation: () -> Unit,
     onOpenIllustrated: () -> Unit,
@@ -117,6 +122,8 @@ fun SettingsScreen(
     var showNotifySheet by remember { mutableStateOf(false) }
     var showLogoutConfirm by remember { mutableStateOf(false) }
     var showDownloadEditor by rememberSaveable { mutableStateOf(false) }
+    var showServerSheet by remember { mutableStateOf(false) }
+    var showGithubTokenEditor by rememberSaveable { mutableStateOf(false) }
     var showLogCleanup by remember(session.config.currentAccountId) { mutableStateOf(false) }
 
     var notificationsGranted by remember {
@@ -216,15 +223,22 @@ fun SettingsScreen(
             AppleSectionHeader(title = "服务器与授权")
             Spacer(modifier = Modifier.height(4.dp))
             AppleGroupedCard {
+                val activeServer = session.config.activeProfile
+                val otherCount = (session.config.serverProfiles.size - 1).coerceAtLeast(0)
                 AppleSettingRow(
                     icon = Icons.Rounded.Dns,
                     iconTint = apple.blue,
                     title = "远程服务器",
-                    subtitle = session.config.serverUrl.ifBlank { "未配置" },
-                    trailingText = if (session.realtimeConnected) "实时在线" else "修改",
+                    subtitle = activeServer?.displayName?.let { "$it · ${session.config.serverUrl}" }
+                        ?: session.config.serverUrl.ifBlank { "未配置" },
+                    trailingText = when {
+                        otherCount > 0 -> "切换 (${session.config.serverProfiles.size})"
+                        session.realtimeConnected -> "实时在线"
+                        else -> "切换 / 添加"
+                    },
                     trailingColor = if (session.realtimeConnected) apple.green else apple.secondaryText,
                     showChevron = true,
-                    onClick = onOpenReconfigureServer,
+                    onClick = { showServerSheet = true },
                 )
                 AppleHairlineDivider()
                 AppleSettingRow(
@@ -374,6 +388,16 @@ fun SettingsScreen(
                 )
                 AppleHairlineDivider()
                 AppleSettingRow(
+                    icon = Icons.Rounded.Key,
+                    iconTint = apple.indigo,
+                    title = "GitHub 授权",
+                    trailingText = if (session.config.githubToken.isBlank()) "未设置" else "已保存",
+                    trailingColor = if (session.config.githubToken.isBlank()) apple.secondaryText else apple.green,
+                    showChevron = true,
+                    onClick = { showGithubTokenEditor = true },
+                )
+                AppleHairlineDivider()
+                AppleSettingRow(
                     icon = Icons.Rounded.Speed,
                     iconTint = apple.emerald,
                     title = "下载方式",
@@ -394,6 +418,30 @@ fun SettingsScreen(
         }
     }
 
+    if (showServerSheet) {
+        ServerSwitcherSheet(
+            profiles = session.config.serverProfiles,
+            activeProfileId = session.config.activeProfileId,
+            realtimeConnected = session.realtimeConnected,
+            onSwitch = onSwitchServer,
+            onRename = onRenameServer,
+            onRemove = onRemoveServer,
+            onAddServer = onAddServer,
+            onEditCurrent = onOpenReconfigureServer,
+            onDismiss = { showServerSheet = false },
+        )
+    }
+    if (showGithubTokenEditor) {
+        GithubTokenDialog(
+            savedToken = session.config.githubToken,
+            onSave = { token ->
+                updateModel.saveGithubToken(token)
+                showGithubTokenEditor = false
+                onMessage(if (token.isBlank()) "已清除 GitHub 授权" else "已保存 GitHub 授权")
+            },
+            onDismiss = { showGithubTokenEditor = false },
+        )
+    }
     if (showDownloadEditor) {
         UpdateDownloadSettingsDialog(
             settings = session.config.updateDownload,
@@ -446,7 +494,7 @@ fun SettingsScreen(
     }
 
     if (showLogoutConfirm) {
-        AlertDialog(
+        AppleAlertDialog(
             onDismissRequest = { showLogoutConfirm = false },
             title = { Text("退出授权") },
             text = { Text("确定清除本机保存的 Token 并返回服务器连接页面吗？") },
@@ -494,6 +542,7 @@ private fun NotificationSettingsSheet(
             modifier = Modifier
                 .fillMaxWidth()
                 .navigationBarsPadding()
+                .heightIn(max = 640.dp)
                 .padding(horizontal = 16.dp)
                 .padding(bottom = 20.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -520,7 +569,7 @@ private fun NotificationSettingsSheet(
             LazyColumn(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .heightIn(max = 500.dp),
+                    .weight(1f, fill = false),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
                 if (!notificationsGranted) {

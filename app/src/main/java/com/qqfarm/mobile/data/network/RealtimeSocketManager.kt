@@ -7,9 +7,9 @@ import io.socket.client.IO
 import io.socket.client.Socket
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.SharedFlow
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asSharedFlow
+import kotlinx.coroutines.flow.mapNotNull
 import kotlinx.coroutines.flow.asStateFlow
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.OkHttpClient
@@ -17,6 +17,7 @@ import org.json.JSONObject
 
 class RealtimeSocketManager(private val okHttpClient: OkHttpClient) {
 
+    @Volatile
     private var socket: Socket? = null
     private var activeUrl: String = ""
     private var activeToken: String = ""
@@ -27,17 +28,21 @@ class RealtimeSocketManager(private val okHttpClient: OkHttpClient) {
     private val _isConnected = MutableStateFlow(false)
     val isConnected: StateFlow<Boolean> = _isConnected.asStateFlow()
 
-    private val _statusUpdates = MutableSharedFlow<Pair<String, StatusSnapshot>>(extraBufferCapacity = 32)
-    val statusUpdates: SharedFlow<Pair<String, StatusSnapshot>> = _statusUpdates.asSharedFlow()
+    // 切换服务器后，已经排队的旧连接事件也必须按来源过滤。
+    private fun <T : Any> MutableSharedFlow<Pair<Socket, T>>.fromCurrentSocket(): Flow<T> =
+        mapNotNull { (source, value) -> value.takeIf { source === socket } }
 
-    private val _newLogs = MutableSharedFlow<RunLogEntry>(extraBufferCapacity = 64)
-    val newLogs: SharedFlow<RunLogEntry> = _newLogs.asSharedFlow()
+    private val _statusUpdates = MutableSharedFlow<Pair<Socket, Pair<String, StatusSnapshot>>>(extraBufferCapacity = 32)
+    val statusUpdates: Flow<Pair<String, StatusSnapshot>> = _statusUpdates.fromCurrentSocket()
 
-    private val _logSnapshots = MutableSharedFlow<Pair<String, List<RunLogEntry>>>(extraBufferCapacity = 16)
-    val logSnapshots: SharedFlow<Pair<String, List<RunLogEntry>>> = _logSnapshots.asSharedFlow()
+    private val _newLogs = MutableSharedFlow<Pair<Socket, RunLogEntry>>(extraBufferCapacity = 64)
+    val newLogs: Flow<RunLogEntry> = _newLogs.fromCurrentSocket()
 
-    private val _accountLogs = MutableSharedFlow<AccountLogEvent>(extraBufferCapacity = 32)
-    val accountLogs: SharedFlow<AccountLogEvent> = _accountLogs.asSharedFlow()
+    private val _logSnapshots = MutableSharedFlow<Pair<Socket, Pair<String, List<RunLogEntry>>>>(extraBufferCapacity = 16)
+    val logSnapshots: Flow<Pair<String, List<RunLogEntry>>> = _logSnapshots.fromCurrentSocket()
+
+    private val _accountLogs = MutableSharedFlow<Pair<Socket, AccountLogEvent>>(extraBufferCapacity = 32)
+    val accountLogs: Flow<AccountLogEvent> = _accountLogs.fromCurrentSocket()
 
     @Synchronized
     fun connect(serverUrl: String, token: String, accountId: String) {
@@ -87,15 +92,15 @@ class RealtimeSocketManager(private val okHttpClient: OkHttpClient) {
         val origin = base.newBuilder().encodedPath("/").build()
         val newSocket = IO.socket(origin.toUri(), options)
         newSocket.on(Socket.EVENT_CONNECT) {
-            _isConnected.value = true
+            if (!setConnected(newSocket, true)) return@on
             val target = subscribedAccountId.ifBlank { "all" }
             newSocket.emit("subscribe", JSONObject().put("accountId", target))
         }
         newSocket.on(Socket.EVENT_DISCONNECT) {
-            _isConnected.value = false
+            setConnected(newSocket, false)
         }
         newSocket.on(Socket.EVENT_CONNECT_ERROR) {
-            _isConnected.value = false
+            setConnected(newSocket, false)
         }
         newSocket.on("status:update") { args ->
             val obj = args.firstOrNull() as? JSONObject ?: return@on
@@ -103,25 +108,32 @@ class RealtimeSocketManager(private val okHttpClient: OkHttpClient) {
             val statusObj = obj.optJSONObject("status") ?: return@on
             if (accId.isBlank()) return@on
             val parsed = JsonParsers.parseStatusSnapshot(accId, statusObj, obj.optLongFlex("serverTime"))
-            _statusUpdates.tryEmit(accId to parsed)
+            _statusUpdates.tryEmit(newSocket to (accId to parsed))
         }
         newSocket.on("log:new") { args ->
             val obj = args.firstOrNull() as? JSONObject ?: return@on
-            _newLogs.tryEmit(JsonParsers.parseRunLogEntry(obj))
+            _newLogs.tryEmit(newSocket to JsonParsers.parseRunLogEntry(obj))
         }
         newSocket.on("logs:snapshot") { args ->
             val obj = args.firstOrNull() as? JSONObject ?: return@on
             val accId = obj.optStringClean("accountId")
             val logs = JsonParsers.parseRunLogs(obj.optJSONArray("logs"))
-            _logSnapshots.tryEmit(accId to logs)
+            _logSnapshots.tryEmit(newSocket to (accId to logs))
         }
         newSocket.on("account-log:new") { args ->
             val obj = args.firstOrNull() as? JSONObject ?: return@on
-            _accountLogs.tryEmit(JsonParsers.parseAccountLogEvent(obj))
+            _accountLogs.tryEmit(newSocket to JsonParsers.parseAccountLogEvent(obj))
         }
 
         socket = newSocket
         newSocket.connect()
+    }
+
+    @Synchronized
+    private fun setConnected(source: Socket, connected: Boolean): Boolean {
+        if (source !== socket) return false
+        _isConnected.value = connected
+        return true
     }
 
     fun subscribeAccount(accountId: String) {

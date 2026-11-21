@@ -22,10 +22,12 @@ import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.IOException
 
+internal fun isValidGithubToken(token: String): Boolean = token.isNotEmpty() && token.all { it in '!'..'~' }
+
 internal sealed interface UpdateUiState {
     data object Idle : UpdateUiState
     data object Checking : UpdateUiState
-    data class Authorization(val message: String) : UpdateUiState
+    data class Authorization(val message: String, val prefill: String = "") : UpdateUiState
     data class Notice(val title: String, val message: String) : UpdateUiState
     data class Available(
         val release: AndroidRelease,
@@ -48,18 +50,19 @@ internal class AppUpdateViewModel(application: Application) : AndroidViewModel(a
 
     fun check(config: StoredConfig, enteredToken: String? = null) {
         if (_state.value == UpdateUiState.Checking || _state.value is UpdateUiState.Downloading) return
-        if (enteredToken != null) {
-            val token = enteredToken.trim()
-            if (token.isEmpty() || token.any { it !in '!'..'~' }) {
-                _state.value = UpdateUiState.Authorization("请粘贴完整的 GitHub Token")
-                return
-            }
-            githubToken = token
+        val token = (enteredToken ?: config.githubToken).trim()
+        if ((enteredToken != null || token.isNotEmpty()) && !isValidGithubToken(token)) {
+            _state.value = UpdateUiState.Authorization("请粘贴完整的 GitHub Token", token)
+            return
         }
+        githubToken = token.ifEmpty { null }
         _state.value = UpdateUiState.Checking
         task = viewModelScope.launch {
             try {
-                val release = updates.check(BuildConfig.VERSION_NAME, githubToken, config.updateDownload.activeProxyUrl)
+                val release = updates.check(BuildConfig.VERSION_NAME, token.ifEmpty { null }, config.updateDownload.activeProxyUrl)
+                if (enteredToken != null && token != config.githubToken) {
+                    preferences.updateGithubToken(token)
+                }
                 _state.value = if (release == null) {
                     UpdateUiState.Notice("暂无可用更新", "当前版本 ${BuildConfig.VERSION_NAME}")
                 } else {
@@ -67,8 +70,14 @@ internal class AppUpdateViewModel(application: Application) : AndroidViewModel(a
                 }
             } catch (e: UpdateException) {
                 if (e.authorizationRequired) {
+                    val failed = githubToken
                     githubToken = null
-                    _state.value = UpdateUiState.Authorization(e.message.orEmpty())
+                    val message = if (failed != null && failed == config.githubToken) {
+                        "已记住的 GitHub Token 无效或权限不足，请更新后重试"
+                    } else {
+                        e.message.orEmpty()
+                    }
+                    _state.value = UpdateUiState.Authorization(message, failed.orEmpty())
                 } else {
                     _state.value = UpdateUiState.Notice("检查更新失败", e.message.orEmpty())
                 }
@@ -113,8 +122,8 @@ internal class AppUpdateViewModel(application: Application) : AndroidViewModel(a
                 _state.value = UpdateUiState.Ready(apk)
             } catch (e: UpdateException) {
                 if (e.authorizationRequired) {
+                    _state.value = UpdateUiState.Authorization(e.message.orEmpty(), githubToken.orEmpty())
                     githubToken = null
-                    _state.value = UpdateUiState.Authorization(e.message.orEmpty())
                 } else {
                     _state.value = update.copy(error = e.message)
                 }
@@ -132,6 +141,14 @@ internal class AppUpdateViewModel(application: Application) : AndroidViewModel(a
     fun setDownloadSettings(settings: UpdateDownloadSettings) {
         val update = _state.value as? UpdateUiState.Available ?: return
         _state.value = update.copy(downloadSettings = settings.forRelease(update.release.canAccelerate), error = null)
+    }
+
+    /** 在「我的」里修改或清除记住的 GitHub Token；空字符串表示清除。 */
+    fun saveGithubToken(token: String) {
+        val trimmed = token.trim()
+        if (trimmed.isNotEmpty() && !isValidGithubToken(trimmed)) return
+        githubToken = trimmed.ifEmpty { null }
+        viewModelScope.launch { preferences.updateGithubToken(trimmed) }
     }
 
     fun setPreferredDownloadSettings(settings: UpdateDownloadSettings) {

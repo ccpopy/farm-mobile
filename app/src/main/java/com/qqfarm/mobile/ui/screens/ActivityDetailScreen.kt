@@ -42,7 +42,6 @@ import androidx.compose.material.icons.rounded.Stars
 import androidx.compose.material.icons.rounded.Storefront
 import androidx.compose.material.icons.rounded.Upgrade
 import androidx.compose.material.icons.rounded.Work
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -124,6 +123,7 @@ import com.qqfarm.mobile.ui.components.AppleRadius
 import com.qqfarm.mobile.ui.components.AppleSearchField
 import com.qqfarm.mobile.ui.components.AppleSwitch
 import com.qqfarm.mobile.ui.components.swipeToSwitchTabs
+import com.qqfarm.mobile.ui.components.AppleAlertDialog
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
@@ -1374,7 +1374,7 @@ private fun MilkTeaDetailContent(
                 val inter = pendingInteraction
                 val shiftId = current.work?.shiftId.orEmpty()
                 if (inter != null) {
-                    AlertDialog(
+                    AppleAlertDialog(
                         onDismissRequest = {
                             if (!busy) {
                                 pendingInteraction = null
@@ -3590,7 +3590,7 @@ private fun QingMeiDetailContent(
 
     brewTarget?.let { target ->
         val count = brewAmount.toLongOrNull()
-        AlertDialog(
+        AppleAlertDialog(
             onDismissRequest = { brewTarget = null },
             title = { Text("投入青梅") },
             text = {
@@ -3740,7 +3740,7 @@ private fun CharityDetailContent(
     }
 
     if (confirmDonate) {
-        AlertDialog(
+        AppleAlertDialog(
             onDismissRequest = { if (!busy) confirmDonate = false },
             title = { Text("确认捐出全部可用爱心") },
             text = { Text("当前持有爱心：${current?.loveBalance ?: "0"}，确认捐出以推进公益进度？") },

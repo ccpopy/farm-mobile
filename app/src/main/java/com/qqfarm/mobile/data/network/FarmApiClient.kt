@@ -318,7 +318,7 @@ class FarmApiClient {
             overrideToken = tokenOverride,
         )
         val data = json.optJSONObject("data") ?: JSONObject()
-        return data.optStringClean("username", "admin")
+        return data.optStringClean("username")
     }
 
     suspend fun logout() {

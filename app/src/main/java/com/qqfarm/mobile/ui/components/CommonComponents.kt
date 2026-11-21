@@ -459,11 +459,21 @@ fun AppleMetricTile(
     modifier: Modifier = Modifier,
     deltaText: String? = null,
     deltaPositive: Boolean = true,
+    exactValue: String? = null,
+    exactDeltaText: String? = null,
 ) {
     val apple = LocalAppleColors.current
+    // 大数默认按“万/亿/万亿”显示；有完整数值时轻点卡片切换查看，再点收起。
+    val expandable = (exactValue != null && exactValue != value) || (exactDeltaText != null && exactDeltaText != deltaText)
+    var showExact by remember(label) { mutableStateOf(false) }
+    val shownValue = if (showExact && exactValue != null) exactValue else value
+    val shownDelta = if (showExact && exactDeltaText != null) exactDeltaText else deltaText
     Surface(
         // fillMaxHeight：放进 EqualHeightRow 时与同行卡片等高；普通 Row 中不生效。
-        modifier = modifier.fillMaxHeight(),
+        modifier = modifier
+            .fillMaxHeight()
+            .clip(RoundedCornerShape(14.dp))
+            .then(if (expandable) Modifier.pressable(pressedScale = 0.98f) { showExact = !showExact } else Modifier),
         shape = RoundedCornerShape(14.dp),
         color = apple.card,
         border = BorderStroke(0.5.dp, apple.separator),
@@ -481,24 +491,33 @@ fun AppleMetricTile(
                     text = label,
                     style = MaterialTheme.typography.labelMedium,
                     color = apple.secondaryText,
+                    modifier = Modifier.weight(1f, fill = false),
                 )
+                if (expandable) {
+                    Text(
+                        text = if (showExact) "完整" else "约",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = apple.secondaryText.copy(alpha = 0.7f),
+                    )
+                }
             }
             Text(
-                text = value,
-                style = MaterialTheme.typography.titleLarge.copy(
+                text = shownValue,
+                // 完整数值可能很长：字号降一档并允许换行，不截断。
+                style = (if (showExact) MaterialTheme.typography.titleMedium else MaterialTheme.typography.titleLarge).copy(
                     fontWeight = FontWeight.Bold,
                     fontFeatureSettings = "tnum",
                 ),
                 color = apple.primaryText,
-                maxLines = 1,
+                maxLines = if (showExact) Int.MAX_VALUE else 1,
                 overflow = TextOverflow.Ellipsis,
             )
-            if (!deltaText.isNullOrBlank()) {
+            if (!shownDelta.isNullOrBlank()) {
                 Text(
-                    text = deltaText,
+                    text = shownDelta,
                     style = MaterialTheme.typography.labelSmall.copy(fontFeatureSettings = "tnum"),
                     color = if (deltaPositive) apple.green else apple.red,
-                    maxLines = 1,
+                    maxLines = if (showExact) Int.MAX_VALUE else 1,
                     overflow = TextOverflow.Ellipsis,
                 )
             }
@@ -724,8 +743,12 @@ fun formatTimestamp(ms: Long): String {
 }
 
 fun formatCompactCount(value: Long): String {
-    val abs = kotlin.math.abs(value)
+    val abs = kotlin.math.abs(value.toDouble())
     return when {
+        abs >= 1_000_000_000_000L -> {
+            val formatted = String.format(Locale.US, "%.2f", value / 1_000_000_000_000.0).trimEnd('0').trimEnd('.')
+            "${formatted}万亿"
+        }
         abs >= 100_000_000L -> {
             val formatted = String.format(Locale.US, "%.1f", value / 100_000_000.0).trimEnd('0').trimEnd('.')
             "${formatted}亿"

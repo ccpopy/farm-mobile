@@ -54,7 +54,6 @@ import androidx.compose.material.icons.rounded.Storefront
 import androidx.compose.material.icons.rounded.Terminal
 import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.material.icons.rounded.WarningAmber
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -102,7 +101,6 @@ import com.qqfarm.mobile.ui.components.AppleIconBadge
 import com.qqfarm.mobile.ui.components.AppleMetricTile
 import com.qqfarm.mobile.ui.components.AppleQuickEntryRow
 import com.qqfarm.mobile.ui.components.AppleSectionHeader
-import com.qqfarm.mobile.ui.components.AppleRadius
 import com.qqfarm.mobile.ui.components.AppleSegmentedControl
 import com.qqfarm.mobile.ui.components.AppleStatusPill
 import com.qqfarm.mobile.ui.components.QuickEntryItem
@@ -121,6 +119,7 @@ import androidx.compose.material.icons.rounded.Autorenew
 import androidx.compose.material.icons.rounded.ShoppingBasket
 import com.qqfarm.mobile.ui.components.AppleFilterChip
 import com.qqfarm.mobile.ui.components.AppleSearchField
+import com.qqfarm.mobile.ui.components.AppleAlertDialog
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
@@ -480,8 +479,10 @@ fun OverviewScreen(
                                 icon = Icons.Rounded.Paid,
                                 iconTint = apple.orange,
                                 label = "金币",
-                                value = formatNumber(status?.gold ?: 0L),
-                                deltaText = if (goldDelta != 0L) "本次 ${if (goldDelta > 0) "+" else ""}${formatNumber(goldDelta)}" else null,
+                                value = formatCompactCount(status?.gold ?: 0L),
+                                exactValue = formatNumber(status?.gold ?: 0L),
+                                deltaText = if (goldDelta != 0L) "本次 ${if (goldDelta > 0) "+" else ""}${formatCompactCount(goldDelta)}" else null,
+                                exactDeltaText = if (goldDelta != 0L) "本次 ${if (goldDelta > 0) "+" else ""}${formatNumber(goldDelta)}" else null,
                                 deltaPositive = goldDelta >= 0L,
                                 modifier = Modifier.weight(1f),
                             )
@@ -490,8 +491,10 @@ fun OverviewScreen(
                                 icon = Icons.Rounded.ConfirmationNumber,
                                 iconTint = apple.emerald,
                                 label = "点券",
-                                value = formatNumber(status?.coupon ?: 0L),
-                                deltaText = if (couponDelta != 0L) "本次 ${if (couponDelta > 0) "+" else ""}${formatNumber(couponDelta)}" else null,
+                                value = formatCompactCount(status?.coupon ?: 0L),
+                                exactValue = formatNumber(status?.coupon ?: 0L),
+                                deltaText = if (couponDelta != 0L) "本次 ${if (couponDelta > 0) "+" else ""}${formatCompactCount(couponDelta)}" else null,
+                                exactDeltaText = if (couponDelta != 0L) "本次 ${if (couponDelta > 0) "+" else ""}${formatNumber(couponDelta)}" else null,
                                 deltaPositive = couponDelta >= 0L,
                                 modifier = Modifier.weight(1f),
                             )
@@ -501,14 +504,16 @@ fun OverviewScreen(
                                 icon = Icons.Rounded.Eco,
                                 iconTint = Color(0xFFD98200),
                                 label = "金豆豆",
-                                value = formatNumber(status?.goldBean ?: 0L),
+                                value = formatCompactCount(status?.goldBean ?: 0L),
+                                exactValue = formatNumber(status?.goldBean ?: 0L),
                                 modifier = Modifier.weight(1f),
                             )
                             AppleMetricTile(
                                 icon = Icons.Rounded.Diamond,
                                 iconTint = apple.cyan,
                                 label = "钻石",
-                                value = formatNumber(session.diamondBalance),
+                                value = formatCompactCount(session.diamondBalance),
+                                exactValue = formatNumber(session.diamondBalance),
                                 modifier = Modifier.weight(1f),
                             )
                         }
@@ -545,14 +550,16 @@ fun OverviewScreen(
                                 icon = Icons.Rounded.Star,
                                 iconTint = apple.indigo,
                                 label = "普通收藏点",
-                                value = formatNumber(normalColl?.count ?: 0L),
+                                value = formatCompactCount(normalColl?.count ?: 0L),
+                                exactValue = formatNumber(normalColl?.count ?: 0L),
                                 modifier = Modifier.weight(1f),
                             )
                             AppleMetricTile(
                                 icon = Icons.Rounded.Star,
                                 iconTint = apple.orange,
                                 label = "典藏收藏点",
-                                value = formatNumber(rareColl?.count ?: 0L),
+                                value = formatCompactCount(rareColl?.count ?: 0L),
+                                exactValue = formatNumber(rareColl?.count ?: 0L),
                                 modifier = Modifier.weight(1f),
                             )
                         }
@@ -1009,9 +1016,8 @@ internal fun LogCleanupDialog(
     var clearing by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf("") }
     val target = accountName.ifBlank { "当前账号" }
-    AlertDialog(
+    AppleAlertDialog(
         onDismissRequest = { if (!clearing) onDismiss() },
-        shape = RoundedCornerShape(AppleRadius.card),
         title = { Text("日志清理") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -1504,6 +1510,7 @@ private fun RanchOverviewContent(
                                         iconTint = if (cur.id == 1008) apple.orange else apple.emerald,
                                         label = cur.name.ifBlank { "货币 ${cur.id}" },
                                         value = formatCompactCount(cur.count),
+                                        exactValue = formatNumber(cur.count),
                                         modifier = Modifier.weight(1f),
                                     )
                                 }

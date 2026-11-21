@@ -87,6 +87,7 @@ import com.qqfarm.mobile.ui.screens.SettingsScreen
 import com.qqfarm.mobile.ui.state.AppSessionViewModel
 import com.qqfarm.mobile.ui.theme.LocalAppleColors
 import androidx.compose.foundation.layout.WindowInsets
+import com.qqfarm.mobile.data.prefs.StoredConfig
 
 private data class NavDestination(
     val title: String,
@@ -156,17 +157,23 @@ fun FarmNavHost(viewModel: AppSessionViewModel) {
     if (!session.config.isAuthenticated || session.showReconfigureServer) {
         val isReconfiguring = session.config.isAuthenticated && session.showReconfigureServer
         BackHandler(enabled = isReconfiguring, onBack = viewModel::closeReconfigureServer)
-        ServerSetupScreen(
-            initialConfig = session.config,
-            isReconfiguring = isReconfiguring,
-            onBack = { viewModel.closeReconfigureServer() },
-            onTestConnection = { url -> viewModel.testServerConnection(url) },
-            onConnectWithToken = { url, token -> viewModel.connectWithApiToken(url, token) },
-            onConnectWithPassword = { url, user, pass ->
-                viewModel.connectWithPassword(url, user, pass)
-            },
-            onSuccessMessage = { msg -> viewModel.emitMessage(msg) },
-        )
+        key(session.config.activeProfileId, session.addingServer) {
+            ServerSetupScreen(
+                // 添加服务器时从空白表单开始，不带出当前服务器的地址与凭证。
+                initialConfig = if (session.addingServer) StoredConfig() else session.config,
+                isReconfiguring = isReconfiguring,
+                isAddingServer = session.addingServer && isReconfiguring,
+                otherServers = session.config.serverProfiles.filter { it.id != session.config.activeProfileId },
+                onSwitchServer = { id -> viewModel.switchServer(id) },
+                onBack = { viewModel.closeReconfigureServer() },
+                onTestConnection = { url -> viewModel.testServerConnection(url) },
+                onConnectWithToken = { url, token -> viewModel.connectWithApiToken(url, token) },
+                onConnectWithPassword = { url, user, pass ->
+                    viewModel.connectWithPassword(url, user, pass)
+                },
+                onSuccessMessage = { msg -> viewModel.emitMessage(msg) },
+            )
+        }
         return
     }
 
@@ -294,7 +301,7 @@ fun FarmNavHost(viewModel: AppSessionViewModel) {
                 .padding(innerPadding)
                 .then(if (bottomBarVisible) Modifier else Modifier.navigationBarsPadding()),
         ) {
-            key(session.config.serverUrl, session.config.currentAccountId) {
+            key(session.config.activeProfileId, session.config.serverUrl, session.config.currentAccountId) {
                 if (showAutomationPage) {
                     AutomationScreen(
                         session = session,
@@ -391,6 +398,10 @@ fun FarmNavHost(viewModel: AppSessionViewModel) {
                             4 -> SettingsScreen(
                                 session = session,
                                 onOpenReconfigureServer = { viewModel.openReconfigureServer() },
+                                onAddServer = { viewModel.openAddServer() },
+                                onSwitchServer = { id -> viewModel.switchServer(id) },
+                                onRenameServer = { id, name -> viewModel.renameServer(id, name) },
+                                onRemoveServer = { id -> viewModel.removeServer(id) },
                                 onOpenAccountSwitcher = { showAccountSwitcher = true },
                                 onOpenAutomation = {
                                     showIllustratedPage = false

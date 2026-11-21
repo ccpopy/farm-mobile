@@ -40,7 +40,6 @@ import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Sell
 import androidx.compose.material.icons.rounded.Star
 import androidx.compose.material.icons.rounded.WaterDrop
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -113,6 +112,7 @@ import com.qqfarm.mobile.ui.components.EqualHeightRow
 import com.qqfarm.mobile.ui.components.formatCompactCount
 import com.qqfarm.mobile.ui.components.pressable
 import com.qqfarm.mobile.ui.components.swipeToSwitchTabs
+import com.qqfarm.mobile.ui.components.AppleAlertDialog
 import java.util.Locale
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -418,7 +418,7 @@ fun FarmRanchScreen(
     }
 
     if (showUpgradeConfirm) {
-        AlertDialog(
+        AppleAlertDialog(
             onDismissRequest = { if (!actionBusy) showUpgradeConfirm = false },
             title = { Text("批量解锁与升级土地") },
             text = { Text("将自动解锁或升级农场中所有满足等级与前置条件的土地（会消耗对应金币或道具），是否继续？") },
@@ -1646,7 +1646,7 @@ private fun PetsContent(
         val limit = snapshot.maxFeedCount(food)
         var requestedCount by remember(food.id) { mutableIntStateOf(1) }
         val count = requestedCount.coerceAtMost(limit)
-        AlertDialog(
+        AppleAlertDialog(
             onDismissRequest = { selectedFoodId = null },
             title = { Text("使用 ${food.name}") },
             text = {

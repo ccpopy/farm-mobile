@@ -11,12 +11,10 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Speed
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
@@ -37,6 +35,7 @@ import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.core.content.FileProvider
@@ -48,9 +47,10 @@ import com.qqfarm.mobile.data.network.normalizeUpdateProxy
 import com.qqfarm.mobile.data.prefs.StoredConfig
 import com.qqfarm.mobile.data.prefs.UpdateDownloadMode
 import com.qqfarm.mobile.data.prefs.UpdateDownloadSettings
-import com.qqfarm.mobile.ui.components.AppleRadius
+import com.qqfarm.mobile.ui.components.AppleAlertDialog
 import com.qqfarm.mobile.ui.components.AppleSegmentedControl
 import com.qqfarm.mobile.ui.components.AppleSettingRow
+import com.qqfarm.mobile.ui.state.isValidGithubToken
 import com.qqfarm.mobile.ui.state.AppUpdateViewModel
 import com.qqfarm.mobile.ui.state.UpdateUiState
 import com.qqfarm.mobile.ui.theme.LocalAppleColors
@@ -77,9 +77,8 @@ internal fun UpdateDownloadSettingsDialog(
         UpdateDownloadMode.PROXY -> normalizedProxy?.let { settings.copy(mode = selected, proxyUrl = it) }
     }
 
-    AlertDialog(
+    AppleAlertDialog(
         onDismissRequest = onDismiss,
-        shape = RoundedCornerShape(AppleRadius.card),
         title = { Text(title) },
         text = {
             Column(
@@ -128,6 +127,55 @@ internal fun UpdateDownloadSettingsDialog(
     )
 }
 
+/** 编辑记住的 GitHub Token：可修改或清除。 */
+@Composable
+internal fun GithubTokenDialog(
+    savedToken: String,
+    onSave: (String) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    var token by remember(savedToken) { mutableStateOf(savedToken) }
+    var visible by remember { mutableStateOf(false) }
+    val trimmed = token.trim()
+    val invalid = trimmed.isNotEmpty() && !isValidGithubToken(trimmed)
+    AppleAlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("GitHub 授权") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(
+                    if (savedToken.isBlank()) "可选配置：用于避免 GitHub API 限流或访问受限发行版，保存后检查更新时自动使用。"
+                    else "已保存 Token，检查更新时自动使用。"
+                )
+                OutlinedTextField(
+                    value = token,
+                    onValueChange = { token = it },
+                    isError = invalid,
+                    supportingText = if (invalid) ({ Text("Token 只能包含可见的 ASCII 字符") }) else null,
+                    label = { Text("GitHub Token") },
+                    visualTransformation = if (visible) VisualTransformation.None else PasswordVisualTransformation(),
+                    trailingIcon = {
+                        TextButton(onClick = { visible = !visible }) { Text(if (visible) "隐藏" else "显示") }
+                    },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+        },
+        confirmButton = {
+            Button(onClick = { onSave(trimmed) }, enabled = isValidGithubToken(trimmed) && trimmed != savedToken) { Text("保存") }
+        },
+        dismissButton = {
+            if (savedToken.isNotBlank()) {
+                TextButton(onClick = { onSave("") }) { Text("清除", color = MaterialTheme.colorScheme.error) }
+            } else {
+                TextButton(onClick = onDismiss) { Text("取消") }
+            }
+        },
+    )
+}
+
 @Composable
 internal fun AppUpdateDialogs(model: AppUpdateViewModel, config: StoredConfig) {
     val state by model.state.collectAsStateWithLifecycle()
@@ -172,21 +220,18 @@ internal fun AppUpdateDialogs(model: AppUpdateViewModel, config: StoredConfig) {
         model.takeAutomaticInstall()?.let(::install)
     }
 
-    val dialogShape = RoundedCornerShape(AppleRadius.card)
     when (val current = state) {
         UpdateUiState.Idle -> Unit
-        UpdateUiState.Checking -> AlertDialog(
+        UpdateUiState.Checking -> AppleAlertDialog(
             onDismissRequest = model::dismiss,
-            shape = dialogShape,
             title = { Text("检查更新") },
             text = { LinearProgressIndicator(modifier = Modifier.fillMaxWidth()) },
             confirmButton = { TextButton(onClick = model::dismiss) { Text("取消") } },
         )
         is UpdateUiState.Authorization -> {
-            var token by remember { mutableStateOf("") }
-            AlertDialog(
+            var token by remember(current.prefill) { mutableStateOf(current.prefill) }
+            AppleAlertDialog(
                 onDismissRequest = model::dismiss,
-                shape = dialogShape,
                 title = { Text("GitHub 授权") },
                 text = {
                     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -195,7 +240,7 @@ internal fun AppUpdateDialogs(model: AppUpdateViewModel, config: StoredConfig) {
                             value = token,
                             onValueChange = { token = it },
                             label = { Text("GitHub Token") },
-                            supportingText = { Text("使用有此仓库 Contents 读取权限的细粒度 Token，仅保留在本次运行中") },
+                            supportingText = { Text("验证通过后将保存在本机，下次自动使用，可在「我的 → GitHub 授权」修改或清除") },
                             visualTransformation = PasswordVisualTransformation(),
                             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
                             singleLine = true,
@@ -209,9 +254,8 @@ internal fun AppUpdateDialogs(model: AppUpdateViewModel, config: StoredConfig) {
                 dismissButton = { TextButton(onClick = model::dismiss) { Text("取消") } },
             )
         }
-        is UpdateUiState.Notice -> AlertDialog(
+        is UpdateUiState.Notice -> AppleAlertDialog(
             onDismissRequest = model::dismiss,
-            shape = dialogShape,
             title = { Text(current.title) },
             text = { Text(current.message) },
             confirmButton = { TextButton(onClick = model::dismiss) { Text("确定") } },
@@ -238,9 +282,8 @@ internal fun AppUpdateDialogs(model: AppUpdateViewModel, config: StoredConfig) {
                 )
             }
         }
-        is UpdateUiState.Downloading -> AlertDialog(
+        is UpdateUiState.Downloading -> AppleAlertDialog(
             onDismissRequest = {},
-            shape = dialogShape,
             title = { Text("正在下载 ${current.update.release.version}") },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -250,9 +293,8 @@ internal fun AppUpdateDialogs(model: AppUpdateViewModel, config: StoredConfig) {
             },
             confirmButton = { TextButton(onClick = model::dismiss) { Text("取消下载") } },
         )
-        is UpdateUiState.Ready -> AlertDialog(
+        is UpdateUiState.Ready -> AppleAlertDialog(
             onDismissRequest = model::dismiss,
-            shape = dialogShape,
             title = { Text("准备安装") },
             text = { Text(installError ?: "安装包已下载和校验，请在系统界面允许安装并确认更新。") },
             confirmButton = { Button(onClick = { install(current.apk) }) { Text("继续安装") } },
@@ -288,9 +330,8 @@ private fun UpdateAvailableDialog(
         }
     }
 
-    AlertDialog(
+    AppleAlertDialog(
         onDismissRequest = onDismiss,
-        shape = RoundedCornerShape(AppleRadius.card),
         title = { Text("发现新版本") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {

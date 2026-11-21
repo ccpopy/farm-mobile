@@ -6,7 +6,6 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -21,6 +20,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.key
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -41,6 +41,7 @@ import com.qqfarm.mobile.ui.components.AppleLoadingState
 import com.qqfarm.mobile.ui.components.AppleSegmentedControl
 import com.qqfarm.mobile.ui.components.RemoteAssetImage
 import com.qqfarm.mobile.ui.components.formatCompactCount
+import com.qqfarm.mobile.ui.components.swipeToSwitchTabs
 import com.qqfarm.mobile.ui.theme.LocalAppleColors
 import kotlinx.coroutines.launch
 import org.json.JSONObject
@@ -136,60 +137,74 @@ internal fun RanchCanRefillSheet(
     }
 
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState, containerColor = apple.background) {
+        // 头部（标题、分类、错误提示）固定，只有商品列表滚动。
         Column(
-            modifier = Modifier.fillMaxWidth().navigationBarsPadding().heightIn(max = 560.dp)
-                .verticalScroll(rememberScrollState()).padding(horizontal = 16.dp).padding(bottom = 24.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
+            modifier = Modifier.fillMaxWidth().height(560.dp).navigationBarsPadding(),
         ) {
-            Text("补充罐头", style = MaterialTheme.typography.titleLarge, color = apple.primaryText)
-            AppleSegmentedControl(
-                options = listOf("常驻商品", "限时商品"),
-                selectedIndex = slotType - 6,
-                onSelect = { slotType = it + 6 },
-            )
-            if (purchaseError.isNotBlank()) Text(purchaseError, color = MaterialTheme.colorScheme.error)
-            when {
-                loadError.isNotBlank() -> {
-                    Text(loadError, color = MaterialTheme.colorScheme.error)
-                    TextButton(onClick = { scope.launch { loadOffers() } }) { Text("重新加载") }
-                }
-                current == null -> AppleLoadingState(Modifier.fillMaxWidth().height(84.dp))
-                !current.base.unlocked -> Text(current.base.reason.ifBlank { "牧场暂未解锁" }, color = apple.secondaryText)
-                current.canShopGoods.isEmpty() -> Text("当前没有罐头商品", color = apple.secondaryText)
-                else -> AppleGroupedCard(contentPadding = PaddingValues(horizontal = 14.dp)) {
-                    current.canShopGoods.forEachIndexed { index, good ->
-                        val balance = balanceOf(good)
-                        val maxCount = ranchPurchaseLimit(good, balance)
-                        Row(
-                            modifier = Modifier.fillMaxWidth().padding(vertical = 12.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(10.dp),
-                        ) {
-                            RemoteAssetImage(
-                                url = good.reward.image, contentDescription = null,
-                                fallbackIcon = Icons.Rounded.Science, modifier = Modifier.size(40.dp),
-                            )
-                            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                                Text(good.name, style = MaterialTheme.typography.titleSmall, color = apple.primaryText)
-                                Text(ranchGoodsContents(good), style = MaterialTheme.typography.bodySmall, color = apple.secondaryText)
-                                val price = if (good.free) "免费" else "单价 ${formatCompactCount(good.priceCount)} ${good.priceName}"
-                                val quota = good.remaining?.let { " · 可购 $it 份" }.orEmpty()
-                                Text("$price$quota", style = MaterialTheme.typography.labelSmall, color = apple.secondaryText)
-                            }
-                            TextButton(
-                                onClick = { selected = good },
-                                enabled = good.available && maxCount > 0,
+            Column(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                Text("补充罐头", style = MaterialTheme.typography.titleLarge, color = apple.primaryText)
+                AppleSegmentedControl(
+                    options = listOf("常驻商品", "限时商品"),
+                    selectedIndex = slotType - 6,
+                    onSelect = { slotType = it + 6 },
+                )
+                if (purchaseError.isNotBlank()) Text(purchaseError, color = MaterialTheme.colorScheme.error)
+            }
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f)
+                    .swipeToSwitchTabs(slotType - 6, 2) { idx -> slotType = idx + 6 }
+                    .verticalScroll(key(slotType) { rememberScrollState() })
+                    .padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 24.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                when {
+                    loadError.isNotBlank() -> {
+                        Text(loadError, color = MaterialTheme.colorScheme.error)
+                        TextButton(onClick = { scope.launch { loadOffers() } }) { Text("重新加载") }
+                    }
+                    current == null -> AppleLoadingState(Modifier.fillMaxWidth().height(84.dp))
+                    !current.base.unlocked -> Text(current.base.reason.ifBlank { "牧场暂未解锁" }, color = apple.secondaryText)
+                    current.canShopGoods.isEmpty() -> Text("当前没有罐头商品", color = apple.secondaryText)
+                    else -> AppleGroupedCard(contentPadding = PaddingValues(horizontal = 14.dp)) {
+                        current.canShopGoods.forEachIndexed { index, good ->
+                            val balance = balanceOf(good)
+                            val maxCount = ranchPurchaseLimit(good, balance)
+                            Row(
+                                modifier = Modifier.fillMaxWidth().padding(vertical = 12.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(10.dp),
                             ) {
-                                Text(when {
-                                    good.remaining == 0 -> "已达限购"
-                                    !good.available -> "暂不可购"
-                                    maxCount == 0 -> if (balance == null) "余额未知" else "余额不足"
-                                    good.free -> "领取"
-                                    else -> "购买"
-                                })
+                                RemoteAssetImage(
+                                    url = good.reward.image, contentDescription = null,
+                                    fallbackIcon = Icons.Rounded.Science, modifier = Modifier.size(40.dp),
+                                )
+                                Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                                    Text(good.name, style = MaterialTheme.typography.titleSmall, color = apple.primaryText)
+                                    Text(ranchGoodsContents(good), style = MaterialTheme.typography.bodySmall, color = apple.secondaryText)
+                                    val price = if (good.free) "免费" else "单价 ${formatCompactCount(good.priceCount)} ${good.priceName}"
+                                    val quota = good.remaining?.let { " · 可购 $it 份" }.orEmpty()
+                                    Text("$price$quota", style = MaterialTheme.typography.labelSmall, color = apple.secondaryText)
+                                }
+                                TextButton(
+                                    onClick = { selected = good },
+                                    enabled = good.available && maxCount > 0,
+                                ) {
+                                    Text(when {
+                                        good.remaining == 0 -> "已达限购"
+                                        !good.available -> "暂不可购"
+                                        maxCount == 0 -> if (balance == null) "余额未知" else "余额不足"
+                                        good.free -> "领取"
+                                        else -> "购买"
+                                    })
+                                }
                             }
+                            if (index < current.canShopGoods.lastIndex) AppleHairlineDivider(startIndent = 50.dp)
                         }
-                        if (index < current.canShopGoods.lastIndex) AppleHairlineDivider(startIndent = 50.dp)
                     }
                 }
             }

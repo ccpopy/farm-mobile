@@ -55,11 +55,15 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
+import com.qqfarm.mobile.data.network.FarmApiClient
 import com.qqfarm.mobile.data.model.ServerVersionInfo
+import com.qqfarm.mobile.data.prefs.ServerProfile
 import com.qqfarm.mobile.data.prefs.StoredConfig
 import com.qqfarm.mobile.ui.components.AppleGroupedCard
+import com.qqfarm.mobile.ui.components.AppleHairlineDivider
 import com.qqfarm.mobile.ui.components.AppleIconBadge
 import com.qqfarm.mobile.ui.components.AppleSegmentedControl
+import com.qqfarm.mobile.ui.components.AppleSettingRow
 import com.qqfarm.mobile.ui.components.AppleStatusPill
 import com.qqfarm.mobile.ui.theme.LocalAppleColors
 import kotlinx.coroutines.launch
@@ -74,6 +78,9 @@ fun ServerSetupScreen(
     onConnectWithToken: suspend (String, String) -> Result<Unit>,
     onConnectWithPassword: suspend (String, String, String) -> Result<String>,
     onSuccessMessage: (String) -> Unit,
+    isAddingServer: Boolean = false,
+    otherServers: List<ServerProfile> = emptyList(),
+    onSwitchServer: (String) -> Unit = {},
 ) {
     val apple = LocalAppleColors.current
     val clipboard = LocalClipboardManager.current
@@ -124,7 +131,7 @@ fun ServerSetupScreen(
                 ) {
                     Icon(Icons.Rounded.ArrowBack, contentDescription = "返回", modifier = Modifier.size(18.dp))
                     Spacer(modifier = Modifier.width(4.dp))
-                    Text("返回设置")
+                    Text(if (isAddingServer) "返回" else "返回设置")
                 }
             }
         } else {
@@ -143,15 +150,48 @@ fun ServerSetupScreen(
                 containerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.14f),
             )
             Text(
-                text = if (isReconfiguring) "服务器与授权" else "QQ农场助手",
+                text = when {
+                    isAddingServer -> "添加服务器"
+                    isReconfiguring -> "服务器与授权"
+                    else -> "QQ农场助手"
+                },
                 style = MaterialTheme.typography.displaySmall,
                 color = apple.primaryText,
             )
             Text(
-                text = "配置远程 Node 后端地址并选择安全授权方式",
+                text = if (isAddingServer) {
+                    "添加后自动切换过去，原服务器保留在「我的 → 服务器」中"
+                } else {
+                    "配置远程 Node 后端地址并选择安全授权方式"
+                },
                 style = MaterialTheme.typography.bodyMedium,
                 color = apple.secondaryText,
             )
+        }
+
+        // 已退出授权时仍可直接切到其它已保存的服务器，不必重新输入。
+        if (!isReconfiguring && otherServers.isNotEmpty()) {
+            AppleGroupedCard {
+                Text(
+                    text = "切换到已保存的服务器",
+                    style = MaterialTheme.typography.labelLarge,
+                    color = apple.secondaryText,
+                    modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 4.dp),
+                )
+                otherServers.forEachIndexed { idx, profile ->
+                    AppleSettingRow(
+                        icon = Icons.Rounded.Dns,
+                        iconTint = if (profile.isAuthenticated) apple.blue else apple.secondaryText,
+                        title = profile.displayName,
+                        subtitle = profile.serverUrl,
+                        trailingText = if (profile.isAuthenticated) "切换" else "需授权",
+                        trailingColor = if (profile.isAuthenticated) MaterialTheme.colorScheme.primary else apple.secondaryText,
+                        showChevron = true,
+                        onClick = { onSwitchServer(profile.id) },
+                    )
+                    if (idx < otherServers.lastIndex) AppleHairlineDivider()
+                }
+            }
         }
 
         AppleGroupedCard(contentPadding = PaddingValues(16.dp)) {
@@ -178,9 +218,15 @@ fun ServerSetupScreen(
 
             OutlinedTextField(
                 value = serverUrl,
+                enabled = !submitting && !testing,
                 onValueChange = {
+                    if (apiToken.isNotBlank() && apiToken == initialConfig.authToken &&
+                        FarmApiClient.normalizeBaseUrl(it) != initialConfig.serverUrl) {
+                        apiToken = ""
+                    }
                     serverUrl = it
                     verifiedInfo = null
+                    errorMsg = ""
                 },
                 label = { Text("服务器 URL") },
                 placeholder = { Text("https://farm.example.com") },
@@ -438,7 +484,11 @@ fun ServerSetupScreen(
                 Spacer(modifier = Modifier.width(8.dp))
             }
             Text(
-                text = if (isReconfiguring) "保存并切换" else "验证并连接",
+                text = when {
+                    isAddingServer -> "验证并添加"
+                    isReconfiguring -> "保存并切换"
+                    else -> "验证并连接"
+                },
                 style = MaterialTheme.typography.titleSmall,
             )
         }

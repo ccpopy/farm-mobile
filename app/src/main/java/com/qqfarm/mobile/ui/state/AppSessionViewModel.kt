@@ -46,6 +46,8 @@ data class SessionUiState(
     val realtimeConnected: Boolean = false,
     val connectionWarning: String = "",
     val showReconfigureServer: Boolean = false,
+    /** true：连接页用于“添加服务器”，成功后新建条目并切换过去。 */
+    val addingServer: Boolean = false,
 ) {
     val currentAccount: AccountItem?
         get() = accounts.firstOrNull { it.id == config.currentAccountId }
@@ -185,7 +187,7 @@ class AppSessionViewModel(application: Application) : AndroidViewModel(applicati
 
     private fun isActiveConnection(config: StoredConfig): Boolean {
         val current = _uiState.value.config
-        return current.serverUrl == config.serverUrl && current.authToken == config.authToken
+        return current.activeProfileId == config.activeProfileId && current.serverUrl == config.serverUrl && current.authToken == config.authToken
     }
 
     private suspend fun clearAuth(serverUrl: String, token: String): Boolean = tokenUpdates.withLock {
@@ -213,11 +215,48 @@ class AppSessionViewModel(application: Application) : AndroidViewModel(applicati
     }
 
     fun openReconfigureServer() {
-        _uiState.value = _uiState.value.copy(showReconfigureServer = true)
+        _uiState.value = _uiState.value.copy(showReconfigureServer = true, addingServer = false)
+    }
+
+    fun openAddServer() {
+        _uiState.value = _uiState.value.copy(showReconfigureServer = true, addingServer = true)
     }
 
     fun closeReconfigureServer() {
-        _uiState.value = _uiState.value.copy(showReconfigureServer = false)
+        _uiState.value = _uiState.value.copy(showReconfigureServer = false, addingServer = false)
+    }
+
+    /**
+     * 是否作为新服务器保存：明确在“添加服务器”，或当前已退出授权且填了另一个地址
+     * （避免退出后登录别的服务器时覆盖掉原来那台）。
+     */
+    private fun saveAsNewProfile(normalizedUrl: String): Boolean {
+        val state = _uiState.value
+        return state.addingServer || (!state.config.isAuthenticated && normalizedUrl != state.config.serverUrl)
+    }
+
+    fun switchServer(profileId: String) {
+        val current = _uiState.value.config
+        if (profileId == current.activeProfileId) return
+        val target = current.serverProfiles.firstOrNull { it.id == profileId } ?: return
+        viewModelScope.launch {
+            if (prefs.switchServerProfile(profileId)) {
+                emitMessage(
+                    if (target.isAuthenticated) "已切换到「${target.displayName}」" else "「${target.displayName}」需要重新授权"
+                )
+            }
+        }
+    }
+
+    fun renameServer(profileId: String, name: String) {
+        viewModelScope.launch { prefs.renameServerProfile(profileId, name) }
+    }
+
+    fun removeServer(profileId: String) {
+        val target = _uiState.value.config.serverProfiles.firstOrNull { it.id == profileId } ?: return
+        viewModelScope.launch {
+            if (prefs.removeServerProfile(profileId)) emitMessage("已移除「${target.displayName}」")
+        }
     }
 
     suspend fun testServerConnection(rawUrl: String): Result<ServerVersionInfo> {
@@ -233,19 +272,24 @@ class AppSessionViewModel(application: Application) : AndroidViewModel(applicati
         if (token.isEmpty()) {
             return Result.failure(IllegalArgumentException("请输入 API Token"))
         }
+        val from = _uiState.value.config
+        val asNew = saveAsNewProfile(normalized)
         return try {
             val valid = apiClient.validateToken(normalized, token)
             if (!valid) {
                 return Result.failure(IllegalArgumentException("Token 验证失败"))
             }
-            val username = runCatching { apiClient.fetchUserMe(normalized, token) }.getOrDefault("API 用户")
-            prefs.saveConnection(
+            val username = try { apiClient.fetchUserMe(normalized, token) } catch (_: ApiException) { "" }
+            val saved = prefs.saveConnection(
                 serverUrl = normalized,
                 token = token,
                 authMode = StoredConfig.AUTH_MODE_API_TOKEN,
                 username = username,
+                from = from,
+                asNewProfile = asNew,
             )
-            _uiState.value = _uiState.value.copy(showReconfigureServer = false, connectionWarning = "")
+            if (!saved) return Result.failure(IllegalStateException("当前连接已切换，请重新操作"))
+            _uiState.value = _uiState.value.copy(showReconfigureServer = false, addingServer = false, connectionWarning = "")
             Result.success(Unit)
         } catch (e: Exception) {
             Result.failure(e)
@@ -262,6 +306,8 @@ class AppSessionViewModel(application: Application) : AndroidViewModel(applicati
         if (username.isBlank() || password.isBlank()) {
             return Result.failure(IllegalArgumentException("请输入管理员用户名和密码"))
         }
+        val from = _uiState.value.config
+        val asNew = saveAsNewProfile(normalized)
         val loginRes = apiClient.login(normalized, username.trim(), password)
         if (!loginRes.ok || loginRes.token.isBlank()) {
             val detail = when (loginRes.errorType) {
@@ -282,13 +328,16 @@ class AppSessionViewModel(application: Application) : AndroidViewModel(applicati
             "登录成功，建议在网页端修改默认密码"
         } else ""
 
-        prefs.saveConnection(
+        val saved = prefs.saveConnection(
             serverUrl = normalized,
             token = loginRes.token,
             authMode = StoredConfig.AUTH_MODE_PASSWORD,
             username = loginRes.username.ifBlank { username.trim() },
+            from = from,
+            asNewProfile = asNew,
         )
-        _uiState.value = _uiState.value.copy(showReconfigureServer = false, connectionWarning = "")
+        if (!saved) return Result.failure(IllegalStateException("当前连接已切换，请重新操作"))
+        _uiState.value = _uiState.value.copy(showReconfigureServer = false, addingServer = false, connectionWarning = "")
         return Result.success(note)
     }
 
@@ -347,7 +396,7 @@ class AppSessionViewModel(application: Application) : AndroidViewModel(applicati
                 )
                 syncNotificationMonitors()
                 if (resolvedId != currentId) {
-                    prefs.updateCurrentAccountId(resolvedId, config.serverUrl)
+                    prefs.updateCurrentAccountId(resolvedId, config)
                 }
             } catch (e: Exception) {
                 if (isActiveConnection(config)) {
@@ -361,8 +410,9 @@ class AppSessionViewModel(application: Application) : AndroidViewModel(applicati
     }
 
     fun selectAccount(accountId: String) {
+        val connection = _uiState.value.config
         viewModelScope.launch {
-            prefs.updateCurrentAccountId(accountId, _uiState.value.config.serverUrl)
+            prefs.updateCurrentAccountId(accountId, connection)
         }
     }
 

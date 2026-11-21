@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -49,12 +50,14 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
+import androidx.compose.material3.SheetValue
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -253,14 +256,16 @@ fun AutomationScreen(
     fun saveSettingsNow(closeEditor: Boolean = false) {
         val current = settings ?: return
         if (accountId.isBlank() || saving) return
+        saving = true
         scope.launch {
-            saving = true
             try {
                 val (ok, msg) = apiClient.saveAccountSettings(accountId, current)
                 onMessage(msg)
                 if (ok) {
-                    dirty = false
-                    if (closeEditor) activeEditor = null
+                    if (settings == current) {
+                        dirty = false
+                        if (closeEditor) activeEditor = null
+                    }
                     runCatching { apiClient.fetchSchedulerStatus(accountId) }
                         .onSuccess { scheduler = it }
                 }
@@ -731,35 +736,51 @@ private fun ModuleSheetShell(
     content: @Composable () -> Unit,
 ) {
     val apple = LocalAppleColors.current
-    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val isSaving by rememberUpdatedState(saving)
+    val sheetState = rememberModalBottomSheetState(
+        skipPartiallyExpanded = true,
+        confirmValueChange = { it != SheetValue.Hidden || !isSaving },
+    )
     ModalBottomSheet(
-        onDismissRequest = onDismiss,
+        onDismissRequest = { if (!saving) onDismiss() },
         sheetState = sheetState,
         containerColor = apple.background,
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
+                .heightIn(max = 640.dp)
                 .navigationBarsPadding()
-                .padding(horizontal = 16.dp)
-                .padding(bottom = 20.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
+                .imePadding()
+                .padding(bottom = 16.dp),
         ) {
-            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                Text(title, style = MaterialTheme.typography.titleLarge, color = apple.primaryText)
-                Text(subtitle, style = MaterialTheme.typography.bodySmall, color = apple.secondaryText)
-            }
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .heightIn(max = 500.dp)
-                    .verticalScroll(rememberScrollState()),
+                    .padding(horizontal = 20.dp)
+                    .padding(bottom = 10.dp),
+                verticalArrangement = Arrangement.spacedBy(2.dp),
+            ) {
+                Text(title, style = MaterialTheme.typography.titleLarge, color = apple.primaryText)
+                Text(subtitle, style = MaterialTheme.typography.bodySmall, color = apple.secondaryText)
+            }
+            AppleHairlineDivider(startIndent = 0.dp)
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f, fill = false)
+                    .verticalScroll(rememberScrollState())
+                    .padding(horizontal = 16.dp, vertical = 12.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
                 content()
             }
+            AppleHairlineDivider(startIndent = 0.dp)
+            Spacer(modifier = Modifier.height(12.dp))
             Row(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp),
                 horizontalArrangement = Arrangement.spacedBy(10.dp),
             ) {
                 OutlinedButton(
@@ -939,7 +960,9 @@ private fun SeedPickerSheet(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
+                .heightIn(max = 600.dp)
                 .navigationBarsPadding()
+                .imePadding()
                 .padding(horizontal = 16.dp)
                 .padding(bottom = 20.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp),
@@ -957,8 +980,8 @@ private fun SeedPickerSheet(
                     modifier = Modifier.fillMaxWidth(),
                 )
                 Button(
-                    onClick = { onSelect(manualSeedId.toLongOrNull() ?: 0L) },
-                    enabled = manualSeedId.isNotBlank(),
+                    onClick = { manualSeedId.toLongOrNull()?.let(onSelect) },
+                    enabled = manualSeedId.toLongOrNull()?.let { it > 0L } == true,
                     shape = RoundedCornerShape(14.dp),
                     modifier = Modifier.fillMaxWidth().height(46.dp),
                 ) { Text("确定") }
@@ -972,7 +995,7 @@ private fun SeedPickerSheet(
                 LazyColumn(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .heightIn(max = 420.dp),
+                        .weight(1f, fill = false),
                     verticalArrangement = Arrangement.spacedBy(6.dp),
                 ) {
                     items(filtered, key = { it.seedId }) { seed ->
@@ -1213,6 +1236,7 @@ private fun RanchAnimalPickerSheet(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
+                .heightIn(max = 580.dp)
                 .navigationBarsPadding()
                 .padding(horizontal = 16.dp)
                 .padding(bottom = 20.dp),
@@ -1223,7 +1247,7 @@ private fun RanchAnimalPickerSheet(
             LazyColumn(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .heightIn(max = 420.dp),
+                    .weight(1f, fill = false),
                 verticalArrangement = Arrangement.spacedBy(6.dp),
             ) {
                 items(rows, key = { it.value }) { opt ->

@@ -23,6 +23,9 @@ import androidx.compose.ui.unit.sp
 import androidx.core.view.WindowCompat
 import coil.ImageLoader
 import com.qqfarm.mobile.data.prefs.StoredConfig
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.Shapes
+import androidx.compose.ui.unit.dp
 
 @Immutable
 data class AppleExtendedColors(
@@ -102,6 +105,18 @@ private val LightColorScheme = lightColorScheme(
     outline = AppleLightSeparator,
     outlineVariant = AppleLightSeparator,
     error = AppleRed,
+    // 补齐 M3 容器色：未定义时会落回基线色板的淡粉紫（#ECE6F0），弹窗、菜单、抽屉都会偏暖。
+    surfaceTint = Color.Transparent,
+    surfaceBright = AppleLightCard,
+    surfaceDim = AppleLightBackground,
+    surfaceContainerLowest = AppleLightCard,
+    surfaceContainerLow = AppleLightCard,
+    surfaceContainer = AppleLightCard,
+    surfaceContainerHigh = AppleLightCard,
+    surfaceContainerHighest = AppleLightTrack,
+    inverseSurface = AppleDarkElevated,
+    inverseOnSurface = AppleDarkLabel,
+    scrim = Color.Black,
     onError = Color.White,
 )
 
@@ -124,7 +139,27 @@ private val DarkColorScheme = darkColorScheme(
     outline = AppleDarkSeparator,
     outlineVariant = AppleDarkSeparator,
     error = AppleRedDark,
+    surfaceTint = Color.Transparent,
+    surfaceBright = AppleDarkElevated,
+    surfaceDim = AppleDarkBackground,
+    surfaceContainerLowest = AppleDarkBackground,
+    surfaceContainerLow = AppleDarkCard,
+    surfaceContainer = AppleDarkCard,
+    surfaceContainerHigh = AppleDarkCard,
+    surfaceContainerHighest = AppleDarkElevated,
+    inverseSurface = AppleLightCard,
+    inverseOnSurface = AppleLightLabel,
+    scrim = Color.Black,
     onError = Color.White,
+)
+
+/** 统一圆角：小控件 8/10，卡片 14，弹窗与底部抽屉 20。 */
+private val AppleShapes = Shapes(
+    extraSmall = RoundedCornerShape(6.dp),
+    small = RoundedCornerShape(10.dp),
+    medium = RoundedCornerShape(12.dp),
+    large = RoundedCornerShape(14.dp),
+    extraLarge = RoundedCornerShape(20.dp),
 )
 
 private val AppleTypography = Typography(
@@ -234,6 +269,7 @@ fun FarmBotTheme(
         MaterialTheme(
             colorScheme = colorScheme,
             typography = AppleTypography,
+            shapes = AppleShapes,
             content = content,
         )
     }

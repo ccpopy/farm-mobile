@@ -35,7 +35,6 @@ import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.QrCode2
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Stop
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -305,7 +304,7 @@ fun AccountSwitcherSheet(
     }
 
     deleteCandidate?.let { target ->
-        AlertDialog(
+        AppleAlertDialog(
             onDismissRequest = { deleteCandidate = null },
             title = { Text("删除账号") },
             text = { Text("确定删除账号「${target.displayTitle}」？这会停止其运行并移除配置。") },
@@ -344,9 +343,8 @@ private fun EditAccountDialog(
     val trimmedName = name.trim()
     val hasNewCode = code.isNotBlank()
 
-    AlertDialog(
+    AppleAlertDialog(
         onDismissRequest = { if (!saving) onDismiss() },
-        shape = RoundedCornerShape(AppleRadius.card),
         title = { Text("编辑账号") },
         text = {
             Column(
