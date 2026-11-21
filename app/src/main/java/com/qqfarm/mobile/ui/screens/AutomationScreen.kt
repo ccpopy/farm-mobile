@@ -334,7 +334,7 @@ fun AutomationScreen(
                         AppleIconBadge(icon = Icons.Rounded.Tune, tint = apple.indigo, size = 40.dp)
                         Column(modifier = Modifier.weight(1f)) {
                             Text(
-                                text = session.currentAccount?.name?.ifBlank { session.currentAccount.displayTitle } ?: accountId,
+                                text = session.currentAccount?.let { it.name.ifBlank { it.displayTitle } } ?: accountId,
                                 style = MaterialTheme.typography.titleMedium,
                                 color = apple.primaryText,
                                 maxLines = 1,
