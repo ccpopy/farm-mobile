@@ -460,19 +460,6 @@ class AppSessionViewModel(application: Application) : AndroidViewModel(applicati
         }
     }
 
-    fun buyFertilizer(type: String, count: Int) {
-        val accountId = _uiState.value.config.currentAccountId
-        if (accountId.isBlank()) return
-        viewModelScope.launch {
-            runCatching { apiClient.buyFertilizer(accountId, type, count) }
-                .onSuccess {
-                    emitMessage("已购买 $count 个${if (type == "organic") "有机" else "普通"}化肥")
-                    refreshSecondaryOverview(accountId)
-                }
-                .onFailure { emitMessage(it.message ?: "购买化肥失败") }
-        }
-    }
-
     fun updateThemeMode(mode: String) {
         viewModelScope.launch { prefs.updateThemeMode(mode) }
     }

@@ -226,6 +226,16 @@ data class LandsPayload(
     val cleanableSocialEventNames: List<String> = emptyList(),
 )
 
+data class FriendLandsPayload(
+    val lands: List<LandItem>,
+    val stealableCount: Int,
+    val dryCount: Int,
+    val weedCount: Int,
+    val insectCount: Int,
+) {
+    val needsCare: Boolean get() = dryCount > 0 || weedCount > 0 || insectCount > 0
+}
+
 data class BagSystemItem(
     val id: Int,
     val count: Long,
@@ -233,6 +243,10 @@ data class BagSystemItem(
     val interactionType: String = "",
     val hoursText: String = "",
 )
+
+private val LOCKABLE_BAG_ITEM_TYPES = setOf(5, 6, 17)
+private val USABLE_BAG_ITEM_TYPES = setOf(11, 14, 33)
+private const val FERTILIZER_CAPACITY_SECONDS = 990L * 3600L
 
 data class BagItem(
     val key: String,
@@ -250,12 +264,34 @@ data class BagItem(
     val description: String = "",
     val interactionType: String = "",
     val hoursText: String = "",
-)
+) {
+    val canChangeLock: Boolean get() = uid > 0L && itemType in LOCKABLE_BAG_ITEM_TYPES
+    val isFertilizer: Boolean get() = interactionType.equals("fertilizer", ignoreCase = true) ||
+        interactionType.equals("fertilizerpro", ignoreCase = true)
+    val supportsUse: Boolean get() = uid > 0L && (itemType in USABLE_BAG_ITEM_TYPES || isFertilizer)
+}
 
 data class BagPayload(
     val items: List<BagItem> = emptyList(),
     val systemItems: List<BagSystemItem> = emptyList(),
-)
+) {
+    fun maxUseCount(item: BagItem): Int {
+        if (!item.supportsUse || item.locked) return 0
+        val stock = item.count.coerceIn(0L, Int.MAX_VALUE.toLong())
+        if (!item.isFertilizer) return stock.toInt()
+
+        val containerId = if (item.interactionType.equals("fertilizerpro", ignoreCase = true)) 1012 else 1011
+        val usedSeconds = systemItems.firstOrNull { it.id == containerId }?.count ?: 0L
+        val remainingSeconds = (FERTILIZER_CAPACITY_SECONDS - usedSeconds).coerceAtLeast(0L)
+        val hoursPerItem = when (item.id) {
+            80002, 80012 -> 4L
+            80003, 80013 -> 8L
+            80004, 80014 -> 12L
+            else -> 1L
+        }
+        return minOf(stock, remainingSeconds / (hoursPerItem * 3600L)).toInt()
+    }
+}
 
 data class RanchBucket(
     val id: Int,
@@ -322,6 +358,7 @@ data class PetDog(
     val owned: Boolean,
     val active: Boolean,
     val skillDescription: String,
+    val rarity: Int = 0,
 )
 
 data class DogFood(
@@ -340,7 +377,13 @@ data class PetSnapshot(
     val remainingDurationSec: Long = 0L,
     val pendingGiftCount: Int = 0,
     val activeDogId: Int = 0,
-)
+) {
+    fun maxFeedCount(food: DogFood): Int {
+        if (food.durationSec <= 0L) return 0
+        val remaining = (maxProtectDurationSec - protectDurationSec).coerceAtLeast(0L)
+        return minOf(food.count, remaining / food.durationSec).coerceIn(0L, Int.MAX_VALUE.toLong()).toInt()
+    }
+}
 
 data class FriendItem(
     val gid: Long,

@@ -396,7 +396,7 @@ fun RanchWorkspaceScreen(
                                     }
                                     "useCan" -> {
                                         amountPrompt = AmountPromptConfig(
-                                            title = "添加罐头到罐头桶",
+                                            title = "补充罐头",
                                             itemName = item.name,
                                             itemImage = item.image,
                                             caption = if (item.canSpeedUpSec > 0L) {
@@ -1838,7 +1838,7 @@ private fun RanchAmountPickerSheet(
 ) {
     val apple = LocalAppleColors.current
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-    var count by remember(config) { mutableIntStateOf(1) }
+    var requestedCount by remember(config) { mutableIntStateOf(1) }
     var selectedPenId by remember(config) {
         mutableStateOf(
             config.pens.firstOrNull { it.ranchCount < it.ranchCapacity }?.id
@@ -1846,14 +1846,9 @@ private fun RanchAmountPickerSheet(
         )
     }
     val selectedPen = config.pens.firstOrNull { it.id == selectedPenId }
-    val effectiveMax = if (config.pens.isNotEmpty() && selectedPen != null) {
-        config.maxCount.coerceAtMost((selectedPen.ranchCapacity - selectedPen.ranchCount).coerceAtLeast(1)).coerceAtLeast(1)
-    } else {
-        config.maxCount.coerceAtLeast(1)
-    }
-    LaunchedEffect(effectiveMax) {
-        if (count > effectiveMax) count = effectiveMax
-    }
+    val freeSpace = selectedPen?.let { it.ranchCapacity - it.ranchCount } ?: 0
+    val effectiveMax = if (config.pens.isEmpty()) config.maxCount else minOf(config.maxCount, freeSpace).coerceAtLeast(0)
+    val count = requestedCount.coerceAtMost(effectiveMax)
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -1914,7 +1909,7 @@ private fun RanchAmountPickerSheet(
                 AppleQuantityStepper(
                     value = count,
                     max = effectiveMax,
-                    onChange = { count = it },
+                    onChange = { requestedCount = it },
                 )
             }
 
@@ -1929,7 +1924,7 @@ private fun RanchAmountPickerSheet(
                 ) { Text("取消") }
                 Button(
                     onClick = { onSubmit(count, selectedPenId) },
-                    enabled = config.pens.isEmpty() || selectedPenId.isNotBlank(),
+                    enabled = count > 0,
                     shape = RoundedCornerShape(14.dp),
                     modifier = Modifier.weight(1f),
                 ) { Text(config.submitLabel) }

@@ -5,7 +5,21 @@ import com.qqfarm.mobile.data.model.ActivityDirectoryItem
 import com.qqfarm.mobile.data.model.ActivityDirectoryResponse
 import com.qqfarm.mobile.data.model.AutumnWishState
 import com.qqfarm.mobile.data.model.CharityState
+import com.qqfarm.mobile.data.model.CollectionBuff
+import com.qqfarm.mobile.data.model.CollectionItemEntry
+import com.qqfarm.mobile.data.model.CollectionMilestone
+import com.qqfarm.mobile.data.model.CollectionMutationRule
+import com.qqfarm.mobile.data.model.CollectionOperateResult
+import com.qqfarm.mobile.data.model.CollectionSeries
+import com.qqfarm.mobile.data.model.CollectionSnapshot
 import com.qqfarm.mobile.data.model.CommerceItem
+import com.qqfarm.mobile.data.model.IllustratedBook
+import com.qqfarm.mobile.data.model.IllustratedBookItem
+import com.qqfarm.mobile.data.model.IllustratedBuff
+import com.qqfarm.mobile.data.model.IllustratedClaimResult
+import com.qqfarm.mobile.data.model.IllustratedLevel
+import com.qqfarm.mobile.data.model.IllustratedShopSeed
+import com.qqfarm.mobile.data.model.IllustratedSnapshot
 import com.qqfarm.mobile.data.model.MallCatalog
 import com.qqfarm.mobile.data.model.MallCurrency
 import com.qqfarm.mobile.data.model.MallGoods
@@ -29,6 +43,10 @@ import com.qqfarm.mobile.data.model.MugeQuestionOption
 import com.qqfarm.mobile.data.model.MugeState
 import com.qqfarm.mobile.data.model.MugeTask
 import com.qqfarm.mobile.data.model.MugeTier
+import com.qqfarm.mobile.data.model.MutantCatalogEffect
+import com.qqfarm.mobile.data.model.MutantProbability
+import com.qqfarm.mobile.data.model.MutationCatalogCollectionSeries
+import com.qqfarm.mobile.data.model.MutationCatalogSnapshot
 import com.qqfarm.mobile.data.model.MysteryNpcOffer
 import com.qqfarm.mobile.data.model.MysteryPurchaseResult
 import com.qqfarm.mobile.data.model.MysteryShopState
@@ -1391,6 +1409,343 @@ object FeatureJsonParsers {
             canSummonRain = actions?.optJSONObject("summonThunderstorm")?.optBoolFlex("enabled") ?: false,
             nextResearchNodeId = actions?.optJSONObject("advanceResearch")?.optStringClean("nodeId").orEmpty(),
             canAdvanceResearch = actions?.optJSONObject("advanceResearch")?.optBoolFlex("enabled") ?: false,
+        )
+    }
+
+    // ---- Illustrated Book & Collections ----
+
+    private fun JSONObject.optDoubleFlex(key: String, fallback: Double = 0.0): Double {
+        if (!has(key) || isNull(key)) return fallback
+        return when (val v = opt(key)) {
+            is Number -> v.toDouble()
+            is String -> v.trim().toDoubleOrNull() ?: fallback
+            else -> fallback
+        }
+    }
+
+    private fun parseBookCommerceItems(arr: JSONArray?): List<CommerceItem> {
+        if (arr == null) return emptyList()
+        return buildList(arr.length()) {
+            for (i in 0 until arr.length()) {
+                val obj = arr.optJSONObject(i) ?: continue
+                val id = obj.optIntFlex("itemId").let { if (it != 0) it else obj.optIntFlex("id") }
+                add(
+                    CommerceItem(
+                        id = id,
+                        count = obj.optLongFlex("count"),
+                        name = obj.optStringClean("name"),
+                        image = obj.optStringClean("image"),
+                        rarity = obj.optIntFlex("rarity"),
+                        description = obj.optStringClean("description"),
+                    )
+                )
+            }
+        }
+    }
+
+    private fun parseIllustratedBuffs(arr: JSONArray?): List<IllustratedBuff> {
+        if (arr == null) return emptyList()
+        return buildList(arr.length()) {
+            for (i in 0 until arr.length()) {
+                val b = arr.optJSONObject(i) ?: continue
+                add(
+                    IllustratedBuff(
+                        id = b.optIntFlex("id"),
+                        level = b.optIntFlex("level"),
+                        name = b.optStringClean("name"),
+                        value = b.optIntFlex("value"),
+                        valueType = b.optStringClean("valueType"),
+                    )
+                )
+            }
+        }
+    }
+
+    private fun parseIllustratedBook(obj: JSONObject, defaultType: Int): IllustratedBook {
+        val levelsArr = obj.optJSONArray("levels") ?: JSONArray()
+        val levels = buildList(levelsArr.length()) {
+            for (i in 0 until levelsArr.length()) {
+                val l = levelsArr.optJSONObject(i) ?: continue
+                add(
+                    IllustratedLevel(
+                        level = l.optIntFlex("level"),
+                        progress = l.optIntFlex("progress"),
+                        claimed = l.optBoolFlex("claimed"),
+                        canClaim = l.optBoolFlex("canClaim"),
+                        rewards = parseBookCommerceItems(l.optJSONArray("rewards")),
+                    )
+                )
+            }
+        }
+        val itemsArr = obj.optJSONArray("items") ?: JSONArray()
+        val items = buildList(itemsArr.length()) {
+            for (i in 0 until itemsArr.length()) {
+                val it = itemsArr.optJSONObject(i) ?: continue
+                val seedObj = it.optJSONObject("shopSeed")
+                val shopSeed = if (seedObj != null) {
+                    IllustratedShopSeed(
+                        seedId = seedObj.optIntFlex("seedId"),
+                        goodsId = seedObj.optIntFlex("goodsId"),
+                        name = seedObj.optStringClean("name"),
+                        price = seedObj.optLongFlex("price"),
+                        requiredLevel = seedObj.optIntFlex("requiredLevel"),
+                        locked = seedObj.optBoolFlex("locked"),
+                        soldOut = seedObj.optBoolFlex("soldOut"),
+                        itemCount = seedObj.optIntFlex("itemCount", 1).coerceAtLeast(1),
+                        remainingPurchaseCount = if (seedObj.isNull("remainingPurchaseCount")) {
+                            null
+                        } else {
+                            seedObj.optIntFlex("remainingPurchaseCount")
+                        },
+                        unknownMeta = seedObj.optBoolFlex("unknownMeta"),
+                        requiresUnlockCard = seedObj.optBoolFlex("requiresUnlockCard"),
+                    )
+                } else null
+                add(
+                    IllustratedBookItem(
+                        seedId = it.optIntFlex("seedId"),
+                        name = it.optStringClean("name"),
+                        image = it.optStringClean("image"),
+                        rewardCategory = it.optIntFlex("rewardCategory"),
+                        group = it.optStringClean("group"),
+                        sort = it.optIntFlex("sort"),
+                        cropCategory = it.optStringClean("cropCategory"),
+                        unlocked = it.optBoolFlex("unlocked"),
+                        progress = it.optIntFlex("progress"),
+                        isNew = it.optBoolFlex("isNew"),
+                        shopSeed = shopSeed,
+                    )
+                )
+            }
+        }
+        return IllustratedBook(
+            type = obj.optIntFlex("type", defaultType),
+            level = obj.optIntFlex("level"),
+            progress = obj.optIntFlex("progress"),
+            nextLevelProgress = obj.optIntFlex("nextLevelProgress"),
+            claimable = obj.optBoolFlex("claimable"),
+            levels = levels,
+            buffs = parseIllustratedBuffs(obj.optJSONArray("buffs")),
+            currentBuffs = parseIllustratedBuffs(obj.optJSONArray("currentBuffs")),
+            items = items,
+        )
+    }
+
+    fun parseIllustratedSnapshot(obj: JSONObject): IllustratedSnapshot {
+        val crop = obj.optJSONObject("crop") ?: throw ApiException("服务端未返回作物图鉴")
+        val mutant = obj.optJSONObject("mutant") ?: throw ApiException("服务端未返回超变图鉴")
+        return IllustratedSnapshot(
+            crop = parseIllustratedBook(crop, defaultType = 1),
+            mutant = parseIllustratedBook(mutant, defaultType = 2),
+            updatedAt = obj.optLongFlex("updatedAt"),
+        )
+    }
+
+    fun parseIllustratedSeedReceipt(obj: JSONObject?, seedId: Int): Long {
+        val items = obj?.optJSONArray("get_items")
+        val received = if (items == null) 0L else (0 until items.length()).sumOf { index ->
+            val item = items.optJSONObject(index)
+            if (item?.optIntFlex("id") == seedId) item.optLongFlex("count").coerceAtLeast(0L) else 0L
+        }
+        if (received <= 0L) throw ApiException("种子购买结果未确认，请刷新背包后核对")
+        return received
+    }
+
+    fun parseIllustratedClaimResult(obj: JSONObject): IllustratedClaimResult {
+        val claimedCount = obj.optJSONArray("claimedLevels")?.length() ?: 0
+        if (claimedCount == 0) throw ApiException("图鉴领取结果未确认，请刷新后核对")
+        val rewards = parseBookCommerceItems(obj.optJSONArray("rewards"))
+        val snapshot = obj.optJSONObject("snapshot")?.let(::parseIllustratedSnapshot)
+        val refreshRequired = obj.optBoolFlex("refreshRequired")
+        val rewardSummary = rewards.joinToString("、") { "${it.name} ×${it.count}" }.ifBlank { "已领取 $claimedCount 档图鉴奖励" }
+        val message = if (refreshRequired) "$rewardSummary（请刷新确认最新进度）" else rewardSummary
+        return IllustratedClaimResult(
+            rewards = rewards,
+            snapshot = snapshot,
+            refreshRequired = refreshRequired,
+            message = message,
+        )
+    }
+
+    private fun parseCollectionBuffs(arr: JSONArray?): List<CollectionBuff> {
+        if (arr == null) return emptyList()
+        return buildList(arr.length()) {
+            for (i in 0 until arr.length()) {
+                val b = arr.optJSONObject(i) ?: continue
+                add(
+                    CollectionBuff(
+                        id = b.optIntFlex("id"),
+                        name = b.optStringClean("name"),
+                        value = b.optDoubleFlex("value"),
+                        description = b.optStringClean("description"),
+                    )
+                )
+            }
+        }
+    }
+
+    private fun parseMutationRules(arr: JSONArray?): List<CollectionMutationRule> {
+        if (arr == null) return emptyList()
+        return buildList(arr.length()) {
+            for (i in 0 until arr.length()) {
+                val r = arr.optJSONObject(i) ?: continue
+                add(
+                    CollectionMutationRule(
+                        name = r.optStringClean("name"),
+                        probability = r.optDoubleFlex("probability"),
+                        guarantee = r.optIntFlex("guarantee"),
+                    )
+                )
+            }
+        }
+    }
+
+    fun parseCollectionSnapshot(obj: JSONObject): CollectionSnapshot {
+        val milestonesArr = obj.optJSONArray("milestones") ?: JSONArray()
+        val milestones = buildList(milestonesArr.length()) {
+            for (i in 0 until milestonesArr.length()) {
+                val m = milestonesArr.optJSONObject(i) ?: continue
+                add(
+                    CollectionMilestone(
+                        level = m.optIntFlex("level"),
+                        score = m.optLongFlex("score"),
+                        claimed = m.optBoolFlex("claimed"),
+                        reached = m.optBoolFlex("reached"),
+                        rewards = parseBookCommerceItems(m.optJSONArray("rewards")),
+                        buffs = parseCollectionBuffs(m.optJSONArray("buffs")),
+                    )
+                )
+            }
+        }
+        val seriesArr = obj.optJSONArray("series") ?: throw ApiException("服务端未返回藏品系列")
+        val series = buildList(seriesArr.length()) {
+            for (i in 0 until seriesArr.length()) {
+                val s = seriesArr.optJSONObject(i) ?: continue
+                val itemsArr = s.optJSONArray("items") ?: JSONArray()
+                val items = buildList(itemsArr.length()) {
+                    for (j in 0 until itemsArr.length()) {
+                        val it = itemsArr.optJSONObject(j) ?: continue
+                        add(
+                            CollectionItemEntry(
+                                id = it.optIntFlex("id"),
+                                name = it.optStringClean("name"),
+                                description = it.optStringClean("description"),
+                                image = it.optStringClean("image"),
+                                starLevel = it.optIntFlex("starLevel"),
+                                maxStarLevel = it.optIntFlex("maxStarLevel", 5).coerceAtLeast(1),
+                                ownCount = it.optLongFlex("ownCount"),
+                                activated = it.optBoolFlex("activated"),
+                                isNew = it.optBoolFlex("isNew"),
+                                score = it.optLongFlex("score"),
+                                displayed = it.optBoolFlex("displayed"),
+                                wished = it.optBoolFlex("wished"),
+                                requirements = parseStringList(it.optJSONArray("requirements")),
+                                nextStarCosts = parseBookCommerceItems(it.optJSONArray("nextStarCosts")),
+                                unlocked = it.optBoolFlex("unlocked"),
+                                canUpgrade = it.optBoolFlex("canUpgrade"),
+                            )
+                        )
+                    }
+                }
+                add(
+                    CollectionSeries(
+                        id = s.optIntFlex("id"),
+                        name = s.optStringClean("name"),
+                        rarity = s.optIntFlex("rarity", 1),
+                        rarityName = s.optStringClean("rarityName"),
+                        description = s.optStringClean("description"),
+                        requirements = parseStringList(s.optJSONArray("requirements")),
+                        mutationRules = parseMutationRules(s.optJSONArray("mutationRules")),
+                        items = items,
+                        activatedCount = s.optIntFlex("activatedCount"),
+                        totalCount = s.optIntFlex("totalCount"),
+                    )
+                )
+            }
+        }
+        return CollectionSnapshot(
+            score = obj.optLongFlex("score"),
+            claimedScore = obj.optLongFlex("claimedScore"),
+            activatedCount = obj.optIntFlex("activatedCount"),
+            totalCount = obj.optIntFlex("totalCount"),
+            nextRewardScore = if (obj.isNull("nextRewardScore")) null else obj.optLongFlex("nextRewardScore"),
+            currentBuffs = parseCollectionBuffs(obj.optJSONArray("currentBuffs")),
+            milestones = milestones,
+            series = series,
+            displayItemId = obj.optJSONObject("display")?.optStringClean("itemId", "0").orEmpty().ifBlank { "0" },
+        )
+    }
+
+    fun parseCollectionOperateResult(obj: JSONObject, defaultActionLabel: String): CollectionOperateResult {
+        val skipped = obj.optBoolFlex("skipped")
+        val snapshot = obj.optJSONObject("snapshot")?.let(::parseCollectionSnapshot)
+            ?: throw ApiException("藏品操作结果未确认，请刷新后核对")
+        val rewards = parseBookCommerceItems(obj.optJSONArray("rewards"))
+        val message = when {
+            rewards.isNotEmpty() -> rewards.joinToString("、") { "${it.name} ×${it.count}" }
+            skipped -> "当前状态已更新，无需重复操作"
+            else -> defaultActionLabel
+        }
+        return CollectionOperateResult(
+            skipped = skipped,
+            snapshot = snapshot,
+            rewards = rewards,
+            message = message,
+        )
+    }
+
+    private fun parseMutantEffects(arr: JSONArray?): List<MutantCatalogEffect> {
+        if (arr == null) return emptyList()
+        return buildList(arr.length()) {
+            for (i in 0 until arr.length()) {
+                val e = arr.optJSONObject(i) ?: continue
+                val probsArr = e.optJSONArray("probabilities") ?: JSONArray()
+                val probs = buildList(probsArr.length()) {
+                    for (j in 0 until probsArr.length()) {
+                        val p = probsArr.optJSONObject(j) ?: continue
+                        add(
+                            MutantProbability(
+                                rarity = p.optIntFlex("rarity"),
+                                percent = p.optDoubleFlex("percent"),
+                            )
+                        )
+                    }
+                }
+                add(
+                    MutantCatalogEffect(
+                        id = e.optIntFlex("id"),
+                        name = e.optStringClean("name"),
+                        image = e.optStringClean("image"),
+                        effect = e.optStringClean("effect"),
+                        description = e.optStringClean("description"),
+                        probabilities = probs,
+                    )
+                )
+            }
+        }
+    }
+
+    fun parseMutationCatalog(obj: JSONObject): MutationCatalogSnapshot {
+        val colsArr = obj.optJSONArray("collections") ?: JSONArray()
+        val collections = buildList(colsArr.length()) {
+            for (i in 0 until colsArr.length()) {
+                val c = colsArr.optJSONObject(i) ?: continue
+                add(
+                    MutationCatalogCollectionSeries(
+                        id = c.optIntFlex("id"),
+                        name = c.optStringClean("name"),
+                        rarityName = c.optStringClean("rarityName"),
+                        description = c.optStringClean("description"),
+                        mutationRules = parseMutationRules(c.optJSONArray("mutationRules")),
+                        items = parseBookCommerceItems(c.optJSONArray("items")),
+                    )
+                )
+            }
+        }
+        return MutationCatalogSnapshot(
+            normal = parseMutantEffects(obj.optJSONArray("normal")),
+            decoration = parseMutantEffects(obj.optJSONArray("decoration")),
+            collections = collections,
         )
     }
 }

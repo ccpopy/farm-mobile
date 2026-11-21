@@ -28,6 +28,7 @@ import androidx.compose.material.icons.rounded.Group
 import androidx.compose.material.icons.rounded.Key
 import androidx.compose.material.icons.rounded.Link
 import androidx.compose.material.icons.rounded.Logout
+import androidx.compose.material.icons.rounded.MenuBook
 import androidx.compose.material.icons.rounded.Notifications
 import androidx.compose.material.icons.rounded.NotificationsActive
 import androidx.compose.material.icons.rounded.NotificationsOff
@@ -91,6 +92,7 @@ fun SettingsScreen(
     onOpenReconfigureServer: () -> Unit,
     onOpenAccountSwitcher: () -> Unit,
     onOpenAutomation: () -> Unit,
+    onOpenIllustrated: () -> Unit,
     onDisconnect: () -> Unit,
     onUpdateThemeMode: (String) -> Unit,
     onUpdateDynamicColor: (Boolean) -> Unit,
@@ -180,9 +182,9 @@ fun SettingsScreen(
         contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 32.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        // 0. Official Upstream Automation Entry
+        // 0. Extensions & Official Upstream Automation Entry
         item {
-            AppleSectionHeader(title = "自动化与策略")
+            AppleSectionHeader(title = "扩展与自动化")
             Spacer(modifier = Modifier.height(4.dp))
             AppleGroupedCard {
                 AppleSettingRow(
@@ -193,6 +195,15 @@ fun SettingsScreen(
                     trailingText = session.currentAccount?.name?.takeIf { it.isNotBlank() },
                     showChevron = true,
                     onClick = onOpenAutomation,
+                )
+                AppleHairlineDivider()
+                AppleSettingRow(
+                    icon = Icons.Rounded.MenuBook,
+                    iconTint = apple.emerald,
+                    title = "图鉴",
+                    subtitle = "查看作物、超变与蓝晶藏品进度，领取图鉴奖励",
+                    showChevron = true,
+                    onClick = onOpenIllustrated,
                 )
             }
         }

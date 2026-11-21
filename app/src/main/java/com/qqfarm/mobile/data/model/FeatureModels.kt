@@ -762,3 +762,185 @@ data class WeatherState(
     val nextResearchNodeId: String = "",
     val canAdvanceResearch: Boolean = false,
 )
+
+// ---- Illustrated Book & Collections ----
+
+data class IllustratedShopSeed(
+    val seedId: Int = 0,
+    val goodsId: Int = 0,
+    val name: String = "",
+    val price: Long = 0L,
+    val requiredLevel: Int = 0,
+    val locked: Boolean = false,
+    val soldOut: Boolean = false,
+    val itemCount: Int = 1,
+    val remainingPurchaseCount: Int? = null,
+    val unknownMeta: Boolean = false,
+    val requiresUnlockCard: Boolean = false,
+)
+
+data class IllustratedBookItem(
+    val seedId: Int = 0,
+    val name: String = "",
+    val image: String = "",
+    val rewardCategory: Int = 0,
+    val group: String = "",
+    val sort: Int = 0,
+    val cropCategory: String = "",
+    val unlocked: Boolean = false,
+    val progress: Int = 0,
+    val isNew: Boolean = false,
+    val shopSeed: IllustratedShopSeed? = null,
+)
+
+data class IllustratedLevel(
+    val level: Int = 0,
+    val progress: Int = 0,
+    val claimed: Boolean = false,
+    val canClaim: Boolean = false,
+    val rewards: List<CommerceItem> = emptyList(),
+)
+
+data class IllustratedBuff(
+    val id: Int = 0,
+    val level: Int = 0,
+    val name: String = "",
+    val value: Int = 0,
+    val valueType: String = "",
+) {
+    val formattedEffect: String
+        get() = if (valueType == "probability") {
+            val pct = value / 10.0
+            val text = if (pct % 1.0 == 0.0) pct.toInt().toString() else pct.toString()
+            "触发概率 $text%"
+        } else {
+            "数量 +$value"
+        }
+}
+
+data class IllustratedBook(
+    val type: Int = 1,
+    val level: Int = 0,
+    val progress: Int = 0,
+    val nextLevelProgress: Int = 0,
+    val claimable: Boolean = false,
+    val levels: List<IllustratedLevel> = emptyList(),
+    val buffs: List<IllustratedBuff> = emptyList(),
+    val currentBuffs: List<IllustratedBuff> = emptyList(),
+    val items: List<IllustratedBookItem> = emptyList(),
+)
+
+data class IllustratedSnapshot(
+    val crop: IllustratedBook = IllustratedBook(type = 1),
+    val mutant: IllustratedBook = IllustratedBook(type = 2),
+    val updatedAt: Long = 0L,
+)
+
+data class IllustratedClaimResult(
+    val rewards: List<CommerceItem> = emptyList(),
+    val snapshot: IllustratedSnapshot? = null,
+    val refreshRequired: Boolean = false,
+    val message: String = "",
+)
+
+data class CollectionBuff(
+    val id: Int = 0,
+    val name: String = "",
+    val value: Double = 0.0,
+    val description: String = "",
+)
+
+data class CollectionMilestone(
+    val level: Int = 0,
+    val score: Long = 0L,
+    val claimed: Boolean = false,
+    val reached: Boolean = false,
+    val rewards: List<CommerceItem> = emptyList(),
+    val buffs: List<CollectionBuff> = emptyList(),
+)
+
+data class CollectionMutationRule(
+    val name: String = "",
+    val probability: Double = 0.0,
+    val guarantee: Int = 0,
+)
+
+data class CollectionItemEntry(
+    val id: Int = 0,
+    val name: String = "",
+    val description: String = "",
+    val image: String = "",
+    val starLevel: Int = 0,
+    val maxStarLevel: Int = 5,
+    val ownCount: Long = 0L,
+    val activated: Boolean = false,
+    val isNew: Boolean = false,
+    val score: Long = 0L,
+    val displayed: Boolean = false,
+    val wished: Boolean = false,
+    val requirements: List<String> = emptyList(),
+    val nextStarCosts: List<CommerceItem> = emptyList(),
+    val unlocked: Boolean = false,
+    val canUpgrade: Boolean = false,
+)
+
+data class CollectionSeries(
+    val id: Int = 0,
+    val name: String = "",
+    val rarity: Int = 1,
+    val rarityName: String = "",
+    val description: String = "",
+    val requirements: List<String> = emptyList(),
+    val mutationRules: List<CollectionMutationRule> = emptyList(),
+    val items: List<CollectionItemEntry> = emptyList(),
+    val activatedCount: Int = 0,
+    val totalCount: Int = 0,
+)
+
+data class CollectionSnapshot(
+    val score: Long = 0L,
+    val claimedScore: Long = 0L,
+    val activatedCount: Int = 0,
+    val totalCount: Int = 0,
+    val nextRewardScore: Long? = null,
+    val currentBuffs: List<CollectionBuff> = emptyList(),
+    val milestones: List<CollectionMilestone> = emptyList(),
+    val series: List<CollectionSeries> = emptyList(),
+    val displayItemId: String = "0",
+)
+
+data class CollectionOperateResult(
+    val skipped: Boolean = false,
+    val snapshot: CollectionSnapshot,
+    val rewards: List<CommerceItem> = emptyList(),
+    val message: String = "",
+)
+
+data class MutantProbability(
+    val rarity: Int = 0,
+    val percent: Double = 0.0,
+)
+
+data class MutantCatalogEffect(
+    val id: Int = 0,
+    val name: String = "",
+    val image: String = "",
+    val effect: String = "",
+    val description: String = "",
+    val probabilities: List<MutantProbability> = emptyList(),
+)
+
+data class MutationCatalogCollectionSeries(
+    val id: Int = 0,
+    val name: String = "",
+    val rarityName: String = "",
+    val description: String = "",
+    val mutationRules: List<CollectionMutationRule> = emptyList(),
+    val items: List<CommerceItem> = emptyList(),
+)
+
+data class MutationCatalogSnapshot(
+    val normal: List<MutantCatalogEffect> = emptyList(),
+    val decoration: List<MutantCatalogEffect> = emptyList(),
+    val collections: List<MutationCatalogCollectionSeries> = emptyList(),
+)

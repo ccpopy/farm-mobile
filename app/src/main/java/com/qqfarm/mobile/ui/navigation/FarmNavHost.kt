@@ -80,6 +80,7 @@ import com.qqfarm.mobile.ui.components.AccountSwitcherSheet
 import com.qqfarm.mobile.ui.screens.AutomationScreen
 import com.qqfarm.mobile.ui.screens.FarmRanchScreen
 import com.qqfarm.mobile.ui.screens.FriendsScreen
+import com.qqfarm.mobile.ui.screens.IllustratedScreen
 import com.qqfarm.mobile.ui.screens.OverviewScreen
 import com.qqfarm.mobile.ui.screens.ServerSetupScreen
 import com.qqfarm.mobile.ui.screens.SettingsScreen
@@ -105,6 +106,7 @@ fun FarmNavHost(viewModel: AppSessionViewModel) {
     var mallSubTab by rememberSaveable { mutableIntStateOf(0) }
     var ranchSubTab by rememberSaveable { mutableIntStateOf(0) }
     var showAutomationPage by rememberSaveable { mutableStateOf(false) }
+    var showIllustratedPage by rememberSaveable { mutableStateOf(false) }
     var hideMainChrome by remember { mutableStateOf(false) }
     var showAccountSwitcher by remember { mutableStateOf(false) }
 
@@ -117,8 +119,8 @@ fun FarmNavHost(viewModel: AppSessionViewModel) {
         }
     }
 
-    LaunchedEffect(selectedTab, showAutomationPage) {
-        if (selectedTab != 2 || showAutomationPage) {
+    LaunchedEffect(selectedTab, showAutomationPage, showIllustratedPage) {
+        if (selectedTab != 2 || showAutomationPage || showIllustratedPage) {
             hideMainChrome = false
         }
     }
@@ -172,14 +174,18 @@ fun FarmNavHost(viewModel: AppSessionViewModel) {
         showAutomationPage = false
     }
 
-    BackHandler(enabled = !showAutomationPage && selectedTab != 0) {
+    BackHandler(enabled = showIllustratedPage) {
+        showIllustratedPage = false
+    }
+
+    BackHandler(enabled = !showAutomationPage && !showIllustratedPage && selectedTab != 0) {
         selectedTab = 0
     }
 
     val currentDest = destinations.getOrElse(selectedTab) { destinations.first() }
     val activeAccount = session.currentAccount
 
-    val bottomBarVisible = !showAutomationPage && !hideMainChrome
+    val bottomBarVisible = !showAutomationPage && !showIllustratedPage && !hideMainChrome
     Scaffold(
         containerColor = apple.background,
         // 系统栏留白由各层自己处理：顶栏/子页头部自带状态栏留白，底栏自带导航栏留白。
@@ -192,6 +198,12 @@ fun FarmNavHost(viewModel: AppSessionViewModel) {
                     title = "自动化设置",
                     subtitle = activeAccount?.name?.ifBlank { activeAccount.displayTitle },
                     onBack = { showAutomationPage = false },
+                )
+            } else if (showIllustratedPage) {
+                AppleSubPageHeader(
+                    title = "图鉴",
+                    subtitle = activeAccount?.name?.ifBlank { activeAccount.displayTitle },
+                    onBack = { showIllustratedPage = false },
                 )
             } else if (!hideMainChrome) {
                 Column(
@@ -289,6 +301,15 @@ fun FarmNavHost(viewModel: AppSessionViewModel) {
                         apiClient = viewModel.apiClient,
                         onMessage = { msg -> viewModel.emitMessage(msg) },
                     )
+                } else if (showIllustratedPage) {
+                    key(session.config.serverUrl, session.config.currentAccountId) {
+                        IllustratedScreen(
+                            session = session,
+                            apiClient = viewModel.apiClient,
+                            onRefreshOverview = { viewModel.refreshOverview() },
+                            onMessage = { msg -> viewModel.emitMessage(msg) },
+                        )
+                    }
                 } else {
                     AnimatedContent(
                         targetState = selectedTab,
@@ -310,7 +331,7 @@ fun FarmNavHost(viewModel: AppSessionViewModel) {
                                 onOpenAccountSwitcher = { showAccountSwitcher = true },
                                 onStartAccount = { id -> viewModel.startAccount(id) },
                                 onClearLogs = { viewModel.clearLogs() },
-                                onBuyFertilizer = { type, count -> viewModel.buyFertilizer(type, count) },
+                                onMessage = { msg -> viewModel.emitMessage(msg) },
                                 onSwitchSpace = ::selectSpace,
                                 onOpenDiscover = { subTab, mallIdx ->
                                     discoverSubTab = subTab
@@ -321,7 +342,10 @@ fun FarmNavHost(viewModel: AppSessionViewModel) {
                                     ranchSubTab = subIdx
                                     selectedTab = 1
                                 },
-                                onOpenAutomation = { showAutomationPage = true },
+                                onOpenAutomation = {
+                                    showIllustratedPage = false
+                                    showAutomationPage = true
+                                },
                             )
 
                             1 -> if (gameSpace == GameSpace.RANCH) {
@@ -368,7 +392,14 @@ fun FarmNavHost(viewModel: AppSessionViewModel) {
                                 session = session,
                                 onOpenReconfigureServer = { viewModel.openReconfigureServer() },
                                 onOpenAccountSwitcher = { showAccountSwitcher = true },
-                                onOpenAutomation = { showAutomationPage = true },
+                                onOpenAutomation = {
+                                    showIllustratedPage = false
+                                    showAutomationPage = true
+                                },
+                                onOpenIllustrated = {
+                                    showAutomationPage = false
+                                    showIllustratedPage = true
+                                },
                                 onDisconnect = { viewModel.disconnect() },
                                 onUpdateThemeMode = { mode -> viewModel.updateThemeMode(mode) },
                                 onUpdateDynamicColor = { enabled -> viewModel.updateDynamicColor(enabled) },

@@ -5,6 +5,7 @@ import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.offset
@@ -17,9 +18,11 @@ import androidx.compose.ui.semantics.Role
 import android.graphics.BitmapFactory
 import android.util.Base64
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -37,6 +40,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -61,10 +65,13 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
+import androidx.compose.material3.ripple
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -73,6 +80,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -80,12 +89,15 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
+import coil.request.CachePolicy
+import coil.request.ImageRequest
 import com.qqfarm.mobile.data.model.CommerceItem
 import com.qqfarm.mobile.data.model.GameSpace
 import com.qqfarm.mobile.data.model.RanchQuote
 import com.qqfarm.mobile.ui.theme.LocalAppleColors
 import com.qqfarm.mobile.ui.theme.LocalAssetResolver
 import com.qqfarm.mobile.ui.theme.LocalFarmImageLoader
+import kotlinx.coroutines.delay
 import java.text.NumberFormat
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -558,6 +570,49 @@ fun RemoteAssetImage(
     fallbackTint: Color = MaterialTheme.colorScheme.primary,
     contentScale: ContentScale = ContentScale.Fit,
 ) {
+    RemoteImageContent(
+        url = url,
+        contentDescription = contentDescription,
+        fallbackIcon = fallbackIcon,
+        modifier = modifier,
+        fallbackTint = fallbackTint,
+        contentScale = contentScale,
+        targetSizeDp = null,
+    )
+}
+
+/** 网格/列表缩略图版本：按显示尺寸降采样解码并关闭 crossfade，降低长列表快速滑动时的内存占用与卡顿。 */
+@Composable
+fun RemoteThumbImage(
+    url: String,
+    contentDescription: String?,
+    fallbackIcon: ImageVector,
+    sizeDp: Dp,
+    modifier: Modifier = Modifier,
+    fallbackTint: Color = MaterialTheme.colorScheme.primary,
+    contentScale: ContentScale = ContentScale.Fit,
+) {
+    RemoteImageContent(
+        url = url,
+        contentDescription = contentDescription,
+        fallbackIcon = fallbackIcon,
+        modifier = modifier,
+        fallbackTint = fallbackTint,
+        contentScale = contentScale,
+        targetSizeDp = sizeDp,
+    )
+}
+
+@Composable
+private fun RemoteImageContent(
+    url: String,
+    contentDescription: String?,
+    fallbackIcon: ImageVector,
+    modifier: Modifier,
+    fallbackTint: Color,
+    contentScale: ContentScale,
+    targetSizeDp: Dp?,
+) {
     val resolver = LocalAssetResolver.current
     val imageLoader = LocalFarmImageLoader.current
     val resolvedUrl = remember(url, resolver) { resolver(url) }
@@ -593,8 +648,25 @@ fun RemoteAssetImage(
             )
         }
     } else {
+        val model: Any = if (targetSizeDp != null) {
+            val context = LocalContext.current
+            val targetPx = with(LocalDensity.current) { targetSizeDp.roundToPx().coerceAtLeast(36) }
+            remember(resolvedUrl, targetPx, context) {
+                ImageRequest.Builder(context)
+                    .data(resolvedUrl)
+                    .size(targetPx)
+                    .crossfade(false)
+                    .memoryCacheKey("$resolvedUrl@$targetPx")
+                    .diskCacheKey(resolvedUrl)
+                    .memoryCachePolicy(CachePolicy.ENABLED)
+                    .diskCachePolicy(CachePolicy.ENABLED)
+                    .build()
+            }
+        } else {
+            resolvedUrl
+        }
         AsyncImage(
-            model = resolvedUrl,
+            model = model,
             imageLoader = imageLoader,
             contentDescription = contentDescription,
             contentScale = contentScale,
@@ -937,80 +1009,97 @@ fun AppleQuantityStepper(
 ) {
     val apple = LocalAppleColors.current
     val haptics = rememberAppHaptics()
-    val safeMax = max.coerceAtLeast(min)
+    val count = if (max >= min) value.coerceIn(min, max) else 0
+    val canDecrease = enabled && count > min
+    val canIncrease = enabled && count < max
     Row(
         modifier = modifier,
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(6.dp),
     ) {
-        Surface(
-            modifier = Modifier
-                .size(34.dp)
-                .clip(RoundedCornerShape(10.dp))
-                .clickable(enabled = enabled && value > min) {
-                    haptics.tick()
-                    onChange((value - 1).coerceAtLeast(min))
-                },
-            shape = RoundedCornerShape(10.dp),
-            color = apple.track,
-        ) {
-            Box(contentAlignment = Alignment.Center) {
-                Icon(
-                    imageVector = Icons.Rounded.Remove,
-                    contentDescription = "减少",
-                    tint = if (enabled && value > min) apple.primaryText else apple.secondaryText.copy(alpha = 0.4f),
-                    modifier = Modifier.size(18.dp),
-                )
-            }
+        QuantityStepButton(Icons.Rounded.Remove, "减少数量", canDecrease) {
+            if (canDecrease) onChange(count - 1)
         }
         Text(
-            text = value.toString(),
+            text = count.toString(),
             style = MaterialTheme.typography.titleSmall.copy(
                 fontWeight = FontWeight.Bold,
                 fontFeatureSettings = "tnum",
             ),
             color = apple.primaryText,
             textAlign = TextAlign.Center,
-            modifier = Modifier.width(40.dp),
+            modifier = Modifier.widthIn(min = 40.dp),
         )
-        Surface(
-            modifier = Modifier
-                .size(34.dp)
-                .clip(RoundedCornerShape(10.dp))
-                .clickable(enabled = enabled && value < safeMax) {
-                    haptics.tick()
-                    onChange((value + 1).coerceAtMost(safeMax))
-                },
-            shape = RoundedCornerShape(10.dp),
-            color = apple.track,
-        ) {
-            Box(contentAlignment = Alignment.Center) {
-                Icon(
-                    imageVector = Icons.Rounded.Add,
-                    contentDescription = "增加",
-                    tint = if (enabled && value < safeMax) apple.primaryText else apple.secondaryText.copy(alpha = 0.4f),
-                    modifier = Modifier.size(18.dp),
-                )
-            }
+        QuantityStepButton(Icons.Rounded.Add, "增加数量", canIncrease) {
+            if (canIncrease) onChange(count + 1)
         }
-        if (safeMax > 1) {
+        if (max > min) {
+            val tint = if (canIncrease) MaterialTheme.colorScheme.primary else apple.secondaryText
             Surface(
                 modifier = Modifier
                     .clip(RoundedCornerShape(10.dp))
-                    .clickable(enabled = enabled && value < safeMax) {
+                    .clickable(enabled = canIncrease, role = Role.Button) {
                         haptics.tick()
-                        onChange(safeMax)
+                        onChange(max)
                     },
                 shape = RoundedCornerShape(10.dp),
-                color = MaterialTheme.colorScheme.primary.copy(alpha = 0.14f),
+                color = if (canIncrease) tint.copy(alpha = 0.14f) else apple.track,
             ) {
                 Text(
                     text = "最大",
                     style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold),
-                    color = MaterialTheme.colorScheme.primary,
+                    color = tint,
                     modifier = Modifier.padding(horizontal = 10.dp, vertical = 7.dp),
                 )
             }
+        }
+    }
+}
+
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun QuantityStepButton(
+    icon: ImageVector,
+    label: String,
+    enabled: Boolean,
+    onStep: () -> Unit,
+) {
+    val apple = LocalAppleColors.current
+    val haptics = rememberAppHaptics()
+    val interaction = remember { MutableInteractionSource() }
+    val pressed by interaction.collectIsPressedAsState()
+    val step by rememberUpdatedState(onStep)
+    var repeating by remember { mutableStateOf(false) }
+
+    LaunchedEffect(pressed, enabled, repeating) {
+        if (!pressed || !enabled) {
+            repeating = false
+        } else if (repeating) {
+            while (true) {
+                delay(85L)
+                step()
+            }
+        }
+    }
+
+    Surface(
+        modifier = Modifier
+            .size(34.dp)
+            .clip(RoundedCornerShape(10.dp))
+            .combinedClickable(
+                interactionSource = interaction,
+                indication = ripple(),
+                enabled = enabled,
+                role = Role.Button,
+                onLongClickLabel = "连续$label",
+                onLongClick = { step(); repeating = true },
+                onClick = { haptics.tick(); step() },
+            ),
+        shape = RoundedCornerShape(10.dp),
+        color = apple.track,
+    ) {
+        Box(contentAlignment = Alignment.Center) {
+            Icon(icon, label, Modifier.size(18.dp), tint = if (enabled) apple.primaryText else apple.secondaryText)
         }
     }
 }
@@ -1055,8 +1144,8 @@ fun RanchQuoteConfirmSheet(
                 Text("预计消耗", style = MaterialTheme.typography.labelLarge, color = apple.secondaryText)
                 quote.costItems.forEach { cost ->
                     val displayName = when (cost.id) {
-                        7003 -> "普通罐头桶"
-                        7004 -> "有机罐头桶"
+                        7003 -> "普通罐头"
+                        7004 -> "有机罐头"
                         else -> cost.name
                     }
                     val displayAmount = if (cost.id == 7003 || cost.id == 7004) {

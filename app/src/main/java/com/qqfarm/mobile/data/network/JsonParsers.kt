@@ -12,6 +12,7 @@ import com.qqfarm.mobile.data.model.DailyGiftsSummary
 import com.qqfarm.mobile.data.model.DogFood
 import com.qqfarm.mobile.data.model.FriendBlacklistItem
 import com.qqfarm.mobile.data.model.FriendItem
+import com.qqfarm.mobile.data.model.FriendLandsPayload
 import com.qqfarm.mobile.data.model.FriendsPayload
 import com.qqfarm.mobile.data.model.InteractRecord
 import com.qqfarm.mobile.data.model.LandItem
@@ -339,6 +340,27 @@ object JsonParsers {
         )
     }
 
+    fun parseFriendLandsPayload(obj: JSONObject): FriendLandsPayload {
+        val actions = obj.optJSONObject("summary")
+        val ids = actions?.optJSONArray("stealable") ?: JSONArray()
+        val stealable = buildSet {
+            for (i in 0 until ids.length()) {
+                val id = ids.optInt(i)
+                if (id > 0) add(id)
+            }
+        }
+        val lands = parseLandsPayload(obj).lands.map { land ->
+            if (land.status == "stealable" && land.id !in stealable) land.copy(status = "unstealable") else land
+        }
+        return FriendLandsPayload(
+            lands = lands,
+            stealableCount = stealable.size,
+            dryCount = actions?.optJSONArray("needWater")?.length() ?: 0,
+            weedCount = actions?.optJSONArray("needWeed")?.length() ?: 0,
+            insectCount = actions?.optJSONArray("needBug")?.length() ?: 0,
+        )
+    }
+
     private fun parseLandLevelBonus(obj: JSONObject): LandLevelBonus = LandLevelBonus(
         level = obj.optIntFlex("level"),
         name = obj.optStringClean("name"),
@@ -623,6 +645,7 @@ object JsonParsers {
                         name = d.optStringClean("name"),
                         image = d.optStringClean("image"),
                         rarityLabel = d.optStringClean("rarityLabel"),
+                        rarity = d.optIntFlex("rarity"),
                         level = d.optIntFlex("level"),
                         owned = d.optBoolFlex("owned"),
                         active = d.optBoolFlex("active"),

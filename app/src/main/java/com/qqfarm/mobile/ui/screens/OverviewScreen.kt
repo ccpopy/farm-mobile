@@ -1,5 +1,10 @@
 package com.qqfarm.mobile.ui.screens
 
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.CircularProgressIndicator
+import com.qqfarm.mobile.data.model.MallGoods
+import com.qqfarm.mobile.data.network.ApiException
 import android.os.SystemClock
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
@@ -15,6 +20,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -119,7 +125,7 @@ fun OverviewScreen(
     onOpenAccountSwitcher: () -> Unit,
     onStartAccount: (String) -> Unit,
     onClearLogs: () -> Unit,
-    onBuyFertilizer: (String, Int) -> Unit,
+    onMessage: (String) -> Unit,
     onSwitchSpace: (GameSpace) -> Unit,
     onOpenDiscover: (Int, Int) -> Unit,
     onOpenWorkspace: (Int) -> Unit,
@@ -136,10 +142,10 @@ fun OverviewScreen(
     }
 
     var showAllLogs by remember { mutableStateOf(false) }
-    var showBuyFertilizer by remember { mutableStateOf(false) }
 
     val accountId = session.config.currentAccountId
     val isOnline = session.status?.connected == true && accountId.isNotBlank()
+    var showBuyFertilizer by remember(accountId, isOnline, gameSpace) { mutableStateOf(false) }
     var ranchPayload by remember { mutableStateOf<RanchPayload?>(null) }
     var ranchLoading by remember { mutableStateOf(false) }
     var ranchError by remember { mutableStateOf("") }
@@ -734,10 +740,10 @@ fun OverviewScreen(
 
     if (showBuyFertilizer) {
         BuyFertilizerSheet(
-            onBuy = { type, count ->
-                showBuyFertilizer = false
-                onBuyFertilizer(type, count)
-            },
+            accountId = accountId,
+            apiClient = apiClient,
+            onPurchased = onRefresh,
+            onMessage = onMessage,
             onDismiss = { showBuyFertilizer = false },
         )
     }
@@ -978,16 +984,39 @@ private fun FullLogsSheet(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun BuyFertilizerSheet(
-    onBuy: (String, Int) -> Unit,
+    accountId: String,
+    apiClient: FarmApiClient,
+    onPurchased: () -> Unit,
+    onMessage: (String) -> Unit,
     onDismiss: () -> Unit,
 ) {
     val apple = LocalAppleColors.current
+    val scope = rememberCoroutineScope()
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     var typeIndex by remember { mutableIntStateOf(0) }
-    var count by remember { mutableIntStateOf(10) }
+    var offers by remember { mutableStateOf<List<MallGoods>>(emptyList()) }
+    var loading by remember { mutableStateOf(true) }
+    var purchasing by remember { mutableStateOf(false) }
+    var error by remember { mutableStateOf<String?>(null) }
+
+    suspend fun loadOffers() {
+        loading = true
+        error = null
+        try {
+            offers = apiClient.fetchMallCatalog(accountId, slotType = 1, subSlotType = 0).goods
+        } catch (e: ApiException) {
+            error = e.message
+        } finally {
+            loading = false
+        }
+    }
+
+    LaunchedEffect(accountId) { loadOffers() }
+    val offerId = if (typeIndex == 0) 1003 else 1002
+    val selectedOffer = offers.firstOrNull { it.id == offerId }
 
     ModalBottomSheet(
-        onDismissRequest = onDismiss,
+        onDismissRequest = { if (!purchasing) onDismiss() },
         sheetState = sheetState,
         containerColor = apple.background,
     ) {
@@ -995,59 +1024,60 @@ private fun BuyFertilizerSheet(
             modifier = Modifier
                 .fillMaxWidth()
                 .navigationBarsPadding()
+                .heightIn(max = 560.dp)
+                .verticalScroll(rememberScrollState())
                 .padding(horizontal = 16.dp)
                 .padding(bottom = 24.dp),
-            verticalArrangement = Arrangement.spacedBy(14.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            Text("快速购买化肥", style = MaterialTheme.typography.titleLarge, color = apple.primaryText)
+            Text("补充化肥", style = MaterialTheme.typography.titleLarge, color = apple.primaryText)
             AppleSegmentedControl(
                 options = listOf("普通化肥", "有机化肥"),
                 selectedIndex = typeIndex,
-                onSelect = { typeIndex = it },
+                onSelect = { if (!purchasing) typeIndex = it },
             )
-            AppleGroupedCard(contentPadding = PaddingValues(16.dp)) {
-                Text("选择购买数量", style = MaterialTheme.typography.labelMedium, color = apple.secondaryText)
-                Spacer(modifier = Modifier.height(10.dp))
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(10.dp),
-                ) {
-                    listOf(5, 10, 20, 50).forEach { preset ->
-                        val active = count == preset
-                        Surface(
-                            modifier = Modifier
-                                .weight(1f)
-                                .clip(RoundedCornerShape(12.dp))
-                                .clickable { count = preset },
-                            shape = RoundedCornerShape(12.dp),
-                            color = if (active) MaterialTheme.colorScheme.primary.copy(alpha = 0.14f) else apple.elevated,
-                            border = BorderStroke(
-                                1.dp,
-                                if (active) MaterialTheme.colorScheme.primary else apple.separator,
-                            ),
-                        ) {
-                            Box(
-                                modifier = Modifier.padding(vertical = 10.dp),
-                                contentAlignment = Alignment.Center,
-                            ) {
-                                Text(
-                                    text = "${preset} 个",
-                                    style = MaterialTheme.typography.labelLarge,
-                                    color = if (active) MaterialTheme.colorScheme.primary else apple.primaryText,
+            when {
+                loading -> Box(
+                    modifier = Modifier.fillMaxWidth().height(100.dp),
+                    contentAlignment = Alignment.Center,
+                ) { CircularProgressIndicator() }
+
+                error != null -> {
+                    Text(error.orEmpty(), style = MaterialTheme.typography.bodyMedium, color = apple.red)
+                    TextButton(onClick = { scope.launch { loadOffers() } }) { Text("重新加载") }
+                }
+
+                selectedOffer == null -> {
+                    Text("当前商城暂无这款礼包", style = MaterialTheme.typography.bodyMedium, color = apple.secondaryText)
+                }
+
+                else -> MallPurchaseContent(
+                    goods = selectedOffer,
+                    pending = purchasing,
+                    onDismiss = onDismiss,
+                    onConfirm = { count ->
+                        if (purchasing) return@MallPurchaseContent
+                        purchasing = true
+                        scope.launch {
+                            try {
+                                apiClient.purchaseMallGoods(
+                                    accountId = accountId,
+                                    goods = selectedOffer,
+                                    slotType = 1,
+                                    propsShop = false,
+                                    count = count,
                                 )
+                                onMessage("已购买 ${selectedOffer.name} ×$count")
+                                onDismiss()
+                                onPurchased()
+                            } catch (e: ApiException) {
+                                error = e.message
+                            } finally {
+                                purchasing = false
                             }
                         }
-                    }
-                }
-            }
-            Button(
-                onClick = { onBuy(if (typeIndex == 1) "organic" else "normal", count) },
-                shape = RoundedCornerShape(14.dp),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(50.dp),
-            ) {
-                Text("立即购买 $count 个")
+                    },
+                )
             }
         }
     }
@@ -1409,7 +1439,7 @@ private fun RanchOverviewContent(
                     Spacer(modifier = Modifier.height(12.dp))
                 }
 
-                AppleSectionHeader(title = "牧场库存与罐头桶")
+                AppleSectionHeader(title = "牧场库存")
                 Spacer(modifier = Modifier.height(4.dp))
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     EqualHeightRow(spacing = 10.dp) {
@@ -1432,14 +1462,14 @@ private fun RanchOverviewContent(
                         AppleMetricTile(
                             icon = Icons.Rounded.Science,
                             iconTint = apple.blue,
-                            label = "普通罐头桶",
+                            label = "普通罐头",
                             value = formatBucketHours(normalBucket?.seconds ?: 0L),
                             modifier = Modifier.weight(1f),
                         )
                         AppleMetricTile(
                             icon = Icons.Rounded.AutoAwesome,
                             iconTint = apple.indigo,
-                            label = "有机罐头桶",
+                            label = "有机罐头",
                             value = formatBucketHours(orgBucket?.seconds ?: 0L),
                             modifier = Modifier.weight(1f),
                         )

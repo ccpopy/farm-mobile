@@ -81,6 +81,7 @@ import com.qqfarm.mobile.ui.components.AppleSegmentedControl
 import com.qqfarm.mobile.ui.components.AppleStatusPill
 import com.qqfarm.mobile.ui.components.RemoteAssetImage
 import com.qqfarm.mobile.ui.components.formatCompactCount
+import com.qqfarm.mobile.ui.components.formatNumber
 import com.qqfarm.mobile.ui.components.formatDurationSec
 import com.qqfarm.mobile.ui.state.SessionUiState
 import com.qqfarm.mobile.ui.theme.LocalAppleColors
@@ -906,16 +907,6 @@ private fun RanchMallContent(
                 fun balanceOf(good: RanchShopGood): Long? =
                     good.priceBalance ?: current.base.currencies.firstOrNull { it.id == good.priceId }?.count
 
-                fun maxBuyable(good: RanchShopGood): Int {
-                    val lim = good.remaining ?: good.maxCount
-                    val upper = minOf(good.maxCount, lim).coerceAtLeast(0)
-                    if (good.free) return upper
-                    val bal = balanceOf(good) ?: return 0
-                    if (good.priceCount <= 0L) return 0
-                    val byBal = (bal / good.priceCount).coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
-                    return minOf(upper, byBal).coerceAtLeast(0)
-                }
-
                 LazyColumn(
                     modifier = Modifier.fillMaxSize(),
                     contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 24.dp),
@@ -1043,7 +1034,7 @@ private fun RanchMallContent(
                         }
                     } else {
                         items(visibleGoods, key = { it.id }) { good ->
-                            val maxCap = maxBuyable(good)
+                            val maxCap = ranchPurchaseLimit(good, balanceOf(good))
                             val canClick = !busy && !refreshing && good.available && maxCap >= 1
                             val unavailText = when {
                                 !good.available && good.remaining == 0 -> "已售罄"
@@ -1181,11 +1172,7 @@ private fun RanchMallContent(
         }
         val currentBase = snapshot?.base
         val bal = good.priceBalance ?: currentBase?.currencies?.firstOrNull { it.id == good.priceId }?.count
-        val maxCap = run {
-            val upper = minOf(good.maxCount, good.remaining ?: good.maxCount).coerceAtLeast(1)
-            if (good.free || bal == null || good.priceCount <= 0L) upper
-            else minOf(upper, (bal / good.priceCount).coerceAtMost(Int.MAX_VALUE.toLong()).toInt()).coerceAtLeast(1)
-        }
+        val maxCap = ranchPurchaseLimit(good, bal)
 
         RanchMallAmountSheet(
             good = good,
@@ -1305,22 +1292,8 @@ private fun MallPurchaseSheet(
 ) {
     val apple = LocalAppleColors.current
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-    val maxCount = remember(goods) {
-        val remLimit = goods.limit?.remaining ?: 9999
-        val byBal = if (goods.isFree || goods.priceCount <= 0L) {
-            9999
-        } else {
-            val bal = goods.priceBalance ?: 0L
-            (bal / goods.priceCount).coerceAtMost(9999L).toInt()
-        }
-        minOf(9999, remLimit, byBal).coerceAtLeast(1)
-    }
-    var count by remember(goods.id) { mutableIntStateOf(1) }
-    val totalCost = goods.priceCount * count.toLong()
-    val balanceOk = goods.isFree || (goods.priceBalance != null && totalCost <= goods.priceBalance)
-
     ModalBottomSheet(
-        onDismissRequest = onDismiss,
+        onDismissRequest = { if (!pending) onDismiss() },
         sheetState = sheetState,
         containerColor = apple.card,
     ) {
@@ -1333,85 +1306,117 @@ private fun MallPurchaseSheet(
                 .padding(horizontal = 20.dp, vertical = 8.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            Text(goods.name, style = MaterialTheme.typography.titleLarge, color = apple.primaryText)
-            Text(
-                text = if (goods.isFree) "免费领取" else "单价 ${formatCompactCount(goods.priceCount)} ${goods.priceName}",
-                style = MaterialTheme.typography.bodySmall,
-                color = apple.secondaryText,
-            )
-
-            AppleGroupedCard(contentPadding = PaddingValues(12.dp), containerColor = apple.elevated) {
-                Text("每份包含 (${goods.rewards.size})", style = MaterialTheme.typography.labelMedium, color = apple.secondaryText)
-                Spacer(modifier = Modifier.height(6.dp))
-                goods.rewards.forEach { rew ->
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(vertical = 4.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    ) {
-                        RemoteAssetImage(
-                            url = rew.image,
-                            contentDescription = rew.name,
-                            fallbackIcon = Icons.Rounded.CardGiftcard,
-                            modifier = Modifier.size(22.dp),
-                        )
-                        Text(rew.name, style = MaterialTheme.typography.bodyMedium, color = apple.primaryText, modifier = Modifier.weight(1f))
-                        Text("×${formatCompactCount(rew.count)}", style = MaterialTheme.typography.titleSmall.copy(fontFeatureSettings = "tnum"), color = apple.primaryText)
-                    }
-                }
-            }
-
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Column {
-                    Text("购买数量", style = MaterialTheme.typography.titleSmall, color = apple.primaryText)
-                    if (goods.limit != null) {
-                        Text("$limitLabel · 可买 $maxCount 份", style = MaterialTheme.typography.labelSmall, color = apple.secondaryText)
-                    }
-                }
-                AppleQuantityStepper(value = count, max = maxCount, onChange = { count = it }, enabled = !pending)
-            }
-
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Column {
-                    Text("合计", style = MaterialTheme.typography.titleSmall, color = apple.primaryText)
-                    if (!goods.isFree && goods.priceBalance != null) {
-                        Text("当前余额 ${formatCompactCount(goods.priceBalance)}", style = MaterialTheme.typography.labelSmall, color = apple.secondaryText)
-                    }
-                }
-                Text(
-                    text = if (goods.isFree) "免费" else "${formatCompactCount(totalCost)} ${goods.priceName}",
-                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold, fontFeatureSettings = "tnum"),
-                    color = if (goods.isFree) apple.emerald else if (balanceOk) apple.primaryText else apple.red,
-                )
-            }
-
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                OutlinedButton(
-                    onClick = onDismiss,
-                    enabled = !pending,
-                    shape = RoundedCornerShape(14.dp),
-                    modifier = Modifier.weight(1f),
-                ) { Text("取消") }
-                Button(
-                    onClick = { onConfirm(count) },
-                    enabled = !pending && balanceOk && goods.purchasable,
-                    shape = RoundedCornerShape(14.dp),
-                    modifier = Modifier.weight(1f),
-                ) { Text(if (pending) "购买中..." else if (goods.isFree) "确认领取" else "确认购买") }
-            }
-            Spacer(modifier = Modifier.height(12.dp))
+            MallPurchaseContent(goods, pending, onDismiss, onConfirm, limitLabel)
         }
     }
+}
+
+@Composable
+internal fun MallPurchaseContent(
+    goods: MallGoods,
+    pending: Boolean,
+    onDismiss: () -> Unit,
+    onConfirm: (Int) -> Unit,
+    limitLabel: String = mallLimitLabel(goods.limit?.type),
+) {
+    val apple = LocalAppleColors.current
+    val action = resolveMallAction(goods, null)
+    val maxCount = if (action.enabled) {
+        val quota = goods.limit?.remaining ?: 9999
+        val affordable = if (goods.isFree) 9999L else (goods.priceBalance ?: 0L) / goods.priceCount
+        minOf(9999L, quota.toLong(), affordable).coerceAtLeast(0L).toInt()
+    } else 0
+    var requestedCount by remember(goods.id) { mutableIntStateOf(1) }
+    val count = requestedCount.coerceAtMost(maxCount)
+    val totalCost = if (goods.isFree) 0L else goods.priceCount * count.toLong()
+
+    Text(goods.name, style = MaterialTheme.typography.titleLarge, color = apple.primaryText)
+    if (goods.isFree || (goods.priceId > 0 && goods.priceCount > 0L)) {
+        Text(
+            text = if (goods.isFree) "免费领取" else "单价 ${formatNumber(goods.priceCount)} ${goods.priceName}",
+            style = MaterialTheme.typography.bodySmall,
+            color = apple.secondaryText,
+        )
+    }
+
+    AppleGroupedCard(contentPadding = PaddingValues(12.dp), containerColor = apple.elevated) {
+        Text("每份包含 (${goods.rewards.size})", style = MaterialTheme.typography.labelMedium, color = apple.secondaryText)
+        Spacer(modifier = Modifier.height(6.dp))
+        goods.rewards.forEach { rew ->
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                RemoteAssetImage(
+                    url = rew.image,
+                    contentDescription = rew.name,
+                    fallbackIcon = Icons.Rounded.CardGiftcard,
+                    modifier = Modifier.size(22.dp),
+                )
+                Text(rew.name, style = MaterialTheme.typography.bodyMedium, color = apple.primaryText, modifier = Modifier.weight(1f))
+                Text("×${formatNumber(rew.count)}", style = MaterialTheme.typography.titleSmall.copy(fontFeatureSettings = "tnum"), color = apple.primaryText)
+            }
+        }
+    }
+
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column {
+            Text("购买数量", style = MaterialTheme.typography.titleSmall, color = apple.primaryText)
+            if (goods.limit != null) {
+                Text("$limitLabel · 可买 $maxCount 份", style = MaterialTheme.typography.labelSmall, color = apple.secondaryText)
+            }
+        }
+        AppleQuantityStepper(value = count, max = maxCount, onChange = { requestedCount = it }, enabled = !pending)
+    }
+
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column {
+            Text("合计", style = MaterialTheme.typography.titleSmall, color = apple.primaryText)
+            if (!goods.isFree && goods.priceBalance != null) {
+                Text("当前余额 ${formatNumber(goods.priceBalance)}", style = MaterialTheme.typography.labelSmall, color = apple.secondaryText)
+            }
+        }
+        Text(
+            text = when {
+                count == 0 -> "—"
+                goods.isFree -> "免费"
+                else -> "${formatNumber(totalCost)} ${goods.priceName}"
+            },
+            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold, fontFeatureSettings = "tnum"),
+            color = if (goods.isFree) apple.emerald else apple.primaryText,
+        )
+    }
+
+    if (!action.enabled) {
+        Text(action.reason, style = MaterialTheme.typography.bodySmall, color = apple.secondaryText)
+    }
+
+    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        OutlinedButton(
+            onClick = onDismiss,
+            enabled = !pending,
+            shape = RoundedCornerShape(14.dp),
+            modifier = Modifier.weight(1f),
+        ) { Text("取消") }
+        Button(
+            onClick = { onConfirm(count) },
+            enabled = !pending && count > 0,
+            shape = RoundedCornerShape(14.dp),
+            modifier = Modifier.weight(1f),
+        ) { Text(if (pending) "购买中..." else if (goods.isFree) "确认领取" else "确认购买") }
+    }
+    Spacer(modifier = Modifier.height(12.dp))
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -1428,7 +1433,8 @@ private fun RanchMallAmountSheet(
 ) {
     val apple = LocalAppleColors.current
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-    var count by remember(good.id) { mutableIntStateOf(1) }
+    var requestedCount by remember(good.id) { mutableIntStateOf(1) }
+    val count = requestedCount.coerceAtMost(maxCount)
     val totalCost = good.priceCount * count.toLong()
 
     ModalBottomSheet(
@@ -1488,7 +1494,7 @@ private fun RanchMallAmountSheet(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Text("数量", style = MaterialTheme.typography.titleSmall, color = apple.primaryText)
-                AppleQuantityStepper(value = count, max = maxCount, onChange = { count = it }, enabled = !pending)
+                AppleQuantityStepper(value = count, max = maxCount, onChange = { requestedCount = it }, enabled = !pending)
             }
 
             Row(
@@ -1513,7 +1519,7 @@ private fun RanchMallAmountSheet(
                 ) { Text("取消") }
                 Button(
                     onClick = { onConfirm(count) },
-                    enabled = !pending && good.available,
+                    enabled = !pending && good.available && count > 0,
                     shape = RoundedCornerShape(14.dp),
                     modifier = Modifier.weight(1f),
                 ) { Text(if (pending) "提交中..." else verb) }
@@ -1521,6 +1527,13 @@ private fun RanchMallAmountSheet(
             Spacer(modifier = Modifier.height(12.dp))
         }
     }
+}
+
+private fun ranchPurchaseLimit(good: RanchShopGood, balance: Long?): Int {
+    val quota = minOf(good.maxCount, good.remaining ?: good.maxCount).coerceAtLeast(0)
+    if (good.free) return quota
+    if (balance == null || good.priceCount <= 0L) return 0
+    return minOf(quota.toLong(), balance / good.priceCount).coerceAtLeast(0L).toInt()
 }
 
 private fun itemSignature(items: List<CommerceItem>): String {

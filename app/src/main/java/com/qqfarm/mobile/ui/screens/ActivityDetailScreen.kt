@@ -2061,7 +2061,7 @@ private fun MilkTeaBoostSheet(
 ) {
     val apple = LocalAppleColors.current
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-    val stock = (state.balances[state.salesItemId] ?: 0L).toInt().coerceIn(0, 9999)
+    val stock = (state.balances[state.salesItemId] ?: 0L).coerceIn(0L, 9999L).toInt()
     var count by remember(stock) { mutableIntStateOf(if (stock > 0) 1 else 0) }
 
     val sortedRecipes = remember(state.recipes) {
@@ -2597,8 +2597,9 @@ private fun MilkTeaExchangeConfirmSheet(
 ) {
     val apple = LocalAppleColors.current
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-    val maxQty = (goods.remaining ?: 99).coerceIn(1, 999)
-    var qty by remember(goods.id) { mutableIntStateOf(1) }
+    val maxQty = (goods.remaining ?: 99).coerceIn(0, 999)
+    var requestedCount by remember(goods.id) { mutableIntStateOf(1) }
+    val qty = requestedCount.coerceAtMost(maxQty)
 
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState, containerColor = apple.card) {
         Column(
@@ -2618,7 +2619,7 @@ private fun MilkTeaExchangeConfirmSheet(
                 horizontalArrangement = Arrangement.SpaceBetween,
             ) {
                 Text("兑换份数", style = MaterialTheme.typography.titleSmall, color = apple.primaryText)
-                AppleQuantityStepper(value = qty, min = 1, max = maxQty, onChange = { qty = it }, enabled = !busy)
+                AppleQuantityStepper(value = qty, max = maxQty, onChange = { requestedCount = it }, enabled = !busy)
             }
             val totalCosts = goods.costs.joinToString(" + ") { "${it.name} ×${formatCompactCount(it.count * qty)}" }
             Text("预计消耗：${totalCosts.ifBlank { "免费" }}", style = MaterialTheme.typography.bodyMedium, color = apple.orange)
@@ -2626,7 +2627,7 @@ private fun MilkTeaExchangeConfirmSheet(
                 OutlinedButton(onClick = onDismiss, enabled = !busy, shape = RoundedCornerShape(14.dp), modifier = Modifier.weight(1f)) {
                     Text("取消")
                 }
-                Button(onClick = { onConfirm(qty) }, enabled = !busy, shape = RoundedCornerShape(14.dp), modifier = Modifier.weight(1f)) {
+                Button(onClick = { onConfirm(qty) }, enabled = !busy && qty > 0, shape = RoundedCornerShape(14.dp), modifier = Modifier.weight(1f)) {
                     Text(if (busy) "兑换中..." else "确认兑换")
                 }
             }
@@ -3211,8 +3212,9 @@ private fun StellarDetailContent(
     val chosenGood = pendingGoods
     if (chosenGood != null) {
         val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-        val maxQty = chosenGood.maxExchangeCount.coerceIn(1, 99)
-        var qty by remember(chosenGood.id) { mutableIntStateOf(1) }
+        val maxQty = chosenGood.maxExchangeCount.coerceIn(0, 99)
+        var requestedCount by remember(chosenGood.id) { mutableIntStateOf(1) }
+        val qty = requestedCount.coerceAtMost(maxQty)
         ModalBottomSheet(onDismissRequest = { if (!busy) pendingGoods = null }, sheetState = sheetState, containerColor = apple.card) {
             Column(
                 modifier = Modifier
@@ -3230,7 +3232,7 @@ private fun StellarDetailContent(
                     horizontalArrangement = Arrangement.SpaceBetween,
                 ) {
                     Text("兑换数量", style = MaterialTheme.typography.titleSmall, color = apple.primaryText)
-                    AppleQuantityStepper(value = qty, min = 1, max = maxQty, onChange = { qty = it }, enabled = !busy)
+                    AppleQuantityStepper(value = qty, max = maxQty, onChange = { requestedCount = it }, enabled = !busy)
                 }
                 Text(
                     text = "预计消耗 ${chosenGood.cost.name} ×${formatCompactCount(chosenGood.cost.count * qty)}",
@@ -3246,7 +3248,7 @@ private fun StellarDetailContent(
                             runAction { apiClient.exchangeStarSand(accountId, chosenGood.id, qty) }
                             pendingGoods = null
                         },
-                        enabled = !busy,
+                        enabled = !busy && qty > 0,
                         shape = RoundedCornerShape(14.dp),
                         modifier = Modifier.weight(1f),
                     ) {

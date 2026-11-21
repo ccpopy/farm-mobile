@@ -21,11 +21,10 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Block
 import androidx.compose.material.icons.rounded.BugReport
@@ -69,7 +68,7 @@ import com.qqfarm.mobile.data.model.FriendBlacklistItem
 import com.qqfarm.mobile.data.model.FriendItem
 import com.qqfarm.mobile.data.model.GameSpace
 import com.qqfarm.mobile.data.model.InteractRecord
-import com.qqfarm.mobile.data.model.LandsPayload
+import com.qqfarm.mobile.data.model.FriendLandsPayload
 import com.qqfarm.mobile.data.model.RanchFriendDetail
 import com.qqfarm.mobile.data.model.RanchFriendSummary
 import com.qqfarm.mobile.data.model.RanchQuote
@@ -125,7 +124,7 @@ fun FriendsScreen(
 
     var searchKeyword by remember { mutableStateOf("") }
     var onlyActionable by remember { mutableStateOf(false) }
-    var inspectedFriend by remember(isConnected) { mutableStateOf<FriendItem?>(null) }
+    var inspectedFriend by remember(accountId, isConnected) { mutableStateOf<FriendItem?>(null) }
 
     suspend fun loadTab(forceSync: Boolean = false) {
         if (!isConnected) return
@@ -330,7 +329,7 @@ fun FriendsScreen(
                                             modifier = Modifier.fillMaxWidth(),
                                             horizontalArrangement = Arrangement.spacedBy(8.dp),
                                         ) {
-                                            FriendActionChip("偷菜", friend.stealNum > 0, !busyOp, Modifier.weight(1f)) {
+                                            FriendActionChip("偷菜", friend.stealNum > 0, !busyOp && !refreshing && friend.stealNum > 0, Modifier.weight(1f)) {
                                                 busyOp = true
                                                 scope.launch {
                                                     runCatching { apiClient.operateFriend(accountId, friend.gid, "steal") }
@@ -339,7 +338,7 @@ fun FriendsScreen(
                                                     busyOp = false
                                                 }
                                             }
-                                            FriendActionChip("帮务农", friend.needsCareCount > 0, !busyOp, Modifier.weight(1f)) {
+                                            FriendActionChip("帮务农", friend.needsCareCount > 0, !busyOp && !refreshing && friend.needsCareCount > 0, Modifier.weight(1f)) {
                                                 busyOp = true
                                                 scope.launch {
                                                     runCatching { apiClient.operateFriend(accountId, friend.gid, "farming") }
@@ -357,7 +356,7 @@ fun FriendsScreen(
                                                     busyOp = false
                                                 }
                                             }
-                                            FriendActionChip("查看农田", false, true, Modifier.weight(1f)) {
+                                            FriendActionChip("查看农田", false, !busyOp, Modifier.weight(1f)) {
                                                 inspectedFriend = friend
                                             }
                                         }
@@ -497,6 +496,16 @@ fun FriendsScreen(
             isBlocked = blacklist.any { it.gid == friend.gid },
             apiClient = apiClient,
             onMessage = onMessage,
+            onLandsLoaded = { snapshot ->
+                friends = friends.map { current ->
+                    if (current.gid != friend.gid) current else current.copy(
+                        stealNum = snapshot.stealableCount,
+                        dryNum = snapshot.dryCount,
+                        weedNum = snapshot.weedCount,
+                        insectNum = snapshot.insectCount,
+                    )
+                }
+            },
             onBlacklistUpdated = { blacklist = it },
             onDismiss = { inspectedFriend = null },
         )
@@ -512,15 +521,16 @@ private fun FriendActionChip(
     onClick: () -> Unit,
 ) {
     val apple = LocalAppleColors.current
+    val accent = enabled && highlighted
     Surface(
         modifier = modifier
             .clip(RoundedCornerShape(10.dp))
             .clickable(enabled = enabled, onClick = onClick),
         shape = RoundedCornerShape(10.dp),
-        color = if (highlighted) MaterialTheme.colorScheme.primary.copy(alpha = 0.14f) else apple.elevated,
+        color = if (accent) MaterialTheme.colorScheme.primary.copy(alpha = 0.14f) else apple.elevated,
         border = BorderStroke(
             0.5.dp,
-            if (highlighted) MaterialTheme.colorScheme.primary else apple.separator,
+            if (accent) MaterialTheme.colorScheme.primary else apple.separator,
         ),
     ) {
         Box(
@@ -530,7 +540,7 @@ private fun FriendActionChip(
             Text(
                 text = label,
                 style = MaterialTheme.typography.labelMedium,
-                color = if (highlighted) MaterialTheme.colorScheme.primary else apple.primaryText,
+                color = if (accent) MaterialTheme.colorScheme.primary else if (enabled) apple.primaryText else apple.secondaryText,
                 maxLines = 1,
             )
         }
@@ -545,6 +555,7 @@ private fun FriendLandsSheet(
     isBlocked: Boolean,
     apiClient: FarmApiClient,
     onMessage: (String) -> Unit,
+    onLandsLoaded: (FriendLandsPayload) -> Unit,
     onBlacklistUpdated: (List<FriendBlacklistItem>) -> Unit,
     onDismiss: () -> Unit,
 ) {
@@ -552,8 +563,9 @@ private fun FriendLandsSheet(
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val scope = rememberCoroutineScope()
 
-    var payload by remember { mutableStateOf<LandsPayload?>(null) }
+    var payload by remember { mutableStateOf<FriendLandsPayload?>(null) }
     var loading by remember { mutableStateOf(true) }
+    var busy by remember { mutableStateOf(false) }
     var errorMsg by remember { mutableStateOf("") }
     var clockTickMs by remember { mutableLongStateOf(SystemClock.elapsedRealtime()) }
 
@@ -568,18 +580,35 @@ private fun FriendLandsSheet(
         loading = true
         errorMsg = ""
         try {
-            payload = apiClient.fetchFriendLands(accountId, friend.gid)
-        } catch (e: Exception) {
-            errorMsg = e.message ?: "无法进入该好友农场"
+            val snapshot = apiClient.fetchFriendLands(accountId, friend.gid)
+            payload = snapshot
+            onLandsLoaded(snapshot)
+        } catch (e: ApiException) {
+            errorMsg = e.message
         } finally {
             loading = false
         }
     }
 
-    LaunchedEffect(friend.gid) { loadLands() }
+    fun runAction(action: suspend () -> Unit) {
+        if (loading || busy) return
+        busy = true
+        scope.launch {
+            try {
+                action()
+            } catch (e: ApiException) {
+                onMessage(e.message)
+            } finally {
+                busy = false
+            }
+        }
+    }
+
+    LaunchedEffect(accountId, friend.gid) { loadLands() }
+    val actionsEnabled = !loading && !busy && errorMsg.isBlank()
 
     ModalBottomSheet(
-        onDismissRequest = onDismiss,
+        onDismissRequest = { if (!busy) onDismiss() },
         sheetState = sheetState,
         containerColor = apple.background,
     ) {
@@ -587,6 +616,7 @@ private fun FriendLandsSheet(
             modifier = Modifier
                 .fillMaxWidth()
                 .navigationBarsPadding()
+                .heightIn(max = 580.dp)
                 .padding(horizontal = 16.dp)
                 .padding(bottom = 20.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -609,7 +639,7 @@ private fun FriendLandsSheet(
                     Text(friend.name, style = MaterialTheme.typography.titleLarge, color = apple.primaryText)
                     Text("GID ${friend.gid} · Lv.${friend.level}", style = MaterialTheme.typography.bodySmall, color = apple.secondaryText)
                 }
-                IconButton(onClick = { scope.launch { loadLands() } }) {
+                IconButton(onClick = { scope.launch { loadLands() } }, enabled = !loading && !busy) {
                     Icon(Icons.Rounded.Refresh, contentDescription = "刷新")
                 }
             }
@@ -620,39 +650,36 @@ private fun FriendLandsSheet(
             ) {
                 Button(
                     onClick = {
-                        scope.launch {
-                            runCatching { apiClient.operateFriend(accountId, friend.gid, "steal") }
-                                .onSuccess { msg -> onMessage(msg); loadLands() }
-                                .onFailure { onMessage(it.message ?: "偷菜失败") }
+                        runAction {
+                            onMessage(apiClient.operateFriend(accountId, friend.gid, "steal"))
+                            loadLands()
                         }
                     },
+                    enabled = actionsEnabled && (payload?.stealableCount ?: 0) > 0,
                     shape = RoundedCornerShape(12.dp),
                     modifier = Modifier.weight(1f),
                 ) { Text("一键偷菜") }
 
                 OutlinedButton(
                     onClick = {
-                        scope.launch {
-                            runCatching { apiClient.operateFriend(accountId, friend.gid, "farming") }
-                                .onSuccess { msg -> onMessage(msg); loadLands() }
-                                .onFailure { onMessage(it.message ?: "帮忙失败") }
+                        runAction {
+                            onMessage(apiClient.operateFriend(accountId, friend.gid, "farming"))
+                            loadLands()
                         }
                     },
+                    enabled = actionsEnabled && payload?.needsCare == true,
                     shape = RoundedCornerShape(12.dp),
                     modifier = Modifier.weight(1f),
                 ) { Text("帮务农") }
 
                 OutlinedButton(
                     onClick = {
-                        scope.launch {
-                            runCatching { apiClient.toggleFriendBlacklist(accountId, friend.gid) }
-                                .onSuccess { next ->
-                                    onBlacklistUpdated(next)
-                                    onMessage(if (isBlocked) "已移出黑名单" else "已加入黑名单")
-                                }
-                                .onFailure { onMessage(it.message ?: "操作失败") }
+                        runAction {
+                            onBlacklistUpdated(apiClient.toggleFriendBlacklist(accountId, friend.gid))
+                            onMessage(if (isBlocked) "已移出黑名单" else "已加入黑名单")
                         }
                     },
+                    enabled = !loading && !busy,
                     shape = RoundedCornerShape(12.dp),
                     modifier = Modifier.weight(1f),
                 ) { Text(if (isBlocked) "解除屏蔽" else "屏蔽") }
@@ -676,8 +703,8 @@ private fun FriendLandsSheet(
                 val rows = lands.chunked(3)
                 LazyColumn(
                     modifier = Modifier
-                        .fillMaxWidth()
-                        .height(380.dp),
+                        .weight(1f, fill = false)
+                        .fillMaxWidth(),
                     verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
                     itemsIndexed(rows) { _, row ->
@@ -723,7 +750,7 @@ private fun RanchFriendsContent(
     var lockedReason by remember { mutableStateOf("") }
     var friends by remember { mutableStateOf<List<RanchFriendSummary>>(emptyList()) }
     var keyword by remember { mutableStateOf("") }
-    var selectedFriend by remember(isConnected) { mutableStateOf<RanchFriendSummary?>(null) }
+    var selectedFriend by remember(accountId, isConnected) { mutableStateOf<RanchFriendSummary?>(null) }
     var reportedEntry by remember(accountId) { mutableStateOf(false) }
 
     suspend fun loadFriendsList() {
@@ -922,38 +949,42 @@ private fun RanchFriendDetailSheet(
     suspend fun loadDetail() {
         loading = true
         errorMsg = ""
-        runCatching { apiClient.fetchRanchView(accountId, "friends", hostGid = friend.gid) }
-            .onSuccess { snap ->
-                detail = snap.friendRanch
-                if (snap.friendRanch == null) {
-                    errorMsg = "未返回好友牧场数据"
-                }
-            }
-            .onFailure { errorMsg = it.message ?: "进入好友牧场失败" }
-        loading = false
-    }
-
-    fun requestQuote(action: String, input: JSONObject) {
-        if (busy) return
-        busy = true
-        scope.launch {
-            runCatching { apiClient.quoteRanchAction(accountId, action, input) }
-                .onSuccess { quote ->
-                    if (quote.skipped) {
-                        onMessage(quote.message.ifBlank { "当前没有可操作项目" })
-                    } else {
-                        pendingOp = PendingRanchFriendOp(action, input, quote)
-                    }
-                }
-                .onFailure { onMessage(it.message ?: "读取操作条件失败") }
-            busy = false
+        try {
+            detail = apiClient.fetchRanchView(accountId, "friends", hostGid = friend.gid).friendRanch
+            if (detail == null) errorMsg = "未返回好友牧场数据"
+        } catch (e: ApiException) {
+            errorMsg = e.message
+        } finally {
+            loading = false
         }
     }
 
-    LaunchedEffect(friend.gid) {
+    fun requestQuote(action: String, input: JSONObject) {
+        if (busy || loading || errorMsg.isNotBlank()) return
+        busy = true
+        scope.launch {
+            try {
+                val quote = apiClient.quoteRanchAction(accountId, action, input)
+                if (quote.skipped) {
+                    onMessage(quote.message.ifBlank { "当前没有可操作项目" })
+                    loadDetail()
+                } else {
+                    pendingOp = PendingRanchFriendOp(action, input, quote)
+                }
+            } catch (e: ApiException) {
+                onMessage(e.message)
+            } finally {
+                busy = false
+            }
+        }
+    }
+
+    LaunchedEffect(accountId, friend.gid) {
         loadDetail()
     }
 
+    val ranch = detail
+    val actionsEnabled = !busy && !loading && errorMsg.isBlank()
     ModalBottomSheet(
         onDismissRequest = { if (!busy) onDismiss() },
         sheetState = sheetState,
@@ -964,7 +995,6 @@ private fun RanchFriendDetailSheet(
                 .fillMaxWidth()
                 .navigationBarsPadding()
                 .heightIn(max = 580.dp)
-                .verticalScroll(rememberScrollState())
                 .padding(horizontal = 16.dp)
                 .padding(bottom = 24.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -985,7 +1015,7 @@ private fun RanchFriendDetailSheet(
                 )
                 Column(modifier = Modifier.weight(1f)) {
                     Text(friend.name, style = MaterialTheme.typography.titleLarge, color = apple.primaryText)
-                    detail?.let { d ->
+                    ranch?.let { d ->
                         FlowRow(
                             horizontalArrangement = Arrangement.spacedBy(6.dp),
                             verticalArrangement = Arrangement.spacedBy(4.dp),
@@ -1001,33 +1031,19 @@ private fun RanchFriendDetailSheet(
                 }
             }
 
-            if (loading && detail == null) {
+            if (loading && ranch == null) {
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(180.dp),
                     contentAlignment = Alignment.Center,
                 ) { CircularProgressIndicator() }
-            } else if (errorMsg.isNotBlank() && detail == null) {
+            } else if (errorMsg.isNotBlank()) {
                 AppleGroupedCard(contentPadding = PaddingValues(16.dp)) {
                     Text(errorMsg, style = MaterialTheme.typography.bodyMedium, color = apple.red)
                 }
-            } else if (detail != null) {
-                val d = detail!!
-                if (d.notice.isNotBlank()) {
-                    Surface(
-                        shape = RoundedCornerShape(12.dp),
-                        color = apple.orange.copy(alpha = 0.14f),
-                    ) {
-                        Text(
-                            text = d.notice,
-                            style = MaterialTheme.typography.bodySmall,
-                            color = apple.orange,
-                            modifier = Modifier.padding(12.dp),
-                        )
-                    }
-                }
-
+            } else if (ranch != null) {
+                val d = ranch
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -1036,7 +1052,7 @@ private fun RanchFriendDetailSheet(
                         onClick = {
                             requestQuote("cleanFriend", JSONObject().put("hostGid", friend.gid))
                         },
-                        enabled = !busy && d.cleanableHazards > 0,
+                        enabled = actionsEnabled && d.cleanableHazards > 0,
                         shape = RoundedCornerShape(12.dp),
                         modifier = Modifier.weight(1f),
                     ) {
@@ -1048,7 +1064,7 @@ private fun RanchFriendDetailSheet(
                         onClick = {
                             requestQuote("steal", JSONObject().put("hostGid", friend.gid))
                         },
-                        enabled = !busy && d.canSteal,
+                        enabled = actionsEnabled && d.canSteal,
                         shape = RoundedCornerShape(12.dp),
                         modifier = Modifier.weight(1f),
                     ) {
@@ -1058,112 +1074,124 @@ private fun RanchFriendDetailSheet(
                     }
                 }
 
-                d.ranches.forEach { pen ->
-                    AppleGroupedCard(contentPadding = PaddingValues(14.dp)) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            Column {
-                                Text(pen.name, style = MaterialTheme.typography.titleSmall, color = apple.primaryText)
-                                Text(
-                                    text = "蚊子 ${pen.mosquitoes}/${pen.mosquitoLimit}",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = apple.secondaryText,
-                                )
-                            }
-                            OutlinedButton(
-                                onClick = {
-                                    requestQuote(
-                                        "putMosquito",
-                                        JSONObject().put("hostGid", friend.gid).put("ranchId", pen.id),
-                                    )
-                                },
-                                enabled = !busy && pen.mosquitoRoom > 0 && d.mosquitoRemaining > 0,
-                                shape = RoundedCornerShape(10.dp),
-                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
-                            ) {
-                                Icon(Icons.Rounded.BugReport, contentDescription = null, modifier = Modifier.size(15.dp))
-                                Spacer(modifier = Modifier.width(4.dp))
-                                Text("放蚊子", style = MaterialTheme.typography.labelMedium)
+                LazyColumn(
+                    modifier = Modifier.weight(1f, fill = false).fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    if (d.notice.isNotBlank()) {
+                        item {
+                            Surface(shape = RoundedCornerShape(12.dp), color = apple.orange.copy(alpha = 0.14f)) {
+                                Text(d.notice, Modifier.padding(12.dp), style = MaterialTheme.typography.bodySmall, color = apple.orange)
                             }
                         }
-
-                        if (pen.animals.isNotEmpty()) {
-                            Spacer(modifier = Modifier.height(10.dp))
-                            pen.animals.forEachIndexed { idx, animal ->
-                                Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(vertical = 6.dp),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(10.dp),
-                                ) {
-                                    RemoteAssetImage(
-                                        url = animal.image,
-                                        contentDescription = animal.name,
-                                        fallbackIcon = Icons.Rounded.Pets,
-                                        modifier = Modifier.size(34.dp),
+                    }
+                    items(d.ranches, key = { it.id }) { pen ->
+                        AppleGroupedCard(contentPadding = PaddingValues(14.dp)) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Column {
+                                    Text(pen.name, style = MaterialTheme.typography.titleSmall, color = apple.primaryText)
+                                    Text(
+                                        text = "蚊子 ${pen.mosquitoes}/${pen.mosquitoLimit}",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = apple.secondaryText,
                                     )
-                                    Column(modifier = Modifier.weight(1f)) {
-                                        Text(animal.name, style = MaterialTheme.typography.bodyMedium, color = apple.primaryText)
+                                }
+                                OutlinedButton(
+                                    onClick = {
+                                        requestQuote(
+                                            "putMosquito",
+                                            JSONObject().put("hostGid", friend.gid).put("ranchId", pen.id),
+                                        )
+                                    },
+                                    enabled = actionsEnabled && pen.mosquitoRoom > 0 && d.mosquitoRemaining > 0,
+                                    shape = RoundedCornerShape(10.dp),
+                                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
+                                ) {
+                                    Icon(Icons.Rounded.BugReport, contentDescription = null, modifier = Modifier.size(15.dp))
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text("放蚊子", style = MaterialTheme.typography.labelMedium)
+                                }
+                            }
+
+                            if (pen.animals.isNotEmpty()) {
+                                Spacer(modifier = Modifier.height(10.dp))
+                                pen.animals.forEachIndexed { idx, animal ->
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(vertical = 6.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                                    ) {
+                                        RemoteAssetImage(
+                                            url = animal.image,
+                                            contentDescription = animal.name,
+                                            fallbackIcon = Icons.Rounded.Pets,
+                                            modifier = Modifier.size(34.dp),
+                                        )
+                                        Column(modifier = Modifier.weight(1f)) {
+                                            Text(animal.name, style = MaterialTheme.typography.bodyMedium, color = apple.primaryText)
+                                            Text(
+                                                text = listOf(animal.stageName, animal.weightKg).filter { it.isNotBlank() }.joinToString(" · "),
+                                                style = MaterialTheme.typography.labelSmall,
+                                                color = apple.secondaryText,
+                                            )
+                                        }
+                                        if (animal.canStroke) {
+                                            Button(
+                                                onClick = {
+                                                    requestQuote(
+                                                        "stroke",
+                                                        JSONObject()
+                                                            .put("hostGid", friend.gid)
+                                                            .put("ranchId", pen.id)
+                                                            .put("animalId", animal.id),
+                                                    )
+                                                },
+                                                enabled = actionsEnabled,
+                                                shape = RoundedCornerShape(10.dp),
+                                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                                                modifier = Modifier.height(30.dp),
+                                            ) { Text("抚摸", style = MaterialTheme.typography.labelSmall) }
+                                        } else if (animal.stroked) {
+                                            AppleStatusPill("已抚摸", apple.green, showDot = false)
+                                        }
+                                    }
+                                    if (idx < pen.animals.lastIndex) AppleHairlineDivider(startIndent = 44.dp)
+                                }
+                            }
+
+                            if (pen.shelves.isNotEmpty()) {
+                                Spacer(modifier = Modifier.height(10.dp))
+                                AppleHairlineDivider(startIndent = 0.dp)
+                                Spacer(modifier = Modifier.height(8.dp))
+                                Text("货架产物", style = MaterialTheme.typography.labelMedium, color = apple.secondaryText)
+                                Spacer(modifier = Modifier.height(6.dp))
+                                pen.shelves.forEach { shelf ->
+                                    val prodSummary = shelf.products.joinToString(" · ") { "${it.name}×${formatCompactCount(it.count)}" }
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(vertical = 4.dp),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically,
+                                    ) {
                                         Text(
-                                            text = listOf(animal.stageName, animal.weightKg).filter { it.isNotBlank() }.joinToString(" · "),
-                                            style = MaterialTheme.typography.labelSmall,
-                                            color = apple.secondaryText,
+                                            text = "货架 #${shelf.slot}: ${prodSummary.ifBlank { "空" }}",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = apple.primaryText,
+                                            modifier = Modifier.weight(1f),
+                                        )
+                                        AppleStatusPill(
+                                            text = if (shelf.canSteal) "可偷取" else "不可偷",
+                                            color = if (shelf.canSteal) apple.orange else apple.secondaryText,
+                                            showDot = false,
                                         )
                                     }
-                                    if (animal.canStroke) {
-                                        Button(
-                                            onClick = {
-                                                requestQuote(
-                                                    "stroke",
-                                                    JSONObject()
-                                                        .put("hostGid", friend.gid)
-                                                        .put("ranchId", pen.id)
-                                                        .put("animalId", animal.id),
-                                                )
-                                            },
-                                            enabled = !busy,
-                                            shape = RoundedCornerShape(10.dp),
-                                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
-                                            modifier = Modifier.height(30.dp),
-                                        ) { Text("抚摸", style = MaterialTheme.typography.labelSmall) }
-                                    } else if (animal.stroked) {
-                                        AppleStatusPill("已抚摸", apple.green, showDot = false)
-                                    }
-                                }
-                                if (idx < pen.animals.lastIndex) AppleHairlineDivider(startIndent = 44.dp)
-                            }
-                        }
-
-                        if (pen.shelves.isNotEmpty()) {
-                            Spacer(modifier = Modifier.height(10.dp))
-                            AppleHairlineDivider(startIndent = 0.dp)
-                            Spacer(modifier = Modifier.height(8.dp))
-                            Text("货架产物", style = MaterialTheme.typography.labelMedium, color = apple.secondaryText)
-                            Spacer(modifier = Modifier.height(6.dp))
-                            pen.shelves.forEach { shelf ->
-                                val prodSummary = shelf.products.joinToString(" · ") { "${it.name}×${formatCompactCount(it.count)}" }
-                                Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(vertical = 4.dp),
-                                    horizontalArrangement = Arrangement.SpaceBetween,
-                                    verticalAlignment = Alignment.CenterVertically,
-                                ) {
-                                    Text(
-                                        text = "货架 #${shelf.slot}: ${prodSummary.ifBlank { "空" }}",
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = apple.primaryText,
-                                        modifier = Modifier.weight(1f),
-                                    )
-                                    AppleStatusPill(
-                                        text = if (shelf.canSteal) "可偷取" else "不可偷",
-                                        color = if (shelf.canSteal) apple.orange else apple.secondaryText,
-                                        showDot = false,
-                                    )
                                 }
                             }
                         }

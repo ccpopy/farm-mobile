@@ -28,7 +28,6 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.BugReport
 import androidx.compose.material.icons.rounded.CardGiftcard
 import androidx.compose.material.icons.rounded.CheckCircle
@@ -38,9 +37,7 @@ import androidx.compose.material.icons.rounded.Inventory2
 import androidx.compose.material.icons.rounded.Lock
 import androidx.compose.material.icons.rounded.LockOpen
 import androidx.compose.material.icons.rounded.Pets
-import androidx.compose.material.icons.rounded.Remove
 import androidx.compose.material.icons.rounded.Sell
-import androidx.compose.material.icons.rounded.Shield
 import androidx.compose.material.icons.rounded.Star
 import androidx.compose.material.icons.rounded.WaterDrop
 import androidx.compose.material3.AlertDialog
@@ -86,8 +83,8 @@ import com.qqfarm.mobile.data.network.FarmApiClient
 import com.qqfarm.mobile.data.network.ApiException
 import com.qqfarm.mobile.ui.components.AppleEmptyState
 import com.qqfarm.mobile.ui.components.AppleGroupedCard
+import com.qqfarm.mobile.ui.components.AppleQuantityStepper
 import com.qqfarm.mobile.ui.components.AppleHairlineDivider
-import com.qqfarm.mobile.ui.components.AppleIconBadge
 import com.qqfarm.mobile.ui.components.AppleSectionHeader
 import com.qqfarm.mobile.ui.components.AppleSegmentedControl
 import com.qqfarm.mobile.ui.components.AppleStatusPill
@@ -135,7 +132,8 @@ fun FarmRanchScreen(
     var petSnapshot by remember(accountId, isConnected) { mutableStateOf<PetSnapshot?>(null) }
 
     var selectedLandId by remember(accountId, isConnected) { mutableStateOf<Int?>(null) }
-    var selectedBagItem by remember(accountId, isConnected) { mutableStateOf<BagItem?>(null) }
+    var selectedBagKey by remember(accountId, isConnected) { mutableStateOf<String?>(null) }
+    var bagActionError by remember(selectedBagKey) { mutableStateOf<String?>(null) }
     var showUpgradeConfirm by remember(accountId, isConnected) { mutableStateOf(false) }
 
     var clockTickMs by remember { mutableLongStateOf(SystemClock.elapsedRealtime()) }
@@ -171,6 +169,34 @@ fun FarmRanchScreen(
                 loadCurrentTab()
             } catch (e: ApiException) {
                 onMessage(e.message)
+            } finally {
+                actionBusy = false
+            }
+        }
+    }
+
+    fun operateBag(onUpdated: (BagPayload) -> Unit = {}, action: suspend () -> Unit) {
+        if (actionBusy || refreshing) return
+        actionBusy = true
+        bagActionError = null
+        scope.launch {
+            try {
+                try {
+                    action()
+                } catch (e: ApiException) {
+                    bagActionError = e.message
+                }
+                val updated = apiClient.fetchBag(accountId)
+                bagPayload = updated
+                if (bagActionError == null) onUpdated(updated)
+                if (selectedBagKey != null && updated.items.none { it.key == selectedBagKey }) {
+                    selectedBagKey = null
+                    onMessage(bagActionError ?: "该物品已不在背包")
+                }
+            } catch (e: ApiException) {
+                bagPayload = null
+                selectedBagKey = null
+                onMessage(bagActionError ?: e.message)
             } finally {
                 actionBusy = false
             }
@@ -249,12 +275,12 @@ fun FarmRanchScreen(
 
                         1 -> BagContent(
                             payload = bagPayload,
-                            onItemClick = { selectedBagItem = it },
+                            onItemClick = { if (!actionBusy && !refreshing) selectedBagKey = it.key },
                         )
 
                         2 -> PetsContent(
                             snapshot = petSnapshot,
-                            busy = actionBusy,
+                            busy = actionBusy || refreshing,
                             onClaimGifts = {
                                 if (actionBusy) return@PetsContent
                                 actionBusy = true
@@ -268,14 +294,14 @@ fun FarmRanchScreen(
                                     actionBusy = false
                                 }
                             },
-                            onUseFood = { foodId ->
-                                if (actionBusy) return@PetsContent
+                            onUseFood = { foodId, count ->
+                                if (actionBusy || refreshing) return@PetsContent
                                 actionBusy = true
                                 scope.launch {
-                                    runCatching { apiClient.useDogFood(accountId, foodId, 1) }
+                                    runCatching { apiClient.useDogFood(accountId, foodId, count) }
                                         .onSuccess { updated ->
                                             petSnapshot = updated
-                                            onMessage("喂食狗粮成功")
+                                            onMessage("已喂食狗粮 ×$count")
                                         }
                                         .onFailure { onMessage(it.message ?: "喂食失败") }
                                     actionBusy = false
@@ -383,51 +409,41 @@ fun FarmRanchScreen(
         )
     }
 
-    selectedBagItem?.let { item ->
-        BagItemActionSheet(
-            item = item,
-            busy = actionBusy,
-            onUse = { count ->
-                selectedBagItem = null
-                actionBusy = true
-                scope.launch {
-                    runCatching { apiClient.useBagItem(accountId, item.id, count, item.uid) }
-                        .onSuccess { msg ->
-                            onMessage(msg)
-                            loadCurrentTab()
+    bagPayload?.let { bag ->
+        bag.items.firstOrNull { it.key == selectedBagKey }?.let { item ->
+            BagItemActionSheet(
+                item = item,
+                maxUseCount = bag.maxUseCount(item),
+                error = bagActionError,
+                busy = actionBusy || refreshing,
+                onUse = { count ->
+                    operateBag {
+                        val message = apiClient.useBagItem(accountId, item.id, count, item.uid)
+                        selectedBagKey = null
+                        onMessage(message)
+                    }
+                },
+                onSellAll = {
+                    operateBag {
+                        apiClient.sellBagItem(accountId, item.id, item.count, item.uid)
+                        selectedBagKey = null
+                        onMessage("已出售 ${item.name} ×${item.count}")
+                    }
+                },
+                onToggleLock = {
+                    val locked = !item.locked
+                    operateBag(onUpdated = { updated ->
+                        val current = updated.items.firstOrNull { it.key == item.key }
+                        if (current != null && current.locked != locked) {
+                            bagActionError = "锁定状态未变化"
                         }
-                        .onFailure { onMessage(it.message ?: "使用失败") }
-                    actionBusy = false
-                }
-            },
-            onSellAll = {
-                selectedBagItem = null
-                actionBusy = true
-                scope.launch {
-                    runCatching { apiClient.sellBagItem(accountId, item.id, item.count, item.uid) }
-                        .onSuccess {
-                            onMessage("已出售 ${item.name} ×${item.count}")
-                            loadCurrentTab()
-                        }
-                        .onFailure { onMessage(it.message ?: "出售失败") }
-                    actionBusy = false
-                }
-            },
-            onToggleLock = {
-                selectedBagItem = null
-                actionBusy = true
-                scope.launch {
-                    runCatching { apiClient.lockBagItems(accountId, listOf(item.uid), !item.locked) }
-                        .onSuccess {
-                            onMessage(if (item.locked) "已解锁 ${item.name}" else "已锁定 ${item.name}")
-                            loadCurrentTab()
-                        }
-                        .onFailure { onMessage(it.message ?: "锁定切换失败") }
-                    actionBusy = false
-                }
-            },
-            onDismiss = { selectedBagItem = null },
-        )
+                    }) {
+                        apiClient.lockBagItems(accountId, listOf(item.uid), locked)
+                    }
+                },
+                onDismiss = { selectedBagKey = null },
+            )
+        }
     }
 }
 
@@ -448,6 +464,9 @@ private fun FarmContent(
     val lands = payload?.lands.orEmpty()
     val summary = payload?.summary
     val socialNames = payload?.cleanableSocialEventNames.orEmpty()
+    val needsCare = lands.any {
+        it.unlocked && !it.occupiedByMaster && (it.needWater || it.needWeed || it.needBug || it.needInteractionCleanup)
+    } || socialNames.isNotEmpty()
     val hasCleanupTarget = lands.any {
         !it.occupiedByMaster && (it.status == "growing" || it.status == "harvestable" || it.status == "dead")
     }
@@ -513,13 +532,13 @@ private fun FarmContent(
                     ActionPillButton("一键全自动", true, !busy) { onOperate("all") }
                 }
                 item {
-                    ActionPillButton("收获", false, !busy) { onOperate("harvest") }
+                    ActionPillButton("收获", false, !busy && (summary?.harvestable ?: 0) > 0) { onOperate("harvest") }
                 }
                 item {
-                    ActionPillButton("除草·除虫·浇水", false, !busy) { onOperate("clear") }
+                    ActionPillButton("除草·除虫·浇水", false, !busy && needsCare) { onOperate("clear") }
                 }
                 item {
-                    ActionPillButton("种植", false, !busy) { onOperate("plant") }
+                    ActionPillButton("种植", false, !busy && summary != null && (summary.empty > 0 || summary.dead > 0)) { onOperate("plant") }
                 }
                 item {
                     ActionPillButton("施普通肥", false, !busy) { onFertilizeAll("normal") }
@@ -598,6 +617,7 @@ fun AppleLandTile(
         land.occupiedByMaster -> "#${land.masterLandId}合种" to apple.secondaryText
         land.status == "harvestable" -> "可收获" to apple.green
         land.status == "stealable" -> "可偷取" to apple.orange
+        land.status == "unstealable" -> "不可偷取" to apple.secondaryText
         land.status == "harvested" -> "已成熟" to apple.secondaryText
         land.status == "dead" -> "已枯萎" to apple.red
         remainSec > 0L -> formatDurationSec(remainSec) to apple.blue
@@ -1266,6 +1286,8 @@ private fun BagContent(
 @Composable
 private fun BagItemActionSheet(
     item: BagItem,
+    maxUseCount: Int,
+    error: String?,
     busy: Boolean,
     onUse: (Int) -> Unit,
     onSellAll: () -> Unit,
@@ -1274,12 +1296,11 @@ private fun BagItemActionSheet(
 ) {
     val apple = LocalAppleColors.current
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-    var useCount by remember(item.key) { mutableIntStateOf(1) }
-    val maxUse = item.count.coerceIn(1L, 999L).toInt()
-    val canUse = item.itemType in listOf(11, 14, 33) || item.interactionType == "fertilizerbucket"
+    var requestedCount by remember(item.key) { mutableIntStateOf(1) }
+    val useCount = requestedCount.coerceAtMost(maxUseCount)
 
     ModalBottomSheet(
-        onDismissRequest = onDismiss,
+        onDismissRequest = { if (!busy) onDismiss() },
         sheetState = sheetState,
         containerColor = apple.background,
     ) {
@@ -1307,9 +1328,10 @@ private fun BagItemActionSheet(
                 )
                 Column(modifier = Modifier.weight(1f)) {
                     Text(item.name, style = MaterialTheme.typography.titleLarge, color = apple.primaryText)
-                    Text("库存 ×${formatNumber(item.count)}", style = MaterialTheme.typography.bodySmall, color = apple.secondaryText)
+                    val status = if (item.locked) " · 已锁定" else ""
+                    Text("库存 ×${formatNumber(item.count)}$status", style = MaterialTheme.typography.bodySmall, color = apple.secondaryText)
                 }
-                if (item.uid > 0L) {
+                if (item.canChangeLock) {
                     IconButton(onClick = onToggleLock, enabled = !busy) {
                         Icon(
                             imageVector = if (item.locked) Icons.Rounded.LockOpen else Icons.Rounded.Lock,
@@ -1326,7 +1348,11 @@ private fun BagItemActionSheet(
                 }
             }
 
-            if (canUse) {
+            if (error != null) {
+                Text(error, style = MaterialTheme.typography.bodySmall, color = apple.red)
+            }
+
+            if (maxUseCount > 0) {
                 AppleGroupedCard(contentPadding = PaddingValues(14.dp)) {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
@@ -1334,21 +1360,12 @@ private fun BagItemActionSheet(
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         Text("使用数量", style = MaterialTheme.typography.bodyLarge, color = apple.primaryText)
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            IconButton(
-                                onClick = { if (useCount > 1) useCount-- },
-                                enabled = useCount > 1,
-                            ) { Icon(Icons.Rounded.Remove, contentDescription = "减少") }
-                            Text(
-                                text = useCount.toString(),
-                                style = MaterialTheme.typography.titleMedium.copy(fontFeatureSettings = "tnum"),
-                                color = apple.primaryText,
-                            )
-                            IconButton(
-                                onClick = { if (useCount < maxUse) useCount++ },
-                                enabled = useCount < maxUse,
-                            ) { Icon(Icons.Rounded.Add, contentDescription = "增加") }
-                        }
+                        AppleQuantityStepper(
+                            value = useCount,
+                            max = maxUseCount,
+                            onChange = { requestedCount = it },
+                            enabled = !busy,
+                        )
                     }
                     Spacer(modifier = Modifier.height(8.dp))
                     Button(
@@ -1360,6 +1377,8 @@ private fun BagItemActionSheet(
                         Text("使用 ×$useCount")
                     }
                 }
+            } else if (item.isFertilizer && !item.locked && item.count > 0L) {
+                Text("化肥容器剩余空间不足", style = MaterialTheme.typography.bodySmall, color = apple.secondaryText)
             }
 
             if (item.sellable && !item.locked) {
@@ -1381,12 +1400,13 @@ private fun BagItemActionSheet(
 
 // ---- Pets View ----
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun PetsContent(
     snapshot: PetSnapshot?,
     busy: Boolean,
     onClaimGifts: () -> Unit,
-    onUseFood: (Int) -> Unit,
+    onUseFood: (Int, Int) -> Unit,
     onDeployDog: (Int) -> Unit,
     onWithdrawDog: () -> Unit,
 ) {
@@ -1405,6 +1425,8 @@ private fun PetsContent(
     }
 
     val activeDog = snapshot.dogs.firstOrNull { it.active }
+    val activeTint = petRarityColor(activeDog?.rarity ?: 0)
+    var selectedFoodId by remember { mutableStateOf<Int?>(null) }
     val protectFraction = if (snapshot.maxProtectDurationSec > 0L) {
         (snapshot.protectDurationSec.toFloat() / snapshot.maxProtectDurationSec.toFloat()).coerceIn(0f, 1f)
     } else 0f
@@ -1420,13 +1442,31 @@ private fun PetsContent(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
-                    AppleIconBadge(icon = Icons.Rounded.Shield, tint = apple.blue, size = 44.dp)
+                    RemoteAssetImage(
+                        url = activeDog?.image.orEmpty(),
+                        contentDescription = null,
+                        fallbackIcon = Icons.Rounded.Pets,
+                        fallbackTint = activeTint,
+                        modifier = Modifier
+                            .size(52.dp)
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(activeTint.copy(alpha = 0.14f))
+                            .padding(4.dp),
+                    )
                     Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = activeDog?.name ?: "未上场宠物",
-                            style = MaterialTheme.typography.titleMedium,
-                            color = apple.primaryText,
-                        )
+                        FlowRow(
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            verticalArrangement = Arrangement.spacedBy(4.dp),
+                        ) {
+                            Text(
+                                text = activeDog?.name ?: "未上场宠物",
+                                style = MaterialTheme.typography.titleMedium,
+                                color = apple.primaryText,
+                            )
+                            if (activeDog != null && activeDog.rarityLabel.isNotBlank()) {
+                                AppleStatusPill(activeDog.rarityLabel, activeTint, showDot = false)
+                            }
+                        }
                         Text(
                             text = if (snapshot.protectDurationSec > 0L) {
                                 "护主剩余 ${formatDurationSec(snapshot.protectDurationSec)}"
@@ -1494,8 +1534,8 @@ private fun PetsContent(
                                 )
                                 Spacer(modifier = Modifier.height(6.dp))
                                 OutlinedButton(
-                                    onClick = { onUseFood(food.id) },
-                                    enabled = !busy && food.count > 0L,
+                                    onClick = { selectedFoodId = food.id },
+                                    enabled = !busy && snapshot.maxFeedCount(food) > 0,
                                     shape = RoundedCornerShape(10.dp),
                                     contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp),
                                     modifier = Modifier.fillMaxWidth().height(30.dp),
@@ -1509,10 +1549,11 @@ private fun PetsContent(
             }
         }
 
-        item { AppleSectionHeader(title = "全部宠物") }
+        item { AppleSectionHeader(title = "护主犬") }
         item {
             AppleGroupedCard {
                 snapshot.dogs.forEachIndexed { idx, dog ->
+                    val rarityColor = petRarityColor(dog.rarity)
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -1523,21 +1564,22 @@ private fun PetsContent(
                             url = dog.image,
                             contentDescription = dog.name,
                             fallbackIcon = Icons.Rounded.Pets,
+                            fallbackTint = rarityColor,
                             modifier = Modifier
                                 .size(46.dp)
                                 .clip(RoundedCornerShape(12.dp))
-                                .background(apple.elevated)
+                                .background(rarityColor.copy(alpha = 0.14f))
                                 .padding(4.dp),
                         )
                         Spacer(modifier = Modifier.width(12.dp))
                         Column(modifier = Modifier.weight(1f)) {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
+                            FlowRow(
                                 horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                verticalArrangement = Arrangement.spacedBy(4.dp),
                             ) {
                                 Text(dog.name, style = MaterialTheme.typography.titleSmall, color = apple.primaryText)
                                 if (dog.rarityLabel.isNotBlank()) {
-                                    AppleStatusPill(dog.rarityLabel, apple.indigo, showDot = false)
+                                    AppleStatusPill(dog.rarityLabel, rarityColor, showDot = false)
                                 }
                             }
                             Spacer(modifier = Modifier.height(2.dp))
@@ -1574,6 +1616,43 @@ private fun PetsContent(
                 }
             }
         }
+    }
+
+    snapshot.foods.firstOrNull { it.id == selectedFoodId }?.let { food ->
+        val limit = snapshot.maxFeedCount(food)
+        var requestedCount by remember(food.id) { mutableIntStateOf(1) }
+        val count = requestedCount.coerceAtMost(limit)
+        AlertDialog(
+            onDismissRequest = { selectedFoodId = null },
+            title = { Text("使用 ${food.name}") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(if (limit > 0) "当前最多可用 $limit 份" else "剩余护主时长已无法补充这款狗粮")
+                    AppleQuantityStepper(value = count, max = limit, onChange = { requestedCount = it }, enabled = !busy)
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        selectedFoodId = null
+                        onUseFood(food.id, count)
+                    },
+                    enabled = !busy && count > 0,
+                ) { Text("确认喂食") }
+            },
+            dismissButton = { TextButton(onClick = { selectedFoodId = null }) { Text("取消") } },
+        )
+    }
+}
+
+@Composable
+private fun petRarityColor(rarity: Int): Color {
+    val apple = LocalAppleColors.current
+    return when (rarity) {
+        2 -> apple.green
+        3 -> apple.blue
+        4 -> apple.orange
+        else -> apple.secondaryText
     }
 }
 

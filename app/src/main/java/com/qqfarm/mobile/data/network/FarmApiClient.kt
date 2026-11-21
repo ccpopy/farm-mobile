@@ -7,9 +7,14 @@ import com.qqfarm.mobile.data.model.ActivityDirectoryResponse
 import com.qqfarm.mobile.data.model.AutumnWishState
 import com.qqfarm.mobile.data.model.BagPayload
 import com.qqfarm.mobile.data.model.CharityState
+import com.qqfarm.mobile.data.model.CollectionOperateResult
+import com.qqfarm.mobile.data.model.CollectionSnapshot
 import com.qqfarm.mobile.data.model.DailyGiftsSummary
 import com.qqfarm.mobile.data.model.FriendBlacklistItem
+import com.qqfarm.mobile.data.model.FriendLandsPayload
 import com.qqfarm.mobile.data.model.FriendsPayload
+import com.qqfarm.mobile.data.model.IllustratedClaimResult
+import com.qqfarm.mobile.data.model.IllustratedSnapshot
 import com.qqfarm.mobile.data.model.InteractRecord
 import com.qqfarm.mobile.data.model.LandsPayload
 import com.qqfarm.mobile.data.model.LoginConfigModel
@@ -19,6 +24,7 @@ import com.qqfarm.mobile.data.model.MallGoods
 import com.qqfarm.mobile.data.model.MallPurchaseResult
 import com.qqfarm.mobile.data.model.MilkTeaState
 import com.qqfarm.mobile.data.model.MugeState
+import com.qqfarm.mobile.data.model.MutationCatalogSnapshot
 import com.qqfarm.mobile.data.model.MysteryPurchaseResult
 import com.qqfarm.mobile.data.model.MysteryShopState
 import com.qqfarm.mobile.data.model.PetSnapshot
@@ -451,11 +457,6 @@ class FarmApiClient {
         executeJson("DELETE", "/api/logs", accountIdOverride = accountId)
     }
 
-    suspend fun buyFertilizer(accountId: String, type: String, count: Int) {
-        val body = JSONObject().put("type", type).put("count", count)
-        executeJson("POST", "/api/fertilizer/buy", body = body, accountIdOverride = accountId)
-    }
-
     // ---- Farm, Bag, Ranch, Pets ----
 
     suspend fun fetchLands(accountId: String): LandsPayload {
@@ -581,9 +582,9 @@ class FarmApiClient {
         return JsonParsers.parseFriendsPayload(json)
     }
 
-    suspend fun fetchFriendLands(accountId: String, friendGid: Long): LandsPayload {
+    suspend fun fetchFriendLands(accountId: String, friendGid: Long): FriendLandsPayload {
         val json = executeJson("GET", "/api/friend/$friendGid/lands", accountIdOverride = accountId)
-        return JsonParsers.parseLandsPayload(json.optJSONObject("data") ?: JSONObject())
+        return JsonParsers.parseFriendLandsPayload(json.optJSONObject("data") ?: JSONObject())
     }
 
     suspend fun operateFriend(accountId: String, friendGid: Long, opType: String): String {
@@ -751,11 +752,12 @@ class FarmApiClient {
         accountId: String,
         slotType: Int,
         propsShop: Boolean = false,
+        subSlotType: Int = 1,
     ): MallCatalog {
         val path = if (propsShop) {
             "/api/props-shop"
         } else {
-            "/api/game-mall?slotType=$slotType&subSlotType=1"
+            "/api/game-mall?slotType=$slotType&subSlotType=$subSlotType"
         }
         val json = executeJson("GET", path, accountIdOverride = accountId)
         val parsed = FeatureJsonParsers.parseMallCatalog(json.optJSONObject("data") ?: JSONObject())
@@ -1096,5 +1098,51 @@ class FarmApiClient {
         )
         val rewards = FeatureJsonParsers.parseCommerceItems(json.optJSONObject("data")?.optJSONArray("rewards"))
         return rewards.joinToString("、") { "${it.name} ×${it.count}" }.ifBlank { "操作完成" }
+    }
+
+    // ---- Illustrated Book & Collections ----
+
+    suspend fun fetchIllustrated(accountId: String): IllustratedSnapshot {
+        val json = executeJson("GET", "/api/illustrated", accountIdOverride = accountId, client = longPollClient)
+        val data = json.optJSONObject("data") ?: throw ApiException("服务端未返回图鉴数据")
+        return FeatureJsonParsers.parseIllustratedSnapshot(data)
+    }
+
+    suspend fun claimIllustrated(accountId: String, type: Int): IllustratedClaimResult {
+        val body = JSONObject().put("type", type)
+        val json = executeJson("POST", "/api/illustrated/claim", body = body, accountIdOverride = accountId, client = longPollClient)
+        return FeatureJsonParsers.parseIllustratedClaimResult(json.optJSONObject("data") ?: JSONObject())
+    }
+
+    suspend fun purchaseIllustratedSeed(accountId: String, goodsId: Int, seedId: Int, count: Int): Long {
+        val body = JSONObject().put("goodsId", goodsId).put("count", count)
+        val json = executeJson("POST", "/api/seeds/purchase", body = body, accountIdOverride = accountId)
+        return FeatureJsonParsers.parseIllustratedSeedReceipt(json.optJSONObject("data"), seedId)
+    }
+
+    suspend fun fetchCollections(accountId: String): CollectionSnapshot {
+        val json = executeJson("GET", "/api/collections", accountIdOverride = accountId)
+        val data = json.optJSONObject("data") ?: throw ApiException("服务端未返回蓝晶藏品数据")
+        return FeatureJsonParsers.parseCollectionSnapshot(data)
+    }
+
+    suspend fun operateCollections(
+        accountId: String,
+        action: String,
+        body: JSONObject = JSONObject(),
+        actionLabel: String = "操作完成",
+    ): CollectionOperateResult {
+        val json = executeJson(
+            method = "POST",
+            path = "/api/collections/${encodeQuery(action)}",
+            body = body,
+            accountIdOverride = accountId,
+        )
+        return FeatureJsonParsers.parseCollectionOperateResult(json.optJSONObject("data") ?: JSONObject(), actionLabel)
+    }
+
+    suspend fun fetchMutationCatalog(): MutationCatalogSnapshot {
+        val json = executeJson("GET", "/api/illustrated/mutations")
+        return FeatureJsonParsers.parseMutationCatalog(json.optJSONObject("data") ?: JSONObject())
     }
 }
