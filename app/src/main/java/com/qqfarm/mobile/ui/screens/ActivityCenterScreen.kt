@@ -6,7 +6,6 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -308,55 +307,34 @@ fun ActivityCenterScreen(
                 item {
                     AppleGroupedCard {
                         classified.standing.forEachIndexed { idx, entry ->
-                            if (idx > 0) AppleHairlineDivider(startIndent = 64.dp)
-                            val allIds = listOf(entry.item.id) + entry.item.activityIds
-                            val isNewbie = allIds.any { it.trim() in STANDING_ACTIVITY_IDS } || "新田园" in entry.item.name
-                            val upcoming = entry.item.startTimeMs != null && entry.item.startTimeMs > nowMs
-                            val key = entry.gameplayKey
-                            val canOpen = key != null && key in SUPPORTED_ACTIVITY_KEYS && !upcoming
-                            val iconUrl = resolveActivityIconUrl(entry.item, key)
-                            val fallbackIcon = resolveActivityFallbackIcon(entry.item, key)
-                            val accent = if (isNewbie || canOpen) apple.emerald else apple.secondaryText
+                            if (idx > 0) AppleHairlineDivider(startIndent = 70.dp)
+                            val activity = entry.item
+                            val isNewbie = activity.isNewbieActivity()
+                            val upcoming = activity.startTimeMs != null && activity.startTimeMs > nowMs
+                            val openKey = entry.gameplayKey?.takeIf { it in SUPPORTED_ACTIVITY_KEYS && !upcoming }
+                            val highlighted = isNewbie || openKey != null
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .then(
-                                        if (canOpen) {
-                                            Modifier.clickable { selectedActivity = key!! to entry.item }
+                                        if (openKey != null) {
+                                            Modifier.clickable { selectedActivity = openKey to activity }
                                         } else Modifier
                                     )
                                     .padding(horizontal = 14.dp, vertical = 12.dp),
                                 verticalAlignment = Alignment.CenterVertically,
                                 horizontalArrangement = Arrangement.spacedBy(12.dp),
                             ) {
-                                val iconBg = if (isNewbie || canOpen) apple.emerald.copy(alpha = 0.12f) else apple.track
-                                if (iconUrl.isNotBlank()) {
-                                    RemoteAssetImage(
-                                        url = iconUrl,
-                                        contentDescription = entry.item.name,
-                                        fallbackIcon = fallbackIcon,
-                                        fallbackTint = accent,
-                                        modifier = Modifier
-                                            .size(38.dp)
-                                            .clip(RoundedCornerShape(10.dp))
-                                            .background(iconBg),
-                                    )
-                                } else {
-                                    Box(
-                                        modifier = Modifier
-                                            .size(38.dp)
-                                            .clip(RoundedCornerShape(10.dp))
-                                            .background(iconBg),
-                                        contentAlignment = Alignment.Center,
-                                    ) {
-                                        Icon(
-                                            imageVector = fallbackIcon,
-                                            contentDescription = entry.item.name,
-                                            tint = accent,
-                                            modifier = Modifier.size(20.dp),
-                                        )
-                                    }
-                                }
+                                RemoteAssetImage(
+                                    url = resolveActivityIconUrl(activity, entry.gameplayKey),
+                                    contentDescription = null,
+                                    fallbackIcon = resolveActivityFallbackIcon(activity, entry.gameplayKey),
+                                    fallbackTint = if (highlighted) apple.emerald else apple.secondaryText,
+                                    modifier = Modifier
+                                        .size(44.dp)
+                                        .clip(RoundedCornerShape(10.dp))
+                                        .background(if (highlighted) apple.emerald.copy(alpha = 0.12f) else apple.track),
+                                )
                                 Column(
                                     modifier = Modifier.weight(1f),
                                     verticalArrangement = Arrangement.spacedBy(2.dp),
@@ -368,15 +346,17 @@ fun ActivityCenterScreen(
                                         maxLines = 1,
                                         overflow = TextOverflow.Ellipsis,
                                     )
-                                    Text(
-                                        text = if (isNewbie) "新手开园福利 · 资格以游戏内为准" else "长期开放的常驻内容",
-                                        style = MaterialTheme.typography.labelSmall,
-                                        color = apple.secondaryText,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis,
-                                    )
+                                    if (isNewbie) {
+                                        Text(
+                                            text = "资格以游戏内为准",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = apple.secondaryText,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis,
+                                        )
+                                    }
                                 }
-                                if (canOpen) {
+                                if (openKey != null) {
                                     Icon(
                                         imageVector = Icons.Rounded.ChevronRight,
                                         contentDescription = "进入活动",
@@ -384,8 +364,8 @@ fun ActivityCenterScreen(
                                     )
                                 } else {
                                     AppleStatusPill(
-                                        text = "长期开放",
-                                        color = apple.emerald,
+                                        text = if (upcoming) "未开始" else "长期开放",
+                                        color = if (upcoming) apple.orange else apple.emerald,
                                         showDot = false,
                                     )
                                 }
@@ -515,6 +495,9 @@ private data class ClassifiedDirectory(
     val ended: List<ClassifiedActivity>,
 )
 
+private fun ActivityDirectoryItem.isNewbieActivity(): Boolean =
+    id.trim() in STANDING_ACTIVITY_IDS || activityIds.any { it.trim() in STANDING_ACTIVITY_IDS } || "新田园" in name
+
 private fun classifyActivities(
     raw: List<ActivityDirectoryItem>,
     nowMs: Long,
@@ -534,7 +517,7 @@ private fun classifyActivities(
         // 避免异常时间的条目被当成“进行中”展示。
         if (end != null && nowMs >= end) {
             ended.add(ClassifiedActivity(item, key, 2))
-        } else if (item.activityIds.any { it in STANDING_ACTIVITY_IDS } || (!supported && durationMs > ONE_YEAR_MS)) {
+        } else if (item.isNewbieActivity() || (!supported && durationMs > ONE_YEAR_MS)) {
             standing.add(ClassifiedActivity(item, key, 1))
         } else {
             val isUpcoming = start != null && start > nowMs
@@ -621,10 +604,10 @@ private fun resolveActivityIconUrl(item: ActivityDirectoryItem, key: String?): S
 }
 
 private fun resolveActivityFallbackIcon(item: ActivityDirectoryItem, key: String?): ImageVector {
-    val allIds = listOf(item.id) + item.activityIds
-    if (allIds.any { it.trim() in STANDING_ACTIVITY_IDS } || "新田园" in item.name) {
+    if (item.isNewbieActivity()) {
         return Icons.Rounded.CardGiftcard
     }
+    val allIds = listOf(item.id) + item.activityIds
     if (allIds.any { it.trim() in FRIEND_RECALL_IDS } || "故友" in item.name) {
         return Icons.Rounded.People
     }
@@ -659,7 +642,7 @@ private fun ActivityDirectoryCard(
     val canOpen = supported && !upcoming
     val targetTimeMs = if (upcoming) item.startTimeMs else item.endTimeMs
     val remainSec = if (targetTimeMs != null && targetTimeMs > nowMs) {
-        (targetTimeMs - nowMs) / 1000L
+        ((targetTimeMs - nowMs) / 1000L).coerceAtLeast(1L)
     } else 0L
 
     AppleGroupedCard {
