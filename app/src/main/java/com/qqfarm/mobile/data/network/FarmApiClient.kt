@@ -333,8 +333,14 @@ class FarmApiClient {
         return JsonParsers.parseAccounts(data)
     }
 
-    suspend fun startAccount(accountId: String) {
-        executeJson("POST", "/api/accounts/${encodeQuery(accountId)}/start")
+    suspend fun startAccount(accountId: String) = startAccount(accountId, session)
+
+    private suspend fun startAccount(accountId: String, requestSession: Session) {
+        executeJson(
+            "POST", "/api/accounts/${encodeQuery(accountId)}/start",
+            accountIdOverride = accountId,
+            requestSession = requestSession,
+        )
     }
 
     suspend fun stopAccount(accountId: String) {
@@ -343,6 +349,37 @@ class FarmApiClient {
 
     suspend fun deleteAccount(accountId: String) {
         executeJson("DELETE", "/api/accounts/${encodeQuery(accountId)}")
+    }
+
+    /** Returns the startup error if the new code was saved but starting the account failed. */
+    suspend fun updateAccount(accountId: String, name: String, code: String): String? {
+        val body = JSONObject().put("id", accountId)
+        if (code.isEmpty()) {
+            executeJson(
+                "POST", "/api/account/remark", body = body.put("remark", name),
+                accountIdOverride = accountId,
+            )
+            return null
+        }
+
+        val requestSession = session
+        val response = executeJson(
+            "POST", "/api/accounts", body = body.put("name", name).put("code", code),
+            accountIdOverride = accountId,
+            requestSession = requestSession,
+        )
+        val data = response.optJSONObject("data") ?: throw ApiException("服务器未确认账号更新")
+        if (JsonParsers.parseAccounts(data).none { it.id == accountId }) {
+            throw ApiException("账号已不存在，请刷新账号列表", httpCode = 404)
+        }
+
+        // Saving restarts running accounts. Starting is idempotent and also resumes stopped accounts.
+        return try {
+            startAccount(accountId, requestSession)
+            null
+        } catch (e: ApiException) {
+            e.message
+        }
     }
 
     suspend fun saveAccount(

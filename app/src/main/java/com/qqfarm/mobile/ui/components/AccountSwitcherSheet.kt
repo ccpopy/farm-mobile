@@ -6,6 +6,8 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -21,11 +23,13 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Delete
+import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.Person
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.QrCode2
@@ -60,17 +64,21 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.qqfarm.mobile.data.model.AccountItem
 import com.qqfarm.mobile.data.model.LoginConfigModel
+import com.qqfarm.mobile.data.network.ApiException
 import com.qqfarm.mobile.data.network.FarmApiClient
 import com.qqfarm.mobile.ui.theme.LocalAppleColors
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import org.json.JSONObject
+import java.net.URLDecoder
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun AccountSwitcherSheet(
     accounts: List<AccountItem>,
@@ -81,11 +89,12 @@ fun AccountSwitcherSheet(
     onStartAccount: (String) -> Unit,
     onStopAccount: (String) -> Unit,
     onDeleteAccount: (String) -> Unit,
-    onAccountAdded: () -> Unit,
+    onAccountsChanged: () -> Unit,
 ) {
     val apple = LocalAppleColors.current
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     var showAddSheet by remember { mutableStateOf(false) }
+    var editAccountId by remember { mutableStateOf<String?>(null) }
     var deleteCandidate by remember { mutableStateOf<AccountItem?>(null) }
 
     ModalBottomSheet(
@@ -174,30 +183,47 @@ fun AccountSwitcherSheet(
                                     )
                                     Box(
                                         modifier = Modifier
-                                            .size(11.dp)
+                                            .size(if (isSelected) 17.dp else 11.dp)
                                             .align(Alignment.BottomEnd)
                                             .clip(CircleShape)
                                             .background(apple.card)
                                             .padding(1.5.dp)
                                             .clip(CircleShape)
-                                            .background(if (acc.running) apple.green else apple.secondaryText.copy(alpha = 0.5f)),
-                                    )
+                                            .background(
+                                                when {
+                                                    isSelected -> MaterialTheme.colorScheme.primary
+                                                    acc.running -> apple.green
+                                                    else -> apple.secondaryText.copy(alpha = 0.5f)
+                                                },
+                                            ),
+                                        contentAlignment = Alignment.Center,
+                                    ) {
+                                        if (isSelected) {
+                                            Icon(
+                                                imageVector = Icons.Rounded.Check,
+                                                contentDescription = "当前账号",
+                                                tint = MaterialTheme.colorScheme.onPrimary,
+                                                modifier = Modifier.size(11.dp),
+                                            )
+                                        }
+                                    }
                                 }
                                 Spacer(modifier = Modifier.width(12.dp))
                                 Column(modifier = Modifier.weight(1f)) {
-                                    Row(
-                                        verticalAlignment = Alignment.CenterVertically,
-                                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                    Text(
+                                        text = acc.displayTitle,
+                                        style = MaterialTheme.typography.titleSmall,
+                                        color = apple.primaryText,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                    )
+                                    Spacer(modifier = Modifier.height(2.dp))
+                                    FlowRow(
+                                        horizontalArrangement = Arrangement.spacedBy(5.dp),
+                                        verticalArrangement = Arrangement.spacedBy(2.dp),
                                     ) {
-                                        Text(
-                                            text = acc.displayTitle,
-                                            style = MaterialTheme.typography.titleSmall,
-                                            color = apple.primaryText,
-                                            maxLines = 1,
-                                            overflow = TextOverflow.Ellipsis,
-                                            modifier = Modifier.weight(1f, fill = false),
-                                        )
                                         Surface(
+                                            modifier = Modifier.align(Alignment.CenterVertically),
                                             shape = CircleShape,
                                             color = if (acc.platform == "wx") apple.green.copy(alpha = 0.14f) else apple.blue.copy(alpha = 0.14f),
                                         ) {
@@ -208,23 +234,21 @@ fun AccountSwitcherSheet(
                                                 modifier = Modifier.padding(horizontal = 7.dp, vertical = 2.dp),
                                             )
                                         }
+                                        Text(
+                                            text = if (acc.running) "运行中" else "已停止",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = if (acc.running) apple.green else apple.secondaryText,
+                                            modifier = Modifier.align(Alignment.CenterVertically),
+                                        )
                                     }
-                                    Spacer(modifier = Modifier.height(2.dp))
-                                    Text(
-                                        text = if (acc.running) "运行中" else "已停止",
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = if (acc.running) apple.green else apple.secondaryText,
-                                    )
                                 }
 
-                                if (isSelected) {
+                                IconButton(onClick = { editAccountId = acc.id }) {
                                     Icon(
-                                        imageVector = Icons.Rounded.Check,
-                                        contentDescription = "当前账号",
-                                        tint = MaterialTheme.colorScheme.primary,
-                                        modifier = Modifier.size(20.dp),
+                                        imageVector = Icons.Rounded.Edit,
+                                        contentDescription = "编辑账号",
+                                        tint = apple.blue,
                                     )
-                                    Spacer(modifier = Modifier.width(4.dp))
                                 }
 
                                 IconButton(
@@ -264,8 +288,17 @@ fun AccountSwitcherSheet(
             onDismiss = { showAddSheet = false },
             onSaved = {
                 showAddSheet = false
-                onAccountAdded()
+                onAccountsChanged()
             },
+        )
+    }
+
+    accounts.find { it.id == editAccountId }?.let { account ->
+        EditAccountDialog(
+            account = account,
+            apiClient = apiClient,
+            onDismiss = { editAccountId = null },
+            onAccountsChanged = onAccountsChanged,
         )
     }
 
@@ -292,6 +325,121 @@ fun AccountSwitcherSheet(
             },
         )
     }
+}
+
+@Composable
+private fun EditAccountDialog(
+    account: AccountItem,
+    apiClient: FarmApiClient,
+    onDismiss: () -> Unit,
+    onAccountsChanged: () -> Unit,
+) {
+    val scope = rememberCoroutineScope()
+    var name by remember(account.id) { mutableStateOf(account.name) }
+    var code by remember(account.id) { mutableStateOf("") }
+    var saving by remember { mutableStateOf(false) }
+    var errorMsg by remember { mutableStateOf("") }
+    val trimmedName = name.trim()
+    val hasNewCode = code.isNotBlank()
+
+    AlertDialog(
+        onDismissRequest = { if (!saving) onDismiss() },
+        shape = RoundedCornerShape(AppleRadius.card),
+        title = { Text("编辑账号") },
+        text = {
+            Column(
+                modifier = Modifier.verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                OutlinedTextField(
+                    value = name,
+                    onValueChange = {
+                        name = it
+                        errorMsg = ""
+                    },
+                    label = { Text("账号备注") },
+                    singleLine = true,
+                    enabled = !saving,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                OutlinedTextField(
+                    value = code,
+                    onValueChange = {
+                        code = it
+                        errorMsg = ""
+                    },
+                    label = { Text("新 Code 或登录链接") },
+                    supportingText = { Text("留空保留原 Code") },
+                    singleLine = true,
+                    enabled = !saving,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+                    visualTransformation = PasswordVisualTransformation(),
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                if (errorMsg.isNotBlank()) {
+                    Text(errorMsg, color = MaterialTheme.colorScheme.error)
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(
+                enabled = !saving && trimmedName.isNotEmpty() && (trimmedName != account.name || hasNewCode),
+                onClick = {
+                    val newCode = try {
+                        extractManualLoginCode(code)
+                    } catch (e: IllegalArgumentException) {
+                        errorMsg = e.message.orEmpty()
+                        return@TextButton
+                    }
+                    errorMsg = ""
+                    saving = true
+                    scope.launch {
+                        try {
+                            val startError = apiClient.updateAccount(account.id, trimmedName, newCode)
+                            onAccountsChanged()
+                            if (startError == null) {
+                                onDismiss()
+                            } else {
+                                code = ""
+                                errorMsg = "新 Code 已保存，启动失败（$startError）。可在账号列表重新启动。"
+                            }
+                        } catch (e: ApiException) {
+                            errorMsg = e.message
+                        } finally {
+                            saving = false
+                        }
+                    }
+                },
+            ) {
+                Text(
+                    when {
+                        saving -> "正在保存…"
+                        hasNewCode -> "保存并连接"
+                        else -> "保存"
+                    },
+                )
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss, enabled = !saving) { Text("取消") }
+        },
+    )
+}
+
+private fun extractManualLoginCode(value: String): String {
+    val input = value.trim()
+    val match = Regex("""[?&]code=([^&#]*)""", RegexOption.IGNORE_CASE).find(input)
+    if (match == null) {
+        require(!input.contains("://")) { "登录链接缺少 Code" }
+        return input
+    }
+    val code = try {
+        URLDecoder.decode(match.groupValues[1], "UTF-8").trim()
+    } catch (_: IllegalArgumentException) {
+        throw IllegalArgumentException("登录链接中的 Code 格式无效")
+    }
+    require(code.isNotEmpty()) { "登录链接中的 Code 为空" }
+    return code
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -618,10 +766,11 @@ fun AddAccountSheet(
                             errorMsg = "请先填写账号备注"
                             return@Button
                         }
-                        var finalCode = code.trim()
-                        val match = Regex("""[?&]code=([^&]+)""", RegexOption.IGNORE_CASE).find(finalCode)
-                        if (match != null) {
-                            finalCode = java.net.URLDecoder.decode(match.groupValues[1], "UTF-8")
+                        val finalCode = try {
+                            extractManualLoginCode(code)
+                        } catch (e: IllegalArgumentException) {
+                            errorMsg = e.message.orEmpty()
+                            return@Button
                         }
                         val sessionJson = if (platform == "wx" && wxSessionText.isNotBlank()) {
                             try {

@@ -430,7 +430,7 @@ fun FarmNavHost(viewModel: AppSessionViewModel) {
             onStartAccount = { id -> viewModel.startAccount(id) },
             onStopAccount = { id -> viewModel.stopAccount(id) },
             onDeleteAccount = { id -> viewModel.deleteAccount(id) },
-            onAccountAdded = { viewModel.refreshAccounts() },
+            onAccountsChanged = viewModel::refreshAccounts,
         )
     }
 }
