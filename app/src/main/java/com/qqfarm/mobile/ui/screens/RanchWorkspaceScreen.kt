@@ -30,6 +30,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.CardGiftcard
 import androidx.compose.material.icons.rounded.Grass
+import androidx.compose.material.icons.rounded.HourglassEmpty
 import androidx.compose.material.icons.rounded.Inventory2
 import androidx.compose.material.icons.rounded.Lock
 import androidx.compose.material.icons.rounded.MenuBook
@@ -99,6 +100,7 @@ import com.qqfarm.mobile.ui.theme.SoilGold
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import org.json.JSONArray
 import org.json.JSONObject
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.offset
@@ -148,9 +150,9 @@ fun RanchWorkspaceScreen(
     val accountId = session.config.currentAccountId
     val isConnected = session.status?.connected == true && accountId.isNotBlank()
 
-    var subTab by remember { mutableIntStateOf(initialSubTab.coerceIn(0, 4)) }
+    var subTab by remember { mutableIntStateOf(initialSubTab.coerceIn(0, 3)) }
     LaunchedEffect(initialSubTab) {
-        subTab = initialSubTab.coerceIn(0, 4)
+        subTab = initialSubTab.coerceIn(0, 3)
     }
 
     var refreshing by remember(subTab, isConnected) { mutableStateOf(false) }
@@ -158,6 +160,7 @@ fun RanchWorkspaceScreen(
     var snapshot by remember(subTab, isConnected) { mutableStateOf<RanchViewSnapshot?>(null) }
     var loadError by remember(subTab, isConnected) { mutableStateOf("") }
 
+    var batchLockOpen by remember(accountId, subTab, isConnected) { mutableStateOf(false) }
     var pendingRequest by remember(subTab, isConnected) { mutableStateOf<PendingRanchRequest?>(null) }
     var showFeedSheet by remember(isConnected) { mutableStateOf(false) }
     var feedTargetAnimal by remember(isConnected) { mutableStateOf<RanchAnimal?>(null) }
@@ -188,19 +191,21 @@ fun RanchWorkspaceScreen(
                 if (it is CancellationException) throw it
                 val msg = it.message ?: "牧场数据读取失败"
                 loadError = msg
+                snapshot = null
                 onMessage(msg)
             }
         refreshing = false
     }
 
     fun triggerQuoteAction(action: String, input: JSONObject) {
-        if (actionBusy || !isConnected) return
+        if (actionBusy || refreshing || !isConnected) return
         actionBusy = true
         scope.launch {
             runCatching { apiClient.quoteRanchAction(accountId, action, input) }
                 .onSuccess { quote ->
                     if (quote.skipped) {
                         onMessage(quote.message.ifBlank { "当前没有可操作项目" })
+                        loadCurrentView()
                     } else {
                         pendingRequest = PendingRanchRequest(action, input, quote)
                     }
@@ -211,7 +216,7 @@ fun RanchWorkspaceScreen(
     }
 
     fun triggerDirectAction(action: String, params: Map<String, Any>) {
-        if (actionBusy || !isConnected) return
+        if (actionBusy || refreshing || !isConnected) return
         actionBusy = true
         scope.launch {
             runCatching { apiClient.operateRanchDirect(accountId, action, params) }
@@ -230,7 +235,7 @@ fun RanchWorkspaceScreen(
     }
 
     LaunchedEffect(accountId, isConnected, subTab) {
-        if (isConnected && subTab != 4) loadCurrentView()
+        if (isConnected) loadCurrentView()
     }
 
     Column(
@@ -239,7 +244,7 @@ fun RanchWorkspaceScreen(
             .background(apple.background),
     ) {
         AppleScrollablePills(
-            options = listOf("动物", "设施", "背包", "任务", "图鉴"),
+            options = listOf("动物", "设施", "背包", "任务"),
             selectedIndex = subTab,
             onSelect = { idx ->
                 if (!actionBusy) {
@@ -253,7 +258,7 @@ fun RanchWorkspaceScreen(
             modifier = Modifier
                 .fillMaxWidth()
                 .weight(1f)
-                .swipeToSwitchTabs(subTab, 5, !actionBusy) { idx ->
+                .swipeToSwitchTabs(subTab, 4, !actionBusy) { idx ->
                 subTab = idx
                 onSubTabChanged(idx)
             },
@@ -265,22 +270,14 @@ fun RanchWorkspaceScreen(
                         AppleEmptyState(
                             icon = Icons.Rounded.Pets,
                             title = "账号未在线",
-                            subtitle = "请先启动当前账号后管理牧场动物、设施、背包与图鉴",
+                            subtitle = "请先启动当前账号后管理牧场动物、设施、背包与任务",
                         )
                     }
                 }
-            } else if (subTab == 4) {
-                RanchBookPage(
-                    accountId = accountId,
-                    isConnected = isConnected,
-                    apiClient = apiClient,
-                    onBusyChange = { actionBusy = it },
-                    onMessage = onMessage,
-                )
             } else {
                 PullToRefreshBox(
                 isRefreshing = refreshing && snapshot != null,
-                onRefresh = { scope.launch { loadCurrentView() } },
+                onRefresh = { if (!actionBusy) scope.launch { loadCurrentView() } },
                 modifier = Modifier.fillMaxSize(),
             ) {
                 val current = snapshot
@@ -361,6 +358,9 @@ fun RanchWorkspaceScreen(
                             onCompleteUpgrade = { fac ->
                                 triggerQuoteAction("completeUpgrade", JSONObject().put("facilityId", fac.id))
                             },
+                            onSpeedUp = { fac, seconds ->
+                                triggerQuoteAction("speedUpUpgrade", JSONObject().put("facilityId", fac.id).put("seconds", seconds))
+                            },
                             onActivateShed = { fac ->
                                 triggerQuoteAction("activateShed", JSONObject().put("facilityId", fac.id))
                             },
@@ -368,6 +368,7 @@ fun RanchWorkspaceScreen(
                         2 -> RanchBagTab(
                             snapshot = current,
                             busy = actionBusy,
+                            onBatchLock = { batchLockOpen = true },
                             onSellAllProducts = {
                                 triggerQuoteAction("sell", JSONObject().put("all", true))
                             },
@@ -462,6 +463,21 @@ fun RanchWorkspaceScreen(
             }
             }
         }
+    }
+
+    if (batchLockOpen) {
+        val entries = remember(snapshot) { snapshot?.bag.orEmpty().filter { it.lockable }.map {
+            BagLockEntry(it.uid, it.name, it.image, it.count, it.locked)
+        } }
+        BagLockSheet(
+            entries = entries,
+            busy = actionBusy || refreshing,
+            onSubmit = { uids, locked ->
+                batchLockOpen = false
+                triggerQuoteAction("setItemLock", JSONObject().put("itemUids", JSONArray(uids)).put("locked", locked))
+            },
+            onDismiss = { batchLockOpen = false },
+        )
     }
 
     pendingRequest?.let { pending ->
@@ -901,6 +917,7 @@ private fun RanchFacilitiesTab(
     onAddGrass: (RanchFacility) -> Unit,
     onUpgrade: (RanchFacility) -> Unit,
     onCompleteUpgrade: (RanchFacility) -> Unit,
+    onSpeedUp: (RanchFacility, Long) -> Unit,
     onActivateShed: (RanchFacility) -> Unit,
 ) {
     val apple = LocalAppleColors.current
@@ -966,7 +983,9 @@ private fun RanchFacilitiesTab(
                     fraction = 0f
                 }
             }
-            val upgradeDone = fac.upgradeState == 2 || (fac.upgradeState != 0 && fac.upgradeEndTimeMs <= serverNowMs)
+            val remainingSeconds = ((fac.upgradeEndTimeMs - serverNowMs + 999L) / 1000L).coerceAtLeast(0L)
+            val upgradeDone = fac.upgradeState == 2 || (fac.upgradeState == 1 && remainingSeconds == 0L)
+            val speedUpSeconds = minOf(payload.hourglassSeconds ?: 0L, remainingSeconds)
 
             AppleGroupedCard(contentPadding = PaddingValues(16.dp)) {
                 Row(
@@ -1042,9 +1061,9 @@ private fun RanchFacilitiesTab(
                                 )
                             }
                             fac.active && fac.upgradeState != 0 -> {
-                                val remSec = ((fac.upgradeEndTimeMs - serverNowMs) / 1000L).coerceAtLeast(0L)
                                 Text(
-                                    text = if (upgradeDone) "升级已完成，等待确认完成" else "升级剩余 ${formatDurationSec(remSec)}",
+                                    text = if (upgradeDone) "升级已完成，等待确认完成" else "升级剩余 ${formatDurationSec(remainingSeconds)}" +
+                                        (payload.hourglassSeconds?.let { " · 沙漏 ${formatDurationSec(it)}" } ?: ""),
                                     style = MaterialTheme.typography.bodySmall.copy(fontFeatureSettings = "tnum"),
                                     color = apple.orange,
                                 )
@@ -1098,7 +1117,17 @@ private fun RanchFacilitiesTab(
                                     shape = RoundedCornerShape(10.dp),
                                 ) { Text("补充牧草") }
                             }
-                            if (fac.upgradeState != 0) {
+                            if (fac.upgradeState == 1 && !upgradeDone && payload.hourglassSeconds != null) {
+                                Button(
+                                    onClick = { onSpeedUp(fac, speedUpSeconds) },
+                                    enabled = !busy && speedUpSeconds > 0L,
+                                    shape = RoundedCornerShape(10.dp),
+                                ) {
+                                    Icon(Icons.Rounded.HourglassEmpty, contentDescription = null, modifier = Modifier.size(16.dp))
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text("沙漏加速")
+                                }
+                            } else if (fac.upgradeState != 0) {
                                 Button(
                                     onClick = { onCompleteUpgrade(fac) },
                                     enabled = !busy && upgradeDone,
@@ -1128,6 +1157,7 @@ private fun RanchFacilitiesTab(
 private fun RanchBagTab(
     snapshot: RanchViewSnapshot,
     busy: Boolean,
+    onBatchLock: () -> Unit,
     onSellAllProducts: () -> Unit,
     onItemAction: (RanchBagItem, String) -> Unit,
 ) {
@@ -1153,7 +1183,7 @@ private fun RanchBagTab(
         if (filterIdx == 0) sorted else sorted.filter { catOf(it) == filterIdx }
     }
     val canSellProducts = remember(items) {
-        items.any { it.canSell && (it.type == 106 || it.type == 107) }
+        items.any { !it.locked && it.canSell && it.isProduct }
     }
 
     LazyColumn(
@@ -1175,6 +1205,10 @@ private fun RanchBagTab(
                             )
                         }
                     }
+                }
+                if (items.any { it.lockable }) {
+                    AppleSectionHeader(title = "牧场背包", actionLabel = "批量上锁 / 解锁",
+                        onAction = { if (!busy) onBatchLock() })
                 }
                 if (canSellProducts) {
                     OutlinedButton(

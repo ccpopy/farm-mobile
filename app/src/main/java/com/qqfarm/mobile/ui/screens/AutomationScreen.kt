@@ -199,6 +199,7 @@ fun AutomationScreen(
     val accountId = session.config.currentAccountId
     val isConnected = session.status?.connected == true && accountId.isNotBlank()
 
+    var savedSettings by remember(accountId) { mutableStateOf<AccountSettingsModel?>(null) }
     var settings by remember(accountId) { mutableStateOf<AccountSettingsModel?>(null) }
     var scheduler by remember(accountId) { mutableStateOf<SchedulerSummary?>(null) }
     var ranchOptions by remember { mutableStateOf<List<RanchAnimalOption>>(emptyList()) }
@@ -206,6 +207,7 @@ fun AutomationScreen(
     var loading by remember { mutableStateOf(false) }
     var saving by remember { mutableStateOf(false) }
     var dirty by remember(accountId) { mutableStateOf(false) }
+    var showBagPriority by remember(accountId) { mutableStateOf(false) }
     var activeEditor by remember { mutableStateOf<AutomationEditor?>(null) }
     var animalPickerKind by remember { mutableStateOf<String?>(null) }
 
@@ -223,6 +225,7 @@ fun AutomationScreen(
 
                 cfgJob.await()
                     .onSuccess {
+                        savedSettings = it
                         settings = it
                         dirty = false
                     }
@@ -255,13 +258,15 @@ fun AutomationScreen(
 
     fun saveSettingsNow(closeEditor: Boolean = false) {
         val current = settings ?: return
+        val baseline = savedSettings ?: return
         if (accountId.isBlank() || saving) return
         saving = true
         scope.launch {
             try {
-                val (ok, msg) = apiClient.saveAccountSettings(accountId, current)
+                val (ok, msg) = apiClient.saveAccountSettings(accountId, current, baseline)
                 onMessage(msg)
                 if (ok) {
+                    savedSettings = current
                     if (settings == current) {
                         dirty = false
                         if (closeEditor) activeEditor = null
@@ -524,6 +529,7 @@ fun AutomationScreen(
     if (cfg != null) {
         when (activeEditor) {
             AutomationEditor.STRATEGY -> StrategyEditorSheet(
+                onEditBagPriority = { showBagPriority = true },
                 model = cfg,
                 seeds = seeds,
                 saving = saving,
@@ -552,6 +558,7 @@ fun AutomationScreen(
                 onDismiss = { activeEditor = null },
             )
             AutomationEditor.RANCH -> RanchAutomationSheet(
+                onEditBagPriority = { showBagPriority = true },
                 model = cfg,
                 ranchOptions = ranchOptions,
                 saving = saving,
@@ -585,6 +592,17 @@ fun AutomationScreen(
                 onDismiss = { activeEditor = null },
             )
             null -> Unit
+        }
+
+        if (showBagPriority) {
+            BagPrioritySheet(
+                accountId, isConnected, activeEditor == AutomationEditor.RANCH, apiClient, cfg,
+                onApply = { next ->
+                    if (next != cfg) mutate { next }
+                    showBagPriority = false
+                },
+                onDismiss = { showBagPriority = false },
+            )
         }
 
         val kind = animalPickerKind
@@ -807,6 +825,7 @@ private fun ModuleSheetShell(
 @Composable
 private fun StrategyEditorSheet(
     model: AccountSettingsModel,
+    onEditBagPriority: () -> Unit,
     seeds: List<SeedOption>,
     saving: Boolean,
     onChange: (AccountSettingsModel) -> Unit,
@@ -839,6 +858,20 @@ private fun StrategyEditorSheet(
                         Icon(Icons.Rounded.Check, contentDescription = "已选", tint = MaterialTheme.colorScheme.primary)
                     }
                 }
+            }
+        }
+
+        if (model.plantingStrategy == "bag_priority") {
+            AppleGroupedCard {
+                AppleSettingRow(
+                    icon = Icons.Rounded.Eco,
+                    iconTint = apple.green,
+                    title = "背包种子优先顺序",
+                    subtitle = "调整背包已有种子的优先种植顺序",
+                    trailingText = if (model.bagSeedPriority.isNotEmpty()) "已排 ${model.bagSeedPriority.size} 项" else "默认顺序",
+                    showChevron = true,
+                    onClick = onEditBagPriority,
+                )
             }
         }
 
@@ -1081,6 +1114,7 @@ private fun FarmAutomationSheet(
 @Composable
 private fun RanchAutomationSheet(
     model: AccountSettingsModel,
+    onEditBagPriority: () -> Unit,
     ranchOptions: List<RanchAnimalOption>,
     saving: Boolean,
     onToggleBool: (String, Boolean) -> Unit,
@@ -1123,6 +1157,16 @@ private fun RanchAutomationSheet(
                 }
             }
             if (model.ranchStrategy == "bag_priority") {
+                AppleHairlineDivider(startIndent = 16.dp)
+                val priorityCount = model.ranchCoopCubPriority.size + model.ranchShedCubPriority.size
+                AppleSettingRow(
+                    icon = Icons.Rounded.Pets,
+                    iconTint = apple.orange,
+                    title = "背包幼崽优先顺序",
+                    trailingText = if (priorityCount > 0) "已排 ${priorityCount} 项" else "默认顺序",
+                    showChevron = true,
+                    onClick = onEditBagPriority,
+                )
                 AppleHairlineDivider(startIndent = 16.dp)
                 val fallbackLabel = if (model.ranchBagFallback == "preferred") "指定动物" else "按已解锁等级"
                 AppleSettingRow(

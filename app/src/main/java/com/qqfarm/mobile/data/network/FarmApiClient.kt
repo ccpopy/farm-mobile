@@ -5,6 +5,7 @@ import com.qqfarm.mobile.data.model.AccountLogEvent
 import com.qqfarm.mobile.data.model.AccountSettingsModel
 import com.qqfarm.mobile.data.model.ActivityDirectoryResponse
 import com.qqfarm.mobile.data.model.AutumnWishState
+import com.qqfarm.mobile.data.model.BagPriorityItem
 import com.qqfarm.mobile.data.model.BagPayload
 import com.qqfarm.mobile.data.model.CharityState
 import com.qqfarm.mobile.data.model.CollectionOperateResult
@@ -33,7 +34,6 @@ import com.qqfarm.mobile.data.model.QixiState
 import com.qqfarm.mobile.data.model.QqQrTask
 import com.qqfarm.mobile.data.model.RanchAnimalOption
 import com.qqfarm.mobile.data.model.RanchOperateResult
-import com.qqfarm.mobile.data.model.RanchPayload
 import com.qqfarm.mobile.data.model.RanchQuote
 import com.qqfarm.mobile.data.model.RanchViewSnapshot
 import com.qqfarm.mobile.data.model.RunLogEntry
@@ -566,11 +566,6 @@ class FarmApiClient {
         executeJson("POST", "/api/bag/lock", body = body, accountIdOverride = accountId)
     }
 
-    suspend fun fetchRanchAnimals(accountId: String): RanchPayload {
-        val json = executeJson("GET", "/api/ranch?view=animals", accountIdOverride = accountId, client = longPollClient)
-        return JsonParsers.parseRanchPayload(json.optJSONObject("data") ?: JSONObject())
-    }
-
     suspend fun operateRanchDirect(
         accountId: String,
         action: String,
@@ -669,6 +664,21 @@ class FarmApiClient {
         return JsonParsers.parseRanchAutomationOptions(json.optJSONArray("data"))
     }
 
+    suspend fun fetchBagSeeds(accountId: String): List<BagPriorityItem> {
+        val json = executeJson("GET", "/api/bag/seeds", accountIdOverride = accountId)
+        val seeds = json.optJSONArray("data") ?: throw ApiException("服务器未返回背包种子列表")
+        return try {
+            buildList {
+                for (index in 0 until seeds.length()) {
+                    val seed = seeds.getJSONObject(index)
+                    add(BagPriorityItem(seed.getInt("seedId"), seed.getString("name"), seed.getLong("count"), seed.optStringClean("image")))
+                }
+            }
+        } catch (e: org.json.JSONException) {
+            throw ApiException("背包种子数据格式有误：${e.message}")
+        }
+    }
+
     suspend fun fetchSeedCatalog(accountId: String): List<SeedOption> {
         val json = executeJson("GET", "/api/seeds", accountIdOverride = accountId)
         return JsonParsers.parseSeedCatalog(json.optJSONArray("data"))
@@ -679,7 +689,7 @@ class FarmApiClient {
         return JsonParsers.parseAccountSettings(json.optJSONObject("data") ?: JSONObject())
     }
 
-    suspend fun saveAccountSettings(accountId: String, model: AccountSettingsModel): Pair<Boolean, String> {
+    suspend fun saveAccountSettings(accountId: String, model: AccountSettingsModel, baseline: AccountSettingsModel): Pair<Boolean, String> {
         val farmMin = model.farmMinSec.coerceAtLeast(1)
         val farmMax = model.farmMaxSec.coerceAtLeast(farmMin)
         val friendMin = model.friendMinSec.coerceAtLeast(1)
@@ -700,6 +710,11 @@ class FarmApiClient {
         })
         automation.put("ranch_strategy", model.ranchStrategy)
         automation.put("ranch_bag_fallback", model.ranchBagFallback)
+        fun putPriorityChange(key: String, before: List<Int>, after: List<Int>) {
+            if (before == after) automation.remove(key) else automation.put(key, JSONArray(after))
+        }
+        putPriorityChange("ranch_coop_cub_priority", baseline.ranchCoopCubPriority, model.ranchCoopCubPriority)
+        putPriorityChange("ranch_shed_cub_priority", baseline.ranchShedCubPriority, model.ranchShedCubPriority)
         automation.put("ranch_coop_animal", model.ranchCoopAnimal)
         automation.put("ranch_shed_animal", model.ranchShedAnimal)
         automation.put("ranch_grass_threshold_percent", model.ranchGrassThresholdPercent.coerceIn(1, 100))
@@ -733,6 +748,7 @@ class FarmApiClient {
             .put("autoAcceptHarvestStealHarvest", model.autoAcceptHarvestStealHarvest.coerceIn(0, 9999))
             .put("autoAcceptHarvestStealSteal", model.autoAcceptHarvestStealSteal.coerceIn(1, 9999))
             .put("automation", automation)
+        if (model.bagSeedPriority != baseline.bagSeedPriority) payload.put("bagSeedPriority", JSONArray(model.bagSeedPriority))
         model.emailClaimHour?.let { payload.put("emailClaimHour", it.coerceIn(0, 23)) }
 
         try {
@@ -865,13 +881,19 @@ class FarmApiClient {
         val params = mutableListOf("view=${encodeQuery(view)}")
         if (shopId != null) params.add("shopId=$shopId")
         if (!hostGid.isNullOrBlank()) params.add("hostGid=${encodeQuery(hostGid)}")
-        val json = executeJson(
-            "GET",
-            "/api/ranch?${params.joinToString("&")}",
-            accountIdOverride = accountId,
-            client = ranchHttpClient,
-        )
-        return FeatureJsonParsers.parseRanchViewSnapshot(json.optJSONObject("data") ?: JSONObject())
+        val json = try {
+            executeJson("GET", "/api/ranch?${params.joinToString("&")}", accountIdOverride = accountId, client = ranchHttpClient)
+        } catch (e: ApiException) {
+            if (e.httpCode != 200 || e.message != "未知牧场页面") throw e
+            val legacyView = when (view) {
+                "mall" -> "cans"
+                "overview" -> "animals"
+                else -> throw e
+            }
+            return fetchRanchView(accountId, legacyView, shopId, hostGid)
+        }
+        val data = json.optJSONObject("data") ?: throw ApiException("服务器未返回牧场数据")
+        return FeatureJsonParsers.parseRanchViewSnapshot(data)
     }
 
     suspend fun quoteRanchAction(

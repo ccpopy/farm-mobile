@@ -32,6 +32,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.AutoAwesome
+import androidx.compose.material.icons.rounded.BarChart
 import androidx.compose.material.icons.rounded.CalendarMonth
 import androidx.compose.material.icons.rounded.CardGiftcard
 import androidx.compose.material.icons.rounded.Celebration
@@ -42,6 +43,7 @@ import androidx.compose.material.icons.rounded.Diamond
 import androidx.compose.material.icons.rounded.Eco
 import androidx.compose.material.icons.rounded.Grass
 import androidx.compose.material.icons.rounded.Group
+import androidx.compose.material.icons.rounded.Inventory2
 import androidx.compose.material.icons.rounded.LocalOffer
 import androidx.compose.material.icons.rounded.MenuBook
 import androidx.compose.material.icons.rounded.Paid
@@ -49,6 +51,7 @@ import androidx.compose.material.icons.rounded.Person
 import androidx.compose.material.icons.rounded.Pets
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.Science
+import androidx.compose.material.icons.rounded.ShoppingBag
 import androidx.compose.material.icons.rounded.Star
 import androidx.compose.material.icons.rounded.Storefront
 import androidx.compose.material.icons.rounded.Terminal
@@ -87,6 +90,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.qqfarm.mobile.data.model.DailyGiftItem
 import com.qqfarm.mobile.data.model.GameSpace
+import com.qqfarm.mobile.data.model.RanchCareer
 import com.qqfarm.mobile.data.model.RanchPayload
 import com.qqfarm.mobile.data.model.RunLogEntry
 import com.qqfarm.mobile.data.model.RunLogScope
@@ -100,6 +104,7 @@ import com.qqfarm.mobile.ui.components.AppleHairlineDivider
 import com.qqfarm.mobile.ui.components.AppleIconBadge
 import com.qqfarm.mobile.ui.components.AppleMetricTile
 import com.qqfarm.mobile.ui.components.AppleQuickEntryRow
+import com.qqfarm.mobile.ui.components.AppleRadius
 import com.qqfarm.mobile.ui.components.AppleSectionHeader
 import com.qqfarm.mobile.ui.components.AppleSegmentedControl
 import com.qqfarm.mobile.ui.components.AppleStatusPill
@@ -152,9 +157,9 @@ fun OverviewScreen(
     val isOnline = session.status?.connected == true && accountId.isNotBlank()
     var showBuyFertilizer by remember(accountId, isOnline, gameSpace) { mutableStateOf(false) }
     var showBuyCans by remember(accountId, isOnline, gameSpace) { mutableStateOf(false) }
-    var ranchPayload by remember { mutableStateOf<RanchPayload?>(null) }
-    var ranchLoading by remember { mutableStateOf(false) }
-    var ranchError by remember { mutableStateOf("") }
+    var ranchPayload by remember(accountId, isOnline) { mutableStateOf<RanchPayload?>(null) }
+    var ranchLoading by remember(accountId, isOnline) { mutableStateOf(false) }
+    var ranchError by remember(accountId, isOnline) { mutableStateOf("") }
 
     suspend fun loadRanchOverview() {
         if (!isOnline) {
@@ -162,12 +167,16 @@ fun OverviewScreen(
             ranchError = ""
             return
         }
+        if (ranchLoading) return
         ranchLoading = true
         ranchError = ""
-        runCatching { apiClient.fetchRanchAnimals(accountId) }
-            .onSuccess { ranchPayload = it }
-            .onFailure { ranchError = it.message ?: "读取牧场概览失败" }
-        ranchLoading = false
+        try {
+            ranchPayload = apiClient.fetchRanchView(accountId, "overview").base
+        } catch (e: ApiException) {
+            ranchError = e.message
+        } finally {
+            ranchLoading = false
+        }
     }
 
     LaunchedEffect(gameSpace, accountId, isOnline) {
@@ -643,49 +652,7 @@ fun OverviewScreen(
                 // Today's Operations
                 if (isOnline && status != null && status.operations.isNotEmpty()) {
                     item {
-                        AppleSectionHeader(title = "今日收益统计")
-                        Spacer(modifier = Modifier.height(4.dp))
-                        val opEntries = status.operations.entries.toList()
-                        AppleGroupedCard(contentPadding = PaddingValues(12.dp)) {
-                            val rows = opEntries.chunked(4)
-                            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                                rows.forEach { rowItems ->
-                                    EqualHeightRow(spacing = 8.dp) {
-                                        rowItems.forEach { (key, count) ->
-                                            Surface(
-                                                modifier = Modifier.weight(1f).fillMaxHeight(),
-                                                shape = RoundedCornerShape(12.dp),
-                                                color = apple.elevated,
-                                            ) {
-                                                Column(
-                                                    modifier = Modifier.padding(vertical = 8.dp, horizontal = 4.dp),
-                                                    horizontalAlignment = Alignment.CenterHorizontally,
-                                                ) {
-                                                    Text(
-                                                        text = count.toString(),
-                                                        style = MaterialTheme.typography.titleMedium.copy(
-                                                            fontWeight = FontWeight.Bold,
-                                                            fontFeatureSettings = "tnum",
-                                                        ),
-                                                        color = apple.primaryText,
-                                                    )
-                                                    Spacer(modifier = Modifier.height(2.dp))
-                                                    Text(
-                                                        text = opLabel(key),
-                                                        style = MaterialTheme.typography.labelSmall,
-                                                        color = apple.secondaryText,
-                                                        maxLines = 1,
-                                                    )
-                                                }
-                                            }
-                                        }
-                                        repeat(4 - rowItems.size) {
-                                            Spacer(modifier = Modifier.weight(1f))
-                                        }
-                                    }
-                                }
-                            }
-                        }
+                        OverviewStatistics("今日收益统计", status.operations.map { (key, count) -> opLabel(key) to count.toString() })
                     }
                 }
 
@@ -1155,6 +1122,126 @@ private fun BuyFertilizerSheet(
     }
 }
 
+@Composable
+internal fun RanchCareerStatistics(career: RanchCareer, embedded: Boolean = false) {
+    val apple = LocalAppleColors.current
+    val items = listOf(
+        Triple("累计产物", formatNumber(career.harvest), Icons.Rounded.Inventory2 to apple.orange),
+        Triple("累计成熟", formatNumber(career.mature), Icons.Rounded.Pets to apple.emerald),
+        Triple("收取好友产物", formatNumber(career.steal), Icons.Rounded.ShoppingBag to apple.blue),
+        Triple("收偷比", career.ratioText, Icons.Rounded.BarChart to apple.indigo),
+    )
+    if (!embedded) {
+        AppleSectionHeader(title = "牧场生涯")
+        Spacer(modifier = Modifier.height(4.dp))
+    }
+    AppleGroupedCard(contentPadding = PaddingValues(if (embedded) 14.dp else 12.dp)) {
+        if (embedded) {
+            Text(
+                text = "牧场生涯",
+                style = MaterialTheme.typography.titleSmall,
+                color = apple.primaryText,
+            )
+            Spacer(modifier = Modifier.height(10.dp))
+        }
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            items.chunked(2).forEach { row ->
+                EqualHeightRow(spacing = 8.dp) {
+                    row.forEach { (label, value, badge) ->
+                        Surface(
+                            modifier = Modifier.weight(1f).fillMaxHeight(),
+                            shape = RoundedCornerShape(AppleRadius.tile),
+                            color = apple.elevated,
+                        ) {
+                            Column(
+                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+                                verticalArrangement = Arrangement.spacedBy(4.dp),
+                            ) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(5.dp),
+                                ) {
+                                    Icon(
+                                        imageVector = badge.first,
+                                        contentDescription = null,
+                                        tint = badge.second,
+                                        modifier = Modifier.size(15.dp),
+                                    )
+                                    Text(
+                                        text = label,
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = apple.secondaryText,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                    )
+                                }
+                                Text(
+                                    text = value,
+                                    style = MaterialTheme.typography.titleMedium.copy(
+                                        fontWeight = FontWeight.Bold,
+                                        fontFeatureSettings = "tnum",
+                                    ),
+                                    color = apple.primaryText,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                            }
+                        }
+                    }
+                    repeat(2 - row.size) { Spacer(modifier = Modifier.weight(1f)) }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun OverviewStatistics(title: String, values: List<Pair<String, String>>, columns: Int = 4) {
+    val apple = LocalAppleColors.current
+    AppleSectionHeader(title = title)
+    Spacer(modifier = Modifier.height(4.dp))
+    AppleGroupedCard(contentPadding = PaddingValues(12.dp)) {
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            values.chunked(columns).forEach { row ->
+                EqualHeightRow(spacing = 8.dp) {
+                    row.forEach { (label, value) ->
+                        Surface(
+                            modifier = Modifier.weight(1f).fillMaxHeight(),
+                            shape = RoundedCornerShape(12.dp),
+                            color = apple.elevated,
+                        ) {
+                            Column(
+                                modifier = Modifier.padding(vertical = 8.dp, horizontal = 4.dp),
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                            ) {
+                                Text(
+                                    text = value,
+                                    style = MaterialTheme.typography.titleMedium.copy(
+                                        fontWeight = FontWeight.Bold,
+                                        fontFeatureSettings = "tnum",
+                                    ),
+                                    color = apple.primaryText,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                                Spacer(modifier = Modifier.height(2.dp))
+                                Text(
+                                    text = label,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = apple.secondaryText,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                            }
+                        }
+                    }
+                    repeat(columns - row.size) { Spacer(modifier = Modifier.weight(1f)) }
+                }
+            }
+        }
+    }
+}
+
 private fun opLabel(key: String): String = when (key) {
     "harvest" -> "收获"
     "farming" -> "务农"
@@ -1405,8 +1492,8 @@ private fun RanchOverviewContent(
                     QuickEntryItem("仓鼠集市", Icons.Rounded.LocalOffer, apple.emerald) {
                         onOpenDiscover(1, 1)
                     },
-                    QuickEntryItem("动物图鉴", Icons.Rounded.MenuBook, apple.indigo) {
-                        onOpenWorkspace(4)
+                    QuickEntryItem("礼包商城", Icons.Rounded.CardGiftcard, apple.indigo) {
+                        onOpenDiscover(1, 2)
                     },
                     QuickEntryItem("牧场活动", Icons.Rounded.Celebration, apple.red) {
                         onOpenDiscover(0, 0)
@@ -1556,6 +1643,18 @@ private fun RanchOverviewContent(
                             modifier = Modifier.weight(1f),
                         )
                     }
+                }
+            }
+
+            ranch.career?.let { career ->
+                item {
+                    RanchCareerStatistics(career)
+                }
+            }
+            status?.ranchOperations?.takeIf { it.isNotEmpty() }?.let { counts ->
+                item {
+                    val labels = mapOf("harvest" to "收获", "produce" to "生产", "helpFarming" to "帮忙清理", "steal" to "偷取")
+                    OverviewStatistics("今日收益统计", counts.map { (key, count) -> labels.getValue(key) to count.toString() })
                 }
             }
 

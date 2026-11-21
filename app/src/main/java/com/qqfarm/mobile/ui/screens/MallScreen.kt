@@ -802,18 +802,18 @@ private fun RanchMallContent(
     val busy by busyState
 
     var shopId by remember { mutableIntStateOf(5) }
-    var canSlot by remember { mutableIntStateOf(6) }
+    var mallSlot by remember { mutableIntStateOf(6) }
     var selectedShelf by remember { mutableIntStateOf(-1) }
     var autoPlace by remember { mutableStateOf(false) }
 
     val viewName = when (selectedTab) {
         1 -> "market"
-        2 -> "cans"
+        2 -> "mall"
         else -> "shop"
     }
     val shopParam = when (selectedTab) {
         0 -> shopId
-        2 -> canSlot
+        2 -> mallSlot
         else -> null
     }
 
@@ -843,7 +843,7 @@ private fun RanchMallContent(
 
     Column(modifier = Modifier.fillMaxSize()) {
         AppleScrollablePills(
-            options = listOf("牧场商店", "仓鼠集市", "罐头商城"),
+            options = listOf("牧场商店", "仓鼠集市", "礼包商城"),
             selectedIndex = selectedTab,
             onSelect = { idx ->
                 if (!busy) onSelectTab(idx)
@@ -912,7 +912,7 @@ private fun RanchMallContent(
 
                 val allGoods = when (selectedTab) {
                     1 -> current.marketGoods
-                    2 -> current.canShopGoods
+                    2 -> current.mallGoods ?: current.canShopGoods
                     else -> current.shopGoods
                 }
                 val visibleGoods = if (selectedTab == 1 && selectedShelf >= 0) {
@@ -988,9 +988,9 @@ private fun RanchMallContent(
                                 }
                                 2 -> {
                                     AppleSegmentedControl(
-                                        options = listOf("常驻商品", "限时商品"),
-                                        selectedIndex = if (canSlot == 7) 1 else 0,
-                                        onSelect = { if (!busy) canSlot = if (it == 1) 7 else 6 },
+                                        options = listOf("礼包商城", "特惠商城"),
+                                        selectedIndex = if (mallSlot == 7) 1 else 0,
+                                        onSelect = { if (!busy) mallSlot = if (it == 1) 7 else 6 },
                                     )
                                 }
                             }
@@ -1173,7 +1173,7 @@ private fun RanchMallContent(
     selectedGood?.let { good ->
         val actionName = when (selectedTab) {
             1 -> "exchange"
-            2 -> "buyCan"
+            2 -> if (snapshot?.mallGoods != null) "buyMall" else "buyCan"
             else -> "buy"
         }
         val verb = when {
@@ -1203,7 +1203,7 @@ private fun RanchMallContent(
                             .put("goodsId", good.id)
                             .put("count", count)
                             .put("shopId", shopId)
-                            .put("slotType", canSlot)
+                            .put("slotType", mallSlot)
                             .put("autoPlace", place)
 
                         val quoteRes = runCatching { apiClient.quoteRanchAction(accountId, actionName, input) }
@@ -1535,7 +1535,10 @@ internal fun RanchMallAmountSheet(
 
 internal fun ranchGoodsContents(good: RanchShopGood): String =
     good.rewards.ifEmpty { listOf(good.reward) }
-        .joinToString(" · ") { "${it.name} ×${formatCompactCount(it.count)}" }
+        .joinToString(" · ") {
+            if (it.id == 1006) "${it.name} ${formatDurationSec(it.count)}"
+            else "${it.name} ×${formatCompactCount(it.count)}"
+        }
 
 internal fun ranchPurchaseLimit(good: RanchShopGood, balance: Long?): Int {
     val quota = minOf(good.maxCount, good.remaining ?: good.maxCount).coerceAtLeast(0)

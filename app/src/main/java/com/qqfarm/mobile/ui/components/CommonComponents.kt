@@ -1186,7 +1186,7 @@ fun RanchQuoteConfirmSheet(
                         7004 -> "有机罐头"
                         else -> cost.name
                     }
-                    val displayAmount = if (cost.id == 7003 || cost.id == 7004) {
+                    val displayAmount = if (cost.id == 1006 || cost.id == 7003 || cost.id == 7004) {
                         "最多 ${formatDurationSec(cost.count)}"
                     } else "×${formatCompactCount(cost.count)}"
                     QuoteItemRow(item = cost, displayName = displayName, amountText = displayAmount, amountColor = apple.orange)
@@ -1198,7 +1198,7 @@ fun RanchQuoteConfirmSheet(
                     QuoteItemRow(
                         item = rew,
                         displayName = rew.name,
-                        amountText = "×${formatCompactCount(rew.count)}",
+                        amountText = if (rew.id == 1006) formatDurationSec(rew.count) else "×${formatCompactCount(rew.count)}",
                         amountColor = apple.emerald,
                     )
                 }

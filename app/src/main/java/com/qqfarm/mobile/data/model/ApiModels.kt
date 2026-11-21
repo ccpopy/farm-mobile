@@ -72,6 +72,7 @@ data class StatusSnapshot(
     val serverTimeMs: Long = 0L,
     val receivedAtElapsedMs: Long = 0L,
     val operations: Map<String, Int> = emptyMap(),
+    val ranchOperations: Map<String, Int>? = null,
 )
 
 data class RunLogEntry(
@@ -331,6 +332,12 @@ data class RanchPenGroup(
     val animals: List<RanchAnimal>,
 )
 
+data class RanchCareer(val harvest: Long, val mature: Long, val steal: Long) {
+    val ratioText: String get() = if (harvest > 0) {
+        String.format(java.util.Locale.ROOT, "%.1f", steal.toDouble() / harvest * 100).removeSuffix(".0") + "%"
+    } else "—"
+}
+
 data class RanchPayload(
     val unlocked: Boolean = false,
     val level: Int = 0,
@@ -349,6 +356,8 @@ data class RanchPayload(
     val reason: String = "",
     val dailyShareClaimed: Boolean = false,
     val dailyBenefitClaimed: Boolean = false,
+    val hourglassSeconds: Long? = null,
+    val career: RanchCareer? = null,
 )
 
 data class PetDog(
@@ -445,6 +454,9 @@ data class SeedOption(
 data class AccountSettingsModel(
     val plantingStrategy: String = "max_exp",
     val preferredSeedId: Long = 0L,
+    val bagSeedPriority: List<Int> = emptyList(),
+    val ranchCoopCubPriority: List<Int> = emptyList(),
+    val ranchShedCubPriority: List<Int> = emptyList(),
     val farmMinSec: Int = 20,
     val farmMaxSec: Int = 25,
     val friendMinSec: Int = 20,

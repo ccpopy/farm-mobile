@@ -139,7 +139,7 @@ object FeatureJsonParsers {
         }
     }
 
-    private fun parseIntList(arr: JSONArray?): List<Int> {
+    internal fun parseIntList(arr: JSONArray?): List<Int> {
         if (arr == null) return emptyList()
         return buildList(arr.length()) {
             for (i in 0 until arr.length()) {
@@ -391,6 +391,7 @@ object FeatureJsonParsers {
                         count = b.optLongFlex("count"),
                         type = type,
                         locked = b.optBoolFlex("locked"),
+                        lockable = b.optBoolFlex("lockable"),
                         animalId = b.optIntFlex("animalId"),
                         husbandryType = b.optStringClean("husbandryType"),
                         giantCub = b.optBoolFlex("giantCub"),
@@ -525,6 +526,8 @@ object FeatureJsonParsers {
                         gid = f.optStringClean("gid"),
                         name = f.optStringClean("name").ifBlank { f.optStringClean("gid") },
                         avatarUrl = f.optStringClean("avatarUrl"),
+                        canHelp = f.optBoolFlex("canHelp"),
+                        helpCount = f.optIntFlex("helpCount"),
                     )
                 )
             }
@@ -579,6 +582,7 @@ object FeatureJsonParsers {
                 strokeRemaining = frObj.optIntFlex("strokeRemaining"),
                 mosquitoRemaining = frObj.optIntFlex("mosquitoRemaining"),
                 cleanableHazards = frObj.optIntFlex("cleanableHazards"),
+                career = JsonParsers.parseRanchCareer(frObj.optJSONObject("career")),
                 notice = frObj.optStringClean("notice"),
                 ranches = ranches,
             )
@@ -594,6 +598,7 @@ object FeatureJsonParsers {
             marketShelves = marketShelves,
             marketGoods = marketGoods,
             canShopGoods = canShopGoods,
+            mallGoods = obj.optJSONObject("mall")?.let { parseRanchGoodsArray(it.optJSONArray("goods")) },
             friends = friends,
             friendRanch = friendRanch,
         )

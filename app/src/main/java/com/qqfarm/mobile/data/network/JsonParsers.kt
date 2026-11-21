@@ -32,6 +32,7 @@ import com.qqfarm.mobile.data.model.RanchBucket
 import com.qqfarm.mobile.data.model.RanchCurrency
 import com.qqfarm.mobile.data.model.RanchFacility
 import com.qqfarm.mobile.data.model.RanchFacilityNext
+import com.qqfarm.mobile.data.model.RanchCareer
 import com.qqfarm.mobile.data.model.RanchPayload
 import com.qqfarm.mobile.data.model.RanchPenGroup
 import com.qqfarm.mobile.data.model.RunLogEntry
@@ -164,6 +165,10 @@ object JsonParsers {
             serverTimeMs = serverTime,
             receivedAtElapsedMs = SystemClock.elapsedRealtime(),
             operations = opsMap,
+            ranchOperations = dataObj.optJSONObject("ranchOperations")?.let { ops ->
+                listOf("harvest", "produce", "helpFarming", "steal")
+                    .filter { !ops.isNull(it) }.associateWith { ops.optIntFlex(it) }
+            },
         )
     }
 
@@ -448,6 +453,10 @@ object JsonParsers {
         return BagPayload(items = items, systemItems = systemItems)
     }
 
+    internal fun parseRanchCareer(obj: JSONObject?): RanchCareer? = obj?.let {
+        RanchCareer(it.optLongFlex("harvest"), it.optLongFlex("mature"), it.optLongFlex("steal"))
+    }
+
     fun parseRanchPayload(obj: JSONObject): RanchPayload {
         val unlocked = obj.optBoolFlex("unlocked", true)
         val serverNow = normalizeMs(obj.optLongFlex("serverTime", System.currentTimeMillis()))
@@ -584,6 +593,8 @@ object JsonParsers {
             unlocked = unlocked,
             level = obj.optIntFlex("level"),
             grass = obj.optLongFlex("grass"),
+            hourglassSeconds = if (obj.isNull("hourglassSeconds")) null else obj.optLongFlex("hourglassSeconds"),
+            career = parseRanchCareer(obj.optJSONObject("career")),
             buckets = buckets,
             pens = pens,
             hazardsCount = hazardsTotal,
@@ -872,6 +883,9 @@ object JsonParsers {
             autoAcceptHarvestStealSteal = obj.optIntFlex("autoAcceptHarvestStealSteal", 1).coerceIn(1, 9999),
             ranchStrategy = automation.optStringClean("ranch_strategy", "level"),
             ranchBagFallback = automation.optStringClean("ranch_bag_fallback", "level"),
+            bagSeedPriority = FeatureJsonParsers.parseIntList(obj.optJSONArray("bagSeedPriority")),
+            ranchCoopCubPriority = FeatureJsonParsers.parseIntList(automation.optJSONArray("ranch_coop_cub_priority")),
+            ranchShedCubPriority = FeatureJsonParsers.parseIntList(automation.optJSONArray("ranch_shed_cub_priority")),
             ranchCoopAnimal = automation.optIntFlex("ranch_coop_animal", 0),
             ranchShedAnimal = automation.optIntFlex("ranch_shed_animal", 0),
             ranchGrassThresholdPercent = automation.optIntFlex("ranch_grass_threshold_percent", 20).coerceIn(1, 100),

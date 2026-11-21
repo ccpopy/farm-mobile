@@ -200,6 +200,14 @@ data class RanchFacility(
     val next: RanchFacilityNext? = null,
 )
 
+data class BagPriorityItem(
+    val id: Int,
+    val name: String,
+    val count: Long,
+    val image: String,
+    val housing: String = "",
+)
+
 data class RanchBagItem(
     val uid: String,
     val id: Int,
@@ -208,6 +216,7 @@ data class RanchBagItem(
     val count: Long,
     val type: Int = 0,
     val locked: Boolean = false,
+    val lockable: Boolean = false,
     val animalId: Int = 0,
     val husbandryType: String = "",
     val giantCub: Boolean = false,
@@ -301,6 +310,8 @@ data class RanchFriendSummary(
     val gid: String,
     val name: String,
     val avatarUrl: String = "",
+    val canHelp: Boolean = false,
+    val helpCount: Int = 0,
 )
 
 data class RanchFriendShelf(
@@ -328,6 +339,7 @@ data class RanchFriendDetail(
     val strokeRemaining: Int = 0,
     val mosquitoRemaining: Int = 0,
     val cleanableHazards: Int = 0,
+    val career: RanchCareer? = null,
     val notice: String = "",
     val ranches: List<RanchFriendPen> = emptyList(),
 )
@@ -342,6 +354,7 @@ data class RanchViewSnapshot(
     val marketShelves: List<RanchMarketShelf> = emptyList(),
     val marketGoods: List<RanchShopGood> = emptyList(),
     val canShopGoods: List<RanchShopGood> = emptyList(),
+    val mallGoods: List<RanchShopGood>? = null,
     val friends: List<RanchFriendSummary> = emptyList(),
     val friendRanch: RanchFriendDetail? = null,
 )

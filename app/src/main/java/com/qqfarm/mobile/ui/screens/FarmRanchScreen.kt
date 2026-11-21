@@ -137,8 +137,9 @@ fun FarmRanchScreen(
     var petSnapshot by remember(accountId, isConnected) { mutableStateOf<PetSnapshot?>(null) }
 
     var selectedLandId by remember(accountId, isConnected) { mutableStateOf<Int?>(null) }
+    var batchLockOpen by remember(accountId, isConnected, subTab) { mutableStateOf(false) }
     var selectedBagKey by remember(accountId, isConnected) { mutableStateOf<String?>(null) }
-    var bagActionError by remember(selectedBagKey) { mutableStateOf<String?>(null) }
+    var bagActionError by remember(selectedBagKey, batchLockOpen) { mutableStateOf<String?>(null) }
     var showUpgradeConfirm by remember(accountId, isConnected) { mutableStateOf(false) }
 
     var clockTickMs by remember { mutableLongStateOf(SystemClock.elapsedRealtime()) }
@@ -202,6 +203,7 @@ fun FarmRanchScreen(
                 }
             } catch (e: ApiException) {
                 bagPayload = null
+                batchLockOpen = false
                 selectedBagKey = null
                 onMessage(bagActionError ?: e.message)
             } finally {
@@ -305,6 +307,7 @@ fun FarmRanchScreen(
 
                         1 -> BagContent(
                             payload = bagPayload,
+                            onBatchLock = { if (!actionBusy && !refreshing) batchLockOpen = true },
                             onItemClick = { if (!actionBusy && !refreshing) selectedBagKey = it.key },
                         )
 
@@ -440,6 +443,28 @@ fun FarmRanchScreen(
     }
 
     bagPayload?.let { bag ->
+        if (batchLockOpen) {
+            val entries = remember(bag) { bag.items.filter { it.canChangeLock }.map {
+                BagLockEntry(it.uid, it.name, it.image, it.count, it.locked)
+            } }
+            BagLockSheet(
+                entries = entries,
+                busy = actionBusy || refreshing,
+                error = bagActionError,
+                onSubmit = { uids, locked ->
+                    operateBag(onUpdated = { refreshed ->
+                        val confirmed = refreshed.items.filter { it.locked == locked }.map { it.uid }.toSet()
+                        if (confirmed.containsAll(uids)) {
+                            batchLockOpen = false
+                            onMessage("已${if (locked) "上锁" else "解锁"} ${uids.size} 格物品")
+                        } else {
+                            bagActionError = "部分物品状态已变化，请按最新背包核对"
+                        }
+                    }) { apiClient.lockBagItems(accountId, uids, locked) }
+                },
+                onDismiss = { batchLockOpen = false },
+            )
+        }
         bag.items.firstOrNull { it.key == selectedBagKey }?.let { item ->
             BagItemActionSheet(
                 item = item,
@@ -1185,6 +1210,7 @@ private fun LandDetailSheet(
 @Composable
 private fun BagContent(
     payload: BagPayload?,
+    onBatchLock: () -> Unit,
     onItemClick: (BagItem) -> Unit,
 ) {
     val apple = LocalAppleColors.current
@@ -1207,20 +1233,25 @@ private fun BagContent(
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         item {
-            val cats = listOf(
-                "all" to "全部",
-                "fruit" to "果实",
-                "mutant" to "超变",
-                "seed" to "种子",
-                "tool" to "道具",
-            )
-            LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                items(cats) { (key, label) ->
-                    AppleFilterChip(
-                        selected = category == key,
-                        onClick = { category = key },
-                        label = { Text(label) },
-                    )
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                val cats = listOf(
+                    "all" to "全部",
+                    "fruit" to "果实",
+                    "mutant" to "超变",
+                    "seed" to "种子",
+                    "tool" to "道具",
+                )
+                LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    items(cats) { (key, label) ->
+                        AppleFilterChip(
+                            selected = category == key,
+                            onClick = { category = key },
+                            label = { Text(label) },
+                        )
+                    }
+                }
+                if (allItems.any { it.canChangeLock }) {
+                    AppleSectionHeader(title = "农场背包", actionLabel = "批量上锁 / 解锁", onAction = onBatchLock)
                 }
             }
         }

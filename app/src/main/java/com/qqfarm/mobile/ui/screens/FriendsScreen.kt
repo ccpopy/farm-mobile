@@ -940,13 +940,27 @@ private fun RanchFriendsContent(
                                 )
                                 Spacer(modifier = Modifier.width(12.dp))
                                 Column(modifier = Modifier.weight(1f)) {
-                                    Text(
-                                        text = friend.name,
-                                        style = MaterialTheme.typography.titleSmall,
-                                        color = apple.primaryText,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis,
-                                    )
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                    ) {
+                                        Text(
+                                            text = friend.name,
+                                            style = MaterialTheme.typography.titleSmall,
+                                            color = apple.primaryText,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis,
+                                            modifier = Modifier.weight(1f, fill = false),
+                                        )
+                                        if (!refreshing && loadError.isBlank() && friend.canHelp) {
+                                            AppleStatusPill(
+                                                text = if (friend.helpCount > 0) "可清理 ${friend.helpCount} 处" else "可清理",
+                                                color = apple.green,
+                                                showDot = false,
+                                            )
+                                        }
+                                    }
+                                    Spacer(modifier = Modifier.height(2.dp))
                                     Text(
                                         text = "GID ${friend.gid} · 点击拜访牧场",
                                         style = MaterialTheme.typography.bodySmall,
@@ -972,7 +986,10 @@ private fun RanchFriendsContent(
             friend = friend,
             apiClient = apiClient,
             onMessage = onMessage,
-            onDismiss = { selectedFriend = null },
+            onDismiss = {
+                selectedFriend = null
+                scope.launch { loadFriendsList() }
+            },
         )
     }
 }
@@ -1169,6 +1186,7 @@ private fun RanchFriendDetailSheet(
                             }
                         }
                     }
+                    d.career?.let { career -> item { RanchCareerStatistics(career, embedded = true) } }
                     items(d.ranches, key = { it.id }) { pen ->
                         AppleGroupedCard(contentPadding = PaddingValues(14.dp)) {
                             Row(
