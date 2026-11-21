@@ -86,6 +86,7 @@ data class RunLogEntry(
     val accountId: String = "",
     val friendName: String = "",
     val actions: List<String> = emptyList(),
+    val searchText: String = "",
 )
 
 enum class ActivityNotifyGroup(
@@ -319,6 +320,7 @@ data class RanchAnimal(
     val deliveringUntilMs: Long = 0L,
     val canStroke: Boolean = false,
     val stroked: Boolean = false,
+    val stage: Int = 0,
 )
 
 data class RanchPenGroup(

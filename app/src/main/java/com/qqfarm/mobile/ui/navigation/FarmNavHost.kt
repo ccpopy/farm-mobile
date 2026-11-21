@@ -330,7 +330,7 @@ fun FarmNavHost(viewModel: AppSessionViewModel) {
                                 },
                                 onOpenAccountSwitcher = { showAccountSwitcher = true },
                                 onStartAccount = { id -> viewModel.startAccount(id) },
-                                onClearLogs = { viewModel.clearLogs() },
+                                onClearLogs = viewModel::clearLogs,
                                 onMessage = { msg -> viewModel.emitMessage(msg) },
                                 onSwitchSpace = ::selectSpace,
                                 onOpenDiscover = { subTab, mallIdx ->
@@ -411,6 +411,7 @@ fun FarmNavHost(viewModel: AppSessionViewModel) {
                                 onToggleNotifyType = { key, enabled -> viewModel.toggleNotifyType(key, enabled) },
                                 onApplyNotifyTypes = { keys -> viewModel.applyNotifyTypes(keys) },
                                 onSendTestNotification = { viewModel.sendTestActivityNotification() },
+                                onClearLogs = viewModel::clearLogs,
                                 onMessage = { msg -> viewModel.emitMessage(msg) },
                             )
                         }

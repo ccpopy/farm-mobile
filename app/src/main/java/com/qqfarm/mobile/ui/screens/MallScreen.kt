@@ -64,6 +64,7 @@ import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.qqfarm.mobile.data.model.CommerceItem
+import com.qqfarm.mobile.data.model.RanchQuote
 import com.qqfarm.mobile.data.model.GameSpace
 import com.qqfarm.mobile.data.model.MallCatalog
 import com.qqfarm.mobile.data.model.MallGoods
@@ -74,6 +75,7 @@ import com.qqfarm.mobile.data.model.RanchViewSnapshot
 import com.qqfarm.mobile.data.network.ApiException
 import com.qqfarm.mobile.data.network.FarmApiClient
 import com.qqfarm.mobile.ui.components.AppleEmptyState
+import com.qqfarm.mobile.ui.components.AppleLoadingState
 import com.qqfarm.mobile.ui.components.AppleGroupedCard
 import com.qqfarm.mobile.ui.components.AppleQuantityStepper
 import com.qqfarm.mobile.ui.components.AppleScrollablePills
@@ -156,10 +158,10 @@ private fun FarmMallContent(
     val isConnected = session.status?.connected == true && accountId.isNotBlank()
     val purchasing by busyState
 
-    var refreshing by remember(selectedTab, isConnected) { mutableStateOf(false) }
-    var catalog by remember(selectedTab, isConnected) { mutableStateOf<MallCatalog?>(null) }
-    var mystery by remember(selectedTab, isConnected) { mutableStateOf<MysteryShopState?>(null) }
-    var loadError by remember(selectedTab, isConnected) { mutableStateOf("") }
+    var refreshing by remember(accountId, selectedTab, isConnected) { mutableStateOf(false) }
+    var catalog by remember(accountId, selectedTab, isConnected) { mutableStateOf<MallCatalog?>(null) }
+    var mystery by remember(accountId, selectedTab, isConnected) { mutableStateOf<MysteryShopState?>(null) }
+    var loadError by remember(accountId, selectedTab, isConnected) { mutableStateOf("") }
 
     var filterIdx by remember { mutableIntStateOf(0) }
     var search by remember { mutableStateOf("") }
@@ -196,11 +198,11 @@ private fun FarmMallContent(
                 catalog = apiClient.fetchMallCatalog(accountId, slotTypeForTab, isPropsShop)
             }
         } catch (e: ApiException) {
-            catalog = null
-            mystery = null
             loadError = e.message
+            if (catalog != null || mystery != null) onMessage(e.message)
+        } finally {
+            refreshing = false
         }
-        refreshing = false
     }
 
     LaunchedEffect(accountId, isConnected, selectedTab) {
@@ -235,12 +237,16 @@ private fun FarmMallContent(
                 }
             } else {
                 PullToRefreshBox(
-                isRefreshing = refreshing,
+                isRefreshing = refreshing && (catalog != null || mystery != null),
                 onRefresh = { scope.launch { loadCurrentShop() } },
                 modifier = Modifier.fillMaxSize(),
             ) {
                 if (isMysteryTab) {
                     val m = mystery
+                    if (m == null && loadError.isBlank()) {
+                        AppleLoadingState()
+                        return@PullToRefreshBox
+                    }
                     val elapsedMs = if (m != null && m.receivedAtElapsedMs > 0L) {
                         (clockTickMs - m.receivedAtElapsedMs).coerceAtLeast(0L)
                     } else 0L
@@ -399,15 +405,19 @@ private fun FarmMallContent(
                 } else {
                     val cat = catalog
                     if (cat == null) {
+                        if (loadError.isBlank()) {
+                            AppleLoadingState()
+                            return@PullToRefreshBox
+                        }
                         LazyColumn(modifier = Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp)) {
                             item {
                                 AppleGroupedCard {
                                     AppleEmptyState(
                                         icon = Icons.Rounded.Storefront,
-                                        title = if (loadError.isNotBlank()) loadError else "正在加载商城...",
-                                        subtitle = "按当前账号读取商品目录与价格",
-                                        actionLabel = if (loadError.isNotBlank()) "重新读取" else null,
-                                        onAction = if (loadError.isNotBlank()) ({ scope.launch { loadCurrentShop() } }) else null,
+                                        title = "商城读取失败",
+                                        subtitle = loadError,
+                                        actionLabel = "重新读取",
+                                        onAction = { scope.launch { loadCurrentShop() } },
                                     )
                                 }
                             }
@@ -807,9 +817,9 @@ private fun RanchMallContent(
         else -> null
     }
 
-    var refreshing by remember(selectedTab, shopParam, isConnected) { mutableStateOf(false) }
-    var snapshot by remember(selectedTab, shopParam, isConnected) { mutableStateOf<RanchViewSnapshot?>(null) }
-    var loadError by remember(selectedTab, shopParam, isConnected) { mutableStateOf("") }
+    var refreshing by remember(accountId, selectedTab, shopParam, isConnected) { mutableStateOf(false) }
+    var snapshot by remember(accountId, selectedTab, shopParam, isConnected) { mutableStateOf<RanchViewSnapshot?>(null) }
+    var loadError by remember(accountId, selectedTab, shopParam, isConnected) { mutableStateOf("") }
     var selectedGood by remember(selectedTab, shopParam, isConnected) { mutableStateOf<RanchShopGood?>(null) }
 
     suspend fun loadRanchMall() {
@@ -820,10 +830,11 @@ private fun RanchMallContent(
         try {
             snapshot = apiClient.fetchRanchView(accountId, viewName, shopId = shopParam)
         } catch (e: ApiException) {
-            snapshot = null
             loadError = e.message
+            if (snapshot != null) onMessage(e.message)
+        } finally {
+            refreshing = false
         }
-        refreshing = false
     }
 
     LaunchedEffect(accountId, isConnected, selectedTab, shopParam) {
@@ -858,21 +869,25 @@ private fun RanchMallContent(
                 }
             } else {
                 PullToRefreshBox(
-                isRefreshing = refreshing,
+                isRefreshing = refreshing && snapshot != null,
                 onRefresh = { scope.launch { loadRanchMall() } },
                 modifier = Modifier.fillMaxSize(),
             ) {
                 val current = snapshot
                 if (current == null) {
+                    if (loadError.isBlank()) {
+                        AppleLoadingState()
+                        return@PullToRefreshBox
+                    }
                     LazyColumn(modifier = Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp)) {
                         item {
                             AppleGroupedCard {
                                 AppleEmptyState(
                                     icon = Icons.Rounded.Storefront,
-                                    title = if (loadError.isNotBlank()) loadError else "正在加载牧场商城...",
-                                    subtitle = "读取商品、限购次数与余额",
-                                    actionLabel = if (loadError.isNotBlank()) "重试" else null,
-                                    onAction = if (loadError.isNotBlank()) ({ scope.launch { loadRanchMall() } }) else null,
+                                    title = "牧场商城读取失败",
+                                    subtitle = loadError,
+                                    actionLabel = "重试",
+                                    onAction = { scope.launch { loadRanchMall() } },
                                 )
                             }
                         }
@@ -1086,11 +1101,7 @@ private fun RanchMallContent(
                                                 )
                                             }
                                         }
-                                        val subReward = if (good.rewards.size > 1) {
-                                            good.rewards.joinToString(" · ") { "${it.name}×${formatCompactCount(it.count)}" }
-                                        } else {
-                                            "${good.reward.name} ×${formatCompactCount(good.reward.count)}"
-                                        }
+                                        val subReward = ranchGoodsContents(good)
                                         Text(subReward, style = MaterialTheme.typography.bodySmall, color = apple.secondaryText, maxLines = 1, overflow = TextOverflow.Ellipsis)
                                         val metaParts = buildList {
                                             if (good.remaining != null) add("剩余 ${good.remaining}")
@@ -1207,15 +1218,7 @@ private fun RanchMallContent(
                             return@launch
                         }
 
-                        val expectedCostSig = if (good.free) "" else {
-                            val totalCost = BigInteger.valueOf(good.priceCount).multiply(BigInteger.valueOf(count.toLong()))
-                            if (totalCost == BigInteger.ZERO) "" else "${good.priceId}:$totalCost"
-                        }
-                        val actualCostSig = itemSignature(quote.costItems)
-                        val expectedRewardSig = scaledItemSignature(good.rewards, count)
-                        val actualRewardSig = itemSignature(quote.rewards)
-
-                        if (actualCostSig != expectedCostSig || actualRewardSig != expectedRewardSig) {
+                        if (!ranchQuoteMatchesGoods(good, count, quote)) {
                             selectedGood = null
                             onMessage("商品价格或内容已变化，请重新选择")
                             loadRanchMall()
@@ -1421,7 +1424,7 @@ internal fun MallPurchaseContent(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun RanchMallAmountSheet(
+internal fun RanchMallAmountSheet(
     good: RanchShopGood,
     verb: String,
     balance: Long?,
@@ -1468,6 +1471,7 @@ private fun RanchMallAmountSheet(
                 )
                 Column(modifier = Modifier.weight(1f)) {
                     Text(good.name, style = MaterialTheme.typography.titleSmall, color = apple.primaryText)
+                    Text(ranchGoodsContents(good), style = MaterialTheme.typography.bodySmall, color = apple.secondaryText)
                     val balNote = if (balance != null && !good.free) " · 余额 ${formatCompactCount(balance)}" else ""
                     Text(
                         text = if (good.free) "免费领取" else "单价 ${formatCompactCount(good.priceCount)} ${good.priceName}$balNote",
@@ -1529,11 +1533,24 @@ private fun RanchMallAmountSheet(
     }
 }
 
-private fun ranchPurchaseLimit(good: RanchShopGood, balance: Long?): Int {
+internal fun ranchGoodsContents(good: RanchShopGood): String =
+    good.rewards.ifEmpty { listOf(good.reward) }
+        .joinToString(" · ") { "${it.name} ×${formatCompactCount(it.count)}" }
+
+internal fun ranchPurchaseLimit(good: RanchShopGood, balance: Long?): Int {
     val quota = minOf(good.maxCount, good.remaining ?: good.maxCount).coerceAtLeast(0)
     if (good.free) return quota
     if (balance == null || good.priceCount <= 0L) return 0
     return minOf(quota.toLong(), balance / good.priceCount).coerceAtLeast(0L).toInt()
+}
+
+internal fun ranchQuoteMatchesGoods(good: RanchShopGood, count: Int, quote: RanchQuote): Boolean {
+    val expectedCost = if (good.free) "" else {
+        val total = BigInteger.valueOf(good.priceCount).multiply(BigInteger.valueOf(count.toLong()))
+        if (total == BigInteger.ZERO) "" else "${good.priceId}:$total"
+    }
+    return itemSignature(quote.costItems) == expectedCost &&
+        itemSignature(quote.rewards) == scaledItemSignature(good.rewards, count)
 }
 
 private fun itemSignature(items: List<CommerceItem>): String {

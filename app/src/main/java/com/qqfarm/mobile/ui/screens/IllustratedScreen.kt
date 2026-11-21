@@ -48,7 +48,6 @@ import androidx.compose.material.icons.rounded.Visibility
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
@@ -97,6 +96,7 @@ import com.qqfarm.mobile.data.model.MutationCatalogSnapshot
 import com.qqfarm.mobile.data.network.ApiException
 import com.qqfarm.mobile.data.network.FarmApiClient
 import com.qqfarm.mobile.ui.components.AppleEmptyState
+import com.qqfarm.mobile.ui.components.AppleLoadingState
 import com.qqfarm.mobile.ui.components.AppleFilterChip
 import com.qqfarm.mobile.ui.components.AppleGroupedCard
 import com.qqfarm.mobile.ui.components.AppleHairlineDivider
@@ -292,12 +292,13 @@ fun IllustratedScreen(
         if (mutantClaimable) "超变图鉴 ●" else "超变图鉴",
         if (colClaimableCount > 0) "蓝晶藏品 ●" else "蓝晶藏品",
         "变异宝典",
+        "牧场图鉴",
     )
 
     val refreshing = when (selectedTab) {
-        2 -> collectionsLoading
-        3 -> catalogLoading
-        else -> illustratedLoading
+        2 -> collectionsLoading && collections != null
+        3 -> catalogLoading && mutationCatalog != null
+        else -> illustratedLoading && illustrated != null
     }
 
     Column(
@@ -317,12 +318,32 @@ fun IllustratedScreen(
                     1 -> apple.orange
                     2 -> apple.blue
                     3 -> apple.indigo
+                    4 -> apple.orange
                     else -> apple.emerald
                 },
             )
         }
 
-        PullToRefreshBox(
+        val tabContent = Modifier
+            .fillMaxWidth()
+            .weight(1f)
+            .swipeToSwitchTabs(
+                selectedIndex = selectedTab,
+                count = tabOptions.size,
+                enabled = !actionBusy && !hasOpenSheet,
+            ) { selectedTab = it }
+        if (selectedTab == 4) {
+            Box(tabContent) {
+                RanchBookPage(
+                    accountId = accountId,
+                    isConnected = isConnected,
+                    apiClient = apiClient,
+                    onBusyChange = { actionBusy = it },
+                    onMessage = onMessage,
+                    onRewardsClaimed = onRefreshOverview,
+                )
+            }
+        } else PullToRefreshBox(
             isRefreshing = refreshing,
             onRefresh = {
                 if (!actionBusy) scope.launch {
@@ -333,14 +354,7 @@ fun IllustratedScreen(
                     }
                 }
             },
-            modifier = Modifier
-                .fillMaxWidth()
-                .weight(1f)
-                .swipeToSwitchTabs(
-                    selectedIndex = selectedTab,
-                    count = 4,
-                    enabled = !actionBusy && !hasOpenSheet,
-                ) { selectedTab = it },
+            modifier = tabContent,
         ) {
             when (selectedTab) {
                 0, 1 -> {
@@ -359,7 +373,7 @@ fun IllustratedScreen(
                         !isConnected -> BookCenteredCard {
                             AppleEmptyState(icon = Icons.Rounded.MenuBook, title = "账号未运行", subtitle = "启动当前账号后即可查看图鉴进度与领取奖励")
                         }
-                        illustratedLoading && illustrated == null -> BookLoadingState("正在读取图鉴...")
+                        illustrated == null && illustratedError.isBlank() -> AppleLoadingState()
                         illustratedError.isNotBlank() && illustrated == null -> BookCenteredCard {
                             AppleEmptyState(
                                 icon = Icons.Rounded.MenuBook,
@@ -403,7 +417,7 @@ fun IllustratedScreen(
                         !isConnected -> BookCenteredCard {
                             AppleEmptyState(icon = Icons.Rounded.Stars, title = "账号未运行", subtitle = "启动当前账号后即可管理蓝晶藏品与领奖")
                         }
-                        collectionsLoading && collections == null -> BookLoadingState("正在读取蓝晶藏品...")
+                        collections == null && collectionsError.isBlank() -> AppleLoadingState()
                         collectionsError.isNotBlank() && collections == null -> BookCenteredCard {
                             AppleEmptyState(
                                 icon = Icons.Rounded.Stars,
@@ -436,7 +450,7 @@ fun IllustratedScreen(
 
                 else -> {
                     when {
-                        catalogLoading && mutationCatalog == null -> BookLoadingState("正在读取变异宝典...")
+                        mutationCatalog == null && catalogError.isBlank() -> AppleLoadingState()
                         catalogError.isNotBlank() && mutationCatalog == null -> BookCenteredCard {
                             AppleEmptyState(
                                 icon = Icons.Rounded.AutoAwesome,
@@ -606,20 +620,6 @@ fun IllustratedScreen(
                 TextButton(onClick = { rulesDialogSeries = null }) { Text("知道了") }
             },
         )
-    }
-}
-
-@Composable
-private fun BookLoadingState(message: String) {
-    val apple = LocalAppleColors.current
-    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-        Column(
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(10.dp),
-        ) {
-            CircularProgressIndicator(strokeWidth = 2.5.dp, modifier = Modifier.size(28.dp))
-            Text(message, style = MaterialTheme.typography.bodySmall, color = apple.secondaryText)
-        }
     }
 }
 

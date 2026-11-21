@@ -473,6 +473,7 @@ class FarmApiClient {
         keyword: String = "",
         isWarn: Boolean? = null,
         limit: Int = 120,
+        timeFrom: String = "",
     ): List<RunLogEntry> {
         val params = mutableListOf("limit=$limit")
         if (accountId.isBlank() || accountId == "all") {
@@ -481,6 +482,7 @@ class FarmApiClient {
         if (module.isNotBlank()) params.add("module=${encodeQuery(module)}")
         if (keyword.isNotBlank()) params.add("keyword=${encodeQuery(keyword)}")
         if (isWarn != null) params.add("isWarn=${if (isWarn) "true" else "false"}")
+        if (timeFrom.isNotBlank()) params.add("timeFrom=${encodeQuery(timeFrom)}")
         val query = params.joinToString("&")
         val json = executeJson(
             method = "GET",

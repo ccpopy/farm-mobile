@@ -8,13 +8,18 @@ import com.qqfarm.mobile.data.model.AccountItem
 import com.qqfarm.mobile.data.model.BagSystemItem
 import com.qqfarm.mobile.data.model.DailyGiftsSummary
 import com.qqfarm.mobile.data.model.RunLogEntry
+import com.qqfarm.mobile.data.model.RUN_LOG_LIMIT
 import com.qqfarm.mobile.data.model.ServerVersionInfo
 import com.qqfarm.mobile.data.model.StatusSnapshot
+import com.qqfarm.mobile.data.model.isVisibleSince
+import com.qqfarm.mobile.data.model.retainedRunLogs
+import com.qqfarm.mobile.data.model.runLogCutoff
 import com.qqfarm.mobile.data.network.ApiException
 import com.qqfarm.mobile.data.network.FarmApiClient
 import com.qqfarm.mobile.data.prefs.StoredConfig
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -25,6 +30,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.supervisorScope
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import java.time.Instant
 
 data class SessionUiState(
     val initializing: Boolean = true,
@@ -61,6 +67,7 @@ class AppSessionViewModel(application: Application) : AndroidViewModel(applicati
     val snackbars: SharedFlow<String> = _snackbars.asSharedFlow()
 
     private var bootstrapJob: Job? = null
+    private var logsRefreshJob: Job? = null
     private val tokenUpdates = Mutex()
 
     init {
@@ -106,7 +113,8 @@ class AppSessionViewModel(application: Application) : AndroidViewModel(applicati
             socketManager.logSnapshots.collect { (accountId, logs) ->
                 val activeId = _uiState.value.config.currentAccountId
                 if (accountId == activeId || (accountId == "all" && activeId.isBlank())) {
-                    _uiState.value = _uiState.value.copy(logs = logs.takeLast(300))
+                    _uiState.value = _uiState.value.copy(logs = logs.retainedRunLogs())
+                    refreshRunLogs()
                 }
             }
         }
@@ -115,8 +123,10 @@ class AppSessionViewModel(application: Application) : AndroidViewModel(applicati
             socketManager.newLogs.collect { entry ->
                 activityNotifier.onRealtimeLog(entry)
                 val activeId = _uiState.value.config.currentAccountId
-                if (activeId.isBlank() || entry.accountId.isBlank() || entry.accountId == activeId) {
-                    val next = (_uiState.value.logs + entry).takeLast(300)
+                if ((activeId.isBlank() || entry.accountId.isBlank() || entry.accountId == activeId) &&
+                    entry.isVisibleSince(runLogCutoff())
+                ) {
+                    val next = (_uiState.value.logs + entry).retainedRunLogs()
                     _uiState.value = _uiState.value.copy(logs = next)
                 }
             }
@@ -127,11 +137,22 @@ class AppSessionViewModel(application: Application) : AndroidViewModel(applicati
                 offlineMonitor.onAccountLog(ev)
             }
         }
+        viewModelScope.launch {
+            while (true) {
+                delay(60_000L)
+                val state = _uiState.value
+                val logs = state.logs.retainedRunLogs()
+                if (logs.size != state.logs.size) _uiState.value = state.copy(logs = logs)
+            }
+        }
     }
 
     private fun applyConfig(latest: StoredConfig) {
         val previous = _uiState.value
         val connectionChanged = previous.initializing || !isActiveConnection(latest)
+        if (connectionChanged || previous.config.currentAccountId != latest.currentAccountId) {
+            logsRefreshJob?.cancel()
+        }
         if (connectionChanged) {
             bootstrapJob?.cancel()
             socketManager.disconnect()
@@ -388,14 +409,11 @@ class AppSessionViewModel(application: Application) : AndroidViewModel(applicati
         val config = _uiState.value.config
         val accountId = config.currentAccountId
         if (accountId.isBlank()) return
+        refreshRunLogs()
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(statusLoading = true)
-            supervisorScope {
-                val statusJob = async { runCatching { apiClient.fetchStatus(accountId) } }
-                val logsJob = async { runCatching { apiClient.fetchLogs(accountId, limit = 120) } }
-
-                val statusRes = statusJob.await()
-                statusRes.onSuccess { snap ->
+            runCatching { apiClient.fetchStatus(accountId) }
+                .onSuccess { snap ->
                     if (isActiveConnection(config) && _uiState.value.config.currentAccountId == accountId) {
                         _uiState.value = _uiState.value.copy(
                             status = snap,
@@ -406,7 +424,8 @@ class AppSessionViewModel(application: Application) : AndroidViewModel(applicati
                             refreshSecondaryOverview(accountId)
                         }
                     }
-                }.onFailure { err ->
+                }
+                .onFailure { err ->
                     if (isActiveConnection(config) && _uiState.value.config.currentAccountId == accountId) {
                         _uiState.value = _uiState.value.copy(
                             statusLoading = false,
@@ -414,12 +433,29 @@ class AppSessionViewModel(application: Application) : AndroidViewModel(applicati
                         )
                     }
                 }
+        }
+    }
 
-                logsJob.await().onSuccess { fetchedLogs ->
-                    if (isActiveConnection(config) && _uiState.value.config.currentAccountId == accountId) {
-                        _uiState.value = _uiState.value.copy(logs = fetchedLogs)
-                    }
-                }
+    private fun refreshRunLogs() {
+        val before = _uiState.value
+        val config = before.config
+        val accountId = config.currentAccountId
+        if (accountId.isBlank()) return
+        logsRefreshJob?.cancel()
+        logsRefreshJob = viewModelScope.launch {
+            val fetched = runCatching {
+                apiClient.fetchLogs(
+                    accountId = accountId,
+                    limit = RUN_LOG_LIMIT,
+                    timeFrom = Instant.ofEpochMilli(runLogCutoff()).toString(),
+                )
+            }.getOrNull() ?: return@launch
+            val state = _uiState.value
+            if (isActiveConnection(config) && state.config.currentAccountId == accountId) {
+                val latestBeforeFetch = before.logs.lastOrNull()?.ts ?: 0L
+                val receivedWhileFetching = state.logs.filter { it.ts > latestBeforeFetch }
+                val combined = (fetched + receivedWhileFetching).distinct().sortedBy { it.ts }.retainedRunLogs()
+                _uiState.value = state.copy(logs = combined)
             }
         }
     }
@@ -447,17 +483,18 @@ class AppSessionViewModel(application: Application) : AndroidViewModel(applicati
         }
     }
 
-    fun clearLogs() {
-        val accountId = _uiState.value.config.currentAccountId
-        if (accountId.isBlank()) return
-        viewModelScope.launch {
-            runCatching { apiClient.clearLogs(accountId) }
-                .onSuccess {
-                    _uiState.value = _uiState.value.copy(logs = emptyList())
-                    emitMessage("日志已清空")
-                }
-                .onFailure { emitMessage(it.message ?: "清空日志失败") }
+    suspend fun clearLogs(accountId: String) {
+        val config = _uiState.value.config
+        if (accountId.isBlank() || config.currentAccountId != accountId) {
+            throw ApiException("请选择需要清理日志的当前账号")
         }
+        apiClient.clearLogs(accountId)
+        val state = _uiState.value
+        if (isActiveConnection(config) && state.config.currentAccountId == accountId) {
+            _uiState.value = state.copy(logs = emptyList())
+            refreshRunLogs()
+        }
+        emitMessage("已清空当前账号的运行日志")
     }
 
     fun updateThemeMode(mode: String) {

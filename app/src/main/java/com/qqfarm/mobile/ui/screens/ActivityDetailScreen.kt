@@ -98,6 +98,7 @@ import com.qqfarm.mobile.data.model.StellarSnapshot
 import com.qqfarm.mobile.data.model.WeatherState
 import com.qqfarm.mobile.data.network.FarmApiClient
 import com.qqfarm.mobile.ui.components.AppleEmptyState
+import com.qqfarm.mobile.ui.components.AppleLoadingState
 import com.qqfarm.mobile.ui.components.AppleGroupedCard
 import com.qqfarm.mobile.ui.components.AppleHairlineDivider
 import com.qqfarm.mobile.ui.components.AppleQuantityStepper
@@ -533,7 +534,7 @@ private fun MugeDetailContent(
     val safeTab = subTab.coerceIn(0, (tabs.size - 1).coerceAtLeast(0))
 
     PullToRefreshBox(
-        isRefreshing = loading,
+        isRefreshing = loading && current != null,
         onRefresh = ::load,
         modifier = Modifier.fillMaxSize(),
     ) {
@@ -551,9 +552,7 @@ private fun MugeDetailContent(
                     .swipeToSwitchTabs(safeTab, tabs.size) { idx -> subTab = idx },
             ) {
                 if (current == null) {
-                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                        Text("正在读取活动数据...", color = apple.secondaryText)
-                    }
+                    AppleLoadingState()
                 } else {
                     val isHandbookPresent = current.handbookAvailable
                     val personalityIdx = if (isHandbookPresent) 3 else 2
@@ -2701,11 +2700,9 @@ private fun ShareRewardDetailContent(
         return
     }
 
-    PullToRefreshBox(isRefreshing = loading, onRefresh = ::load, modifier = Modifier.fillMaxSize()) {
+    PullToRefreshBox(isRefreshing = loading && current != null, onRefresh = ::load, modifier = Modifier.fillMaxSize()) {
         if (current == null) {
-            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                Text("正在读取快乐不独享...", color = apple.secondaryText)
-            }
+            AppleLoadingState()
             return@PullToRefreshBox
         }
 
@@ -2882,11 +2879,9 @@ private fun AutumnWishDetailContent(
         return
     }
 
-    PullToRefreshBox(isRefreshing = loading, onRefresh = ::load, modifier = Modifier.fillMaxSize()) {
+    PullToRefreshBox(isRefreshing = loading && current != null, onRefresh = ::load, modifier = Modifier.fillMaxSize()) {
         if (current == null) {
-            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                Text("正在读取祈愿签文...", color = apple.secondaryText)
-            }
+            AppleLoadingState()
             return@PullToRefreshBox
         }
 
@@ -3304,11 +3299,9 @@ private fun QixiDetailContent(
     LaunchedEffect(accountId, refreshTrigger) { load() }
 
     val current = state
-    PullToRefreshBox(isRefreshing = loading, onRefresh = ::load, modifier = Modifier.fillMaxSize()) {
+    PullToRefreshBox(isRefreshing = loading && current != null, onRefresh = ::load, modifier = Modifier.fillMaxSize()) {
         if (current == null) {
-            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                Text("正在读取鹊桥数据...", color = apple.secondaryText)
-            }
+            AppleLoadingState()
             return@PullToRefreshBox
         }
 
@@ -3520,11 +3513,9 @@ private fun QingMeiDetailContent(
     LaunchedEffect(accountId, refreshTrigger) { load() }
 
     val current = state
-    PullToRefreshBox(isRefreshing = loading, onRefresh = ::load, modifier = Modifier.fillMaxSize()) {
+    PullToRefreshBox(isRefreshing = loading && current != null, onRefresh = ::load, modifier = Modifier.fillMaxSize()) {
         if (current == null) {
-            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                Text("正在读取青酿进度...", color = apple.secondaryText)
-            }
+            AppleLoadingState()
             return@PullToRefreshBox
         }
 

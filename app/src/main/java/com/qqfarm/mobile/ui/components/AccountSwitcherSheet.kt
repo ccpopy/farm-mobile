@@ -248,6 +248,7 @@ fun AccountSwitcherSheet(
                                         imageVector = Icons.Rounded.Edit,
                                         contentDescription = "编辑账号",
                                         tint = apple.blue,
+                                        modifier = Modifier.size(20.dp),
                                     )
                                 }
 
@@ -260,6 +261,7 @@ fun AccountSwitcherSheet(
                                         imageVector = if (acc.running) Icons.Rounded.Stop else Icons.Rounded.PlayArrow,
                                         contentDescription = if (acc.running) "停止" else "启动",
                                         tint = if (acc.running) apple.orange else apple.green,
+                                        modifier = Modifier.size(26.dp),
                                     )
                                 }
                                 IconButton(

@@ -36,7 +36,7 @@ import androidx.compose.material.icons.rounded.MenuBook
 import androidx.compose.material.icons.rounded.Pets
 import androidx.compose.material.icons.rounded.Sell
 import androidx.compose.material.icons.rounded.TaskAlt
-import androidx.compose.material.icons.rounded.Upgrade
+import androidx.compose.material.icons.rounded.ArrowCircleUp
 import androidx.compose.material.icons.rounded.Warehouse
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -52,6 +52,7 @@ import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
@@ -75,8 +76,10 @@ import com.qqfarm.mobile.data.model.RanchBookData
 import com.qqfarm.mobile.data.model.RanchFacility
 import com.qqfarm.mobile.data.model.RanchQuote
 import com.qqfarm.mobile.data.model.RanchViewSnapshot
+import com.qqfarm.mobile.data.network.ApiException
 import com.qqfarm.mobile.data.network.FarmApiClient
 import com.qqfarm.mobile.ui.components.AppleEmptyState
+import com.qqfarm.mobile.ui.components.AppleLoadingState
 import com.qqfarm.mobile.ui.components.AppleGroupedCard
 import com.qqfarm.mobile.ui.components.AppleHairlineDivider
 import com.qqfarm.mobile.ui.components.AppleIconBadge
@@ -172,7 +175,6 @@ fun RanchWorkspaceScreen(
         1 -> "facilities"
         2 -> "bag"
         3 -> "tasks"
-        4 -> "illustrated"
         else -> "animals"
     }
 
@@ -228,7 +230,7 @@ fun RanchWorkspaceScreen(
     }
 
     LaunchedEffect(accountId, isConnected, subTab) {
-        if (isConnected) loadCurrentView()
+        if (isConnected && subTab != 4) loadCurrentView()
     }
 
     Column(
@@ -267,9 +269,17 @@ fun RanchWorkspaceScreen(
                         )
                     }
                 }
+            } else if (subTab == 4) {
+                RanchBookPage(
+                    accountId = accountId,
+                    isConnected = isConnected,
+                    apiClient = apiClient,
+                    onBusyChange = { actionBusy = it },
+                    onMessage = onMessage,
+                )
             } else {
                 PullToRefreshBox(
-                isRefreshing = refreshing,
+                isRefreshing = refreshing && snapshot != null,
                 onRefresh = { scope.launch { loadCurrentView() } },
                 modifier = Modifier.fillMaxSize(),
             ) {
@@ -290,7 +300,8 @@ fun RanchWorkspaceScreen(
                             }
                         }
                     }
-                    current != null && !current.base.unlocked -> {
+                    current == null -> AppleLoadingState()
+                    !current.base.unlocked -> {
                         LazyColumn(modifier = Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp)) {
                             item {
                                 AppleGroupedCard {
@@ -446,13 +457,6 @@ fun RanchWorkspaceScreen(
                                 triggerQuoteAction("claimTasks", JSONObject().put("all", true))
                             },
                         )
-                        4 -> RanchBookTab(
-                            snapshot = current,
-                            busy = actionBusy,
-                            onClaimIllustrated = { kind ->
-                                triggerQuoteAction("claimIllustrated", JSONObject().put("kind", kind))
-                            },
-                        )
                     }
                 }
             }
@@ -538,7 +542,7 @@ fun RanchWorkspaceScreen(
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun RanchAnimalsTab(
-    snapshot: RanchViewSnapshot?,
+    snapshot: RanchViewSnapshot,
     clockTickMs: Long,
     busy: Boolean,
     onDirectAction: (String, Map<String, Any>) -> Unit,
@@ -547,15 +551,7 @@ private fun RanchAnimalsTab(
     onOpenRanchMall: () -> Unit,
 ) {
     val apple = LocalAppleColors.current
-    val payload = snapshot?.base
-    if (payload == null) {
-        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-            AppleGroupedCard(modifier = Modifier.padding(16.dp)) {
-                AppleEmptyState(icon = Icons.Rounded.Pets, title = "正在读取牧场动物...", subtitle = "下拉可刷新最新状态")
-            }
-        }
-        return
-    }
+    val payload = snapshot.base
 
     val allAnimals = payload.pens.flatMap { it.animals }
     val harvestCount = allAnimals.count { it.canHarvest } + payload.shelvesCollectableCount
@@ -899,7 +895,7 @@ private fun RanchWorkspaceAnimalTile(
 
 @Composable
 private fun RanchFacilitiesTab(
-    snapshot: RanchViewSnapshot?,
+    snapshot: RanchViewSnapshot,
     clockTickMs: Long,
     busy: Boolean,
     onAddGrass: (RanchFacility) -> Unit,
@@ -908,15 +904,7 @@ private fun RanchFacilitiesTab(
     onActivateShed: (RanchFacility) -> Unit,
 ) {
     val apple = LocalAppleColors.current
-    val payload = snapshot?.base
-    if (payload == null) {
-        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-            AppleGroupedCard(modifier = Modifier.padding(16.dp)) {
-                AppleEmptyState(icon = Icons.Rounded.Warehouse, title = "正在读取牧场设施...", subtitle = "下拉可刷新设施与升级进度")
-            }
-        }
-        return
-    }
+    val payload = snapshot.base
 
     val elapsedSec = ((clockTickMs - payload.fetchedAtElapsedMs) / 1000L).coerceAtLeast(0L)
     val serverNowMs = payload.serverNowMs + elapsedSec * 1000L
@@ -1122,7 +1110,7 @@ private fun RanchFacilitiesTab(
                                     enabled = !busy && fac.next.available,
                                     shape = RoundedCornerShape(10.dp),
                                 ) {
-                                    Icon(Icons.Rounded.Upgrade, contentDescription = null, modifier = Modifier.size(16.dp))
+                                    Icon(Icons.Rounded.ArrowCircleUp, contentDescription = null, modifier = Modifier.size(17.dp))
                                     Spacer(modifier = Modifier.width(4.dp))
                                     Text("升级")
                                 }
@@ -1138,21 +1126,12 @@ private fun RanchFacilitiesTab(
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun RanchBagTab(
-    snapshot: RanchViewSnapshot?,
+    snapshot: RanchViewSnapshot,
     busy: Boolean,
     onSellAllProducts: () -> Unit,
     onItemAction: (RanchBagItem, String) -> Unit,
 ) {
     val apple = LocalAppleColors.current
-    if (snapshot == null) {
-        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-            AppleGroupedCard(modifier = Modifier.padding(16.dp)) {
-                AppleEmptyState(icon = Icons.Rounded.Inventory2, title = "正在读取牧场背包...", subtitle = "下拉可刷新库存")
-            }
-        }
-        return
-    }
-
     var filterIdx by remember { mutableIntStateOf(0) }
     val items = snapshot.bag
 
@@ -1344,14 +1323,14 @@ private fun RanchBagTab(
 
 @Composable
 private fun RanchTasksTab(
-    snapshot: RanchViewSnapshot?,
+    snapshot: RanchViewSnapshot,
     session: SessionUiState,
     busy: Boolean,
     onClaimTasks: () -> Unit,
 ) {
     val apple = LocalAppleColors.current
     var subMode by remember { mutableIntStateOf(0) }
-    val tasks = snapshot?.tasks.orEmpty()
+    val tasks = snapshot.tasks
     val dailyTasks = remember(tasks) { tasks.filter { it.category == "daily" } }
     val growthTasks = remember(tasks) { tasks.filter { it.category != "daily" } }
     val claimableCount = remember(tasks) { tasks.count { it.canClaim } }
@@ -1495,22 +1474,139 @@ private fun RanchTaskDetailRow(task: com.qqfarm.mobile.data.model.RanchTaskItem)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
+internal fun RanchBookPage(
+    accountId: String,
+    isConnected: Boolean,
+    apiClient: FarmApiClient,
+    onBusyChange: (Boolean) -> Unit,
+    onMessage: (String) -> Unit,
+    onRewardsClaimed: () -> Unit = {},
+) {
+    val scope = rememberCoroutineScope()
+    var snapshot by remember(accountId, isConnected) { mutableStateOf<RanchViewSnapshot?>(null) }
+    var refreshing by remember(accountId, isConnected) { mutableStateOf(false) }
+    var loadError by remember(accountId, isConnected) { mutableStateOf("") }
+    var busy by remember(accountId, isConnected) { mutableStateOf(false) }
+    var pending by remember(accountId, isConnected) { mutableStateOf<PendingRanchRequest?>(null) }
+
+    suspend fun loadBook() {
+        if (!isConnected || refreshing) return
+        refreshing = true
+        loadError = ""
+        try {
+            val loaded = apiClient.fetchRanchView(accountId, "illustrated")
+            if (loaded.base.unlocked && loaded.book == null) throw ApiException("服务端未返回牧场图鉴")
+            snapshot = loaded
+        } catch (e: ApiException) {
+            loadError = e.message
+            if (snapshot != null) onMessage(e.message)
+        } finally {
+            refreshing = false
+        }
+    }
+
+    fun runAction(action: suspend () -> Unit) {
+        if (!isConnected || busy || refreshing) return
+        busy = true
+        onBusyChange(true)
+        scope.launch {
+            try {
+                action()
+            } catch (e: ApiException) {
+                onMessage(e.message)
+            } finally {
+                busy = false
+                onBusyChange(false)
+            }
+        }
+    }
+
+    LaunchedEffect(accountId, isConnected) { loadBook() }
+    DisposableEffect(accountId, isConnected) {
+        onDispose { onBusyChange(false) }
+    }
+
+    val current = snapshot
+    val book = current?.book
+    PullToRefreshBox(
+        isRefreshing = refreshing && current != null,
+        onRefresh = { if (!busy && pending == null) scope.launch { loadBook() } },
+        modifier = Modifier.fillMaxSize(),
+    ) {
+        when {
+            !isConnected || (current == null && loadError.isNotBlank()) || current?.base?.unlocked == false -> {
+                val title = when {
+                    !isConnected -> "账号未在线"
+                    current == null -> "牧场图鉴读取失败"
+                    else -> "牧场暂未解锁"
+                }
+                val details = when {
+                    !isConnected -> "启动当前账号后查看牧场图鉴"
+                    current == null -> loadError
+                    else -> current.base.reason
+                }
+                val canRetry = isConnected && current == null
+                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    AppleGroupedCard(modifier = Modifier.padding(16.dp)) {
+                        AppleEmptyState(
+                            icon = Icons.Rounded.MenuBook,
+                            title = title,
+                            subtitle = details,
+                            actionLabel = if (canRetry) "重新加载" else null,
+                            onAction = if (canRetry) ({ scope.launch { loadBook() } }) else null,
+                        )
+                    }
+                }
+            }
+            book == null -> AppleLoadingState()
+            else -> RanchBookTab(
+                book = book,
+                busy = busy || refreshing || pending != null,
+                onClaimIllustrated = { kind ->
+                    runAction {
+                        val input = JSONObject().put("kind", kind)
+                        val quote = apiClient.quoteRanchAction(accountId, "claimIllustrated", input)
+                        if (quote.skipped) {
+                            onMessage(quote.message.ifBlank { "暂无可领取的图鉴奖励" })
+                            loadBook()
+                        } else {
+                            pending = PendingRanchRequest("claimIllustrated", input, quote)
+                        }
+                    }
+                },
+            )
+        }
+    }
+
+    pending?.let { request ->
+        RanchQuoteConfirmSheet(
+            quote = request.quote,
+            busy = busy,
+            onDismiss = { if (!busy) pending = null },
+            onConfirm = {
+                runAction {
+                    try {
+                        val result = apiClient.executeRanchAction(accountId, request.action, request.input, request.quote.signature)
+                        onMessage(result.notice.ifBlank { if (result.status == "skipped") "暂无可领取的图鉴奖励" else "已领取图鉴奖励" })
+                        onRewardsClaimed()
+                    } finally {
+                        pending = null
+                        loadBook()
+                    }
+                }
+            },
+        )
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
 private fun RanchBookTab(
-    snapshot: RanchViewSnapshot?,
+    book: RanchBookData,
     busy: Boolean,
     onClaimIllustrated: (String) -> Unit,
 ) {
     val apple = LocalAppleColors.current
-    val book: RanchBookData? = snapshot?.book
-    if (book == null) {
-        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-            AppleGroupedCard(modifier = Modifier.padding(16.dp)) {
-                AppleEmptyState(icon = Icons.Rounded.MenuBook, title = "正在读取动物图鉴...", subtitle = "下拉可刷新图鉴收藏进度")
-            }
-        }
-        return
-    }
-
     var kindIdx by remember { mutableIntStateOf(0) }
     val isGiant = kindIdx == 1
     var filterIdx by remember { mutableIntStateOf(0) }

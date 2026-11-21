@@ -15,6 +15,23 @@ import kotlinx.coroutines.flow.map
 
 private val Context.dataStore: DataStore<Preferences> by preferencesDataStore(name = "qq_farm_mobile_prefs")
 
+enum class UpdateDownloadMode(val label: String) {
+    DIRECT("直连"),
+    ACCELERATOR("下载加速"),
+    PROXY("自定义代理"),
+}
+
+data class UpdateDownloadSettings(
+    val mode: UpdateDownloadMode = UpdateDownloadMode.ACCELERATOR,
+    val acceleratorUrl: String = DEFAULT_UPDATE_ACCELERATOR,
+    val proxyUrl: String = "",
+) {
+    val activeProxyUrl: String? get() = proxyUrl.takeIf { mode == UpdateDownloadMode.PROXY }
+
+    fun forRelease(canAccelerate: Boolean): UpdateDownloadSettings =
+        if (mode == UpdateDownloadMode.ACCELERATOR && !canAccelerate) copy(mode = UpdateDownloadMode.DIRECT) else this
+}
+
 data class StoredConfig(
     val serverUrl: String = "",
     val authToken: String = "",
@@ -29,8 +46,7 @@ data class StoredConfig(
     val notifySilentUpdate: Boolean = true,
     val notifyAllAccounts: Boolean = true,
     val enabledNotifyTypes: Set<String> = ActivityNotifyType.defaultKeys,
-    val useUpdateAcceleration: Boolean = true,
-    val updateAcceleratorUrl: String = DEFAULT_UPDATE_ACCELERATOR,
+    val updateDownload: UpdateDownloadSettings = UpdateDownloadSettings(),
 ) {
     val isAuthenticated: Boolean
         get() = serverUrl.isNotBlank() && authToken.isNotBlank()
@@ -61,10 +77,14 @@ class AppPreferences(private val context: Context) {
         val NOTIFY_ALL_ACCOUNTS = booleanPreferencesKey("notify_all_accounts")
         val ENABLED_NOTIFY_TYPES = stringSetPreferencesKey("enabled_notify_types")
         val USE_UPDATE_ACCELERATION = booleanPreferencesKey("use_update_acceleration")
+        val UPDATE_DOWNLOAD_MODE = stringPreferencesKey("update_download_mode")
         val UPDATE_ACCELERATOR_URL = stringPreferencesKey("update_accelerator_url")
+        val UPDATE_PROXY_URL = stringPreferencesKey("update_proxy_url")
     }
 
     val configFlow: Flow<StoredConfig> = context.dataStore.data.map { prefs ->
+        val downloadMode = UpdateDownloadMode.entries.firstOrNull { it.name == prefs[Keys.UPDATE_DOWNLOAD_MODE] }
+            ?: if (prefs[Keys.USE_UPDATE_ACCELERATION] == false) UpdateDownloadMode.DIRECT else UpdateDownloadMode.ACCELERATOR
         StoredConfig(
             serverUrl = prefs[Keys.SERVER_URL].orEmpty(),
             authToken = prefs[Keys.AUTH_TOKEN].orEmpty(),
@@ -79,8 +99,11 @@ class AppPreferences(private val context: Context) {
             notifySilentUpdate = prefs[Keys.NOTIFY_SILENT_UPDATE] ?: true,
             notifyAllAccounts = prefs[Keys.NOTIFY_ALL_ACCOUNTS] ?: true,
             enabledNotifyTypes = prefs[Keys.ENABLED_NOTIFY_TYPES] ?: ActivityNotifyType.defaultKeys,
-            useUpdateAcceleration = prefs[Keys.USE_UPDATE_ACCELERATION] ?: true,
-            updateAcceleratorUrl = prefs[Keys.UPDATE_ACCELERATOR_URL] ?: DEFAULT_UPDATE_ACCELERATOR,
+            updateDownload = UpdateDownloadSettings(
+                mode = downloadMode,
+                acceleratorUrl = prefs[Keys.UPDATE_ACCELERATOR_URL] ?: DEFAULT_UPDATE_ACCELERATOR,
+                proxyUrl = prefs[Keys.UPDATE_PROXY_URL].orEmpty(),
+            ),
         )
     }
 
@@ -127,12 +150,12 @@ class AppPreferences(private val context: Context) {
         }
     }
 
-    suspend fun updateDownloadAcceleration(enabled: Boolean) {
-        context.dataStore.edit { it[Keys.USE_UPDATE_ACCELERATION] = enabled }
-    }
-
-    suspend fun updateAcceleratorUrl(url: String) {
-        context.dataStore.edit { it[Keys.UPDATE_ACCELERATOR_URL] = url }
+    suspend fun updateDownloadSettings(settings: UpdateDownloadSettings) {
+        context.dataStore.edit { prefs ->
+            prefs[Keys.UPDATE_DOWNLOAD_MODE] = settings.mode.name
+            prefs[Keys.UPDATE_ACCELERATOR_URL] = settings.acceleratorUrl
+            prefs[Keys.UPDATE_PROXY_URL] = settings.proxyUrl
+        }
     }
 
     suspend fun updateOfflineAlertsEnabled(enabled: Boolean) {

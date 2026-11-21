@@ -209,13 +209,14 @@ object JsonParsers {
             time = time,
             tag = obj.optStringClean("tag"),
             msg = obj.optStringClean("msg"),
-            module = meta?.optStringClean("module") ?: obj.optStringClean("module"),
-            event = meta?.optStringClean("event") ?: obj.optStringClean("event"),
+            module = meta?.optStringClean("module").orEmpty().ifBlank { obj.optStringClean("module") },
+            event = meta?.optStringClean("event").orEmpty().ifBlank { obj.optStringClean("event") },
             result = meta?.optStringClean("result") ?: "",
             isWarn = obj.optBoolFlex("isWarn"),
             accountId = obj.optStringClean("accountId"),
             friendName = meta?.optStringClean("friendName").orEmpty(),
             actions = actionsList,
+            searchText = obj.optStringClean("_searchText").ifBlank { meta?.toString().orEmpty() },
         )
     }
 
@@ -615,6 +616,7 @@ object JsonParsers {
             name = animal.optStringClean("name"),
             image = animal.optStringClean("image"),
             stageName = animal.optStringClean("stageName"),
+            stage = animal.optIntFlex("stage"),
             canHarvest = animal.optBoolFlex("canHarvest"),
             canProduce = animal.optBoolFlex("canProduce"),
             canFeed = animal.optBoolFlex("canFeed"),

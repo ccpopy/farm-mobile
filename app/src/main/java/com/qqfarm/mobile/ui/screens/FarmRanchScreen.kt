@@ -35,8 +35,8 @@ import androidx.compose.material.icons.rounded.Eco
 import androidx.compose.material.icons.rounded.Grass
 import androidx.compose.material.icons.rounded.Inventory2
 import androidx.compose.material.icons.rounded.Lock
-import androidx.compose.material.icons.rounded.LockOpen
 import androidx.compose.material.icons.rounded.Pets
+import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Sell
 import androidx.compose.material.icons.rounded.Star
 import androidx.compose.material.icons.rounded.WaterDrop
@@ -66,6 +66,8 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
@@ -82,6 +84,8 @@ import com.qqfarm.mobile.data.model.PetSnapshot
 import com.qqfarm.mobile.data.network.FarmApiClient
 import com.qqfarm.mobile.data.network.ApiException
 import com.qqfarm.mobile.ui.components.AppleEmptyState
+import com.qqfarm.mobile.ui.components.AppleLoadingState
+import com.qqfarm.mobile.ui.components.AppleSwitch
 import com.qqfarm.mobile.ui.components.AppleGroupedCard
 import com.qqfarm.mobile.ui.components.AppleQuantityStepper
 import com.qqfarm.mobile.ui.components.AppleHairlineDivider
@@ -125,6 +129,7 @@ fun FarmRanchScreen(
 
     var subTab by remember { mutableIntStateOf(0) }
     var refreshing by remember(accountId, isConnected, subTab) { mutableStateOf(false) }
+    var loadError by remember(accountId, isConnected, subTab) { mutableStateOf("") }
     var actionBusy by remember { mutableStateOf(false) }
 
     var landsPayload by remember(accountId, isConnected) { mutableStateOf<LandsPayload?>(null) }
@@ -147,6 +152,7 @@ fun FarmRanchScreen(
     suspend fun loadCurrentTab() {
         if (!isConnected || refreshing) return
         refreshing = true
+        loadError = ""
         try {
             when (subTab) {
                 0 -> landsPayload = apiClient.fetchLands(accountId)
@@ -154,6 +160,7 @@ fun FarmRanchScreen(
                 2 -> petSnapshot = apiClient.fetchPets(accountId)
             }
         } catch (e: ApiException) {
+            loadError = e.message
             onMessage(e.message)
         } finally {
             refreshing = false
@@ -245,11 +252,34 @@ fun FarmRanchScreen(
                     }
                 }
             } else {
+                val hasData = when (subTab) {
+                    0 -> landsPayload != null
+                    1 -> bagPayload != null
+                    else -> petSnapshot != null
+                }
                 PullToRefreshBox(
-                    isRefreshing = refreshing,
+                    isRefreshing = refreshing && hasData,
                     onRefresh = { if (!actionBusy) scope.launch { loadCurrentTab() } },
                     modifier = Modifier.fillMaxSize(),
                 ) {
+                    if (!hasData) {
+                        if (loadError.isBlank()) {
+                            AppleLoadingState()
+                        } else {
+                            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                                AppleGroupedCard(modifier = Modifier.padding(16.dp)) {
+                                    AppleEmptyState(
+                                        icon = Icons.Rounded.Refresh,
+                                        title = "读取失败",
+                                        subtitle = loadError,
+                                        actionLabel = "重新加载",
+                                        onAction = { scope.launch { loadCurrentTab() } },
+                                    )
+                                }
+                            }
+                        }
+                        return@PullToRefreshBox
+                    }
                     when (subTab) {
                         0 -> FarmContent(
                             payload = landsPayload,
@@ -430,8 +460,7 @@ fun FarmRanchScreen(
                         onMessage("已出售 ${item.name} ×${item.count}")
                     }
                 },
-                onToggleLock = {
-                    val locked = !item.locked
+                onSetLocked = { locked ->
                     operateBag(onUpdated = { updated ->
                         val current = updated.items.firstOrNull { it.key == item.key }
                         if (current != null && current.locked != locked) {
@@ -559,8 +588,8 @@ private fun FarmContent(
                 AppleGroupedCard {
                     AppleEmptyState(
                         icon = Icons.Rounded.Eco,
-                        title = "正在加载土地...",
-                        subtitle = "下拉可刷新当前农场土地详情",
+                        title = "暂无土地记录",
+                        subtitle = "下拉可刷新农场土地详情",
                     )
                 }
             }
@@ -1159,7 +1188,7 @@ private fun BagContent(
     onItemClick: (BagItem) -> Unit,
 ) {
     val apple = LocalAppleColors.current
-    var category by remember { mutableStateOf("fruit") }
+    var category by remember { mutableStateOf("all") }
 
     val allItems = payload?.items.orEmpty()
     val filtered = remember(allItems, category) {
@@ -1179,11 +1208,11 @@ private fun BagContent(
     ) {
         item {
             val cats = listOf(
+                "all" to "全部",
                 "fruit" to "果实",
                 "mutant" to "超变",
                 "seed" to "种子",
                 "tool" to "道具",
-                "all" to "全部",
             )
             LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 items(cats) { (key, label) ->
@@ -1244,7 +1273,7 @@ private fun BagContent(
                                     if (item.locked) {
                                         Icon(
                                             Icons.Rounded.Lock,
-                                            contentDescription = "已锁定",
+                                            contentDescription = "已上锁",
                                             tint = apple.orange,
                                             modifier = Modifier.size(14.dp),
                                         )
@@ -1291,7 +1320,7 @@ private fun BagItemActionSheet(
     busy: Boolean,
     onUse: (Int) -> Unit,
     onSellAll: () -> Unit,
-    onToggleLock: () -> Unit,
+    onSetLocked: (Boolean) -> Unit,
     onDismiss: () -> Unit,
 ) {
     val apple = LocalAppleColors.current
@@ -1328,17 +1357,20 @@ private fun BagItemActionSheet(
                 )
                 Column(modifier = Modifier.weight(1f)) {
                     Text(item.name, style = MaterialTheme.typography.titleLarge, color = apple.primaryText)
-                    val status = if (item.locked) " · 已锁定" else ""
+                    val status = when {
+                        item.locked -> " · 已上锁"
+                        item.canChangeLock -> " · 未上锁"
+                        else -> ""
+                    }
                     Text("库存 ×${formatNumber(item.count)}$status", style = MaterialTheme.typography.bodySmall, color = apple.secondaryText)
                 }
                 if (item.canChangeLock) {
-                    IconButton(onClick = onToggleLock, enabled = !busy) {
-                        Icon(
-                            imageVector = if (item.locked) Icons.Rounded.LockOpen else Icons.Rounded.Lock,
-                            contentDescription = if (item.locked) "解锁" else "锁定",
-                            tint = apple.orange,
-                        )
-                    }
+                    AppleSwitch(
+                        checked = item.locked,
+                        onCheckedChange = onSetLocked,
+                        enabled = !busy,
+                        modifier = Modifier.semantics { contentDescription = "物品上锁" },
+                    )
                 }
             }
 
@@ -1412,15 +1444,7 @@ private fun PetsContent(
 ) {
     val apple = LocalAppleColors.current
     if (snapshot == null) {
-        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-            AppleGroupedCard(modifier = Modifier.padding(16.dp)) {
-                AppleEmptyState(
-                    icon = Icons.Rounded.Pets,
-                    title = "正在读取宠物信息...",
-                    subtitle = "下拉可刷新看门狗与狗粮储备",
-                )
-            }
-        }
+        AppleLoadingState()
         return
     }
 

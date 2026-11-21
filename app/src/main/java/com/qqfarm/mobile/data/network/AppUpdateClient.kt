@@ -11,6 +11,10 @@ import org.json.JSONArray
 import org.json.JSONException
 import java.io.File
 import java.io.IOException
+import java.net.InetSocketAddress
+import java.net.Proxy
+import java.net.URI
+import java.net.URISyntaxException
 import java.nio.file.Files
 import java.nio.file.StandardCopyOption
 import java.security.MessageDigest
@@ -46,6 +50,20 @@ internal fun normalizeUpdateAccelerator(value: String): String? {
         return null
     }
     return url.toString().trimEnd('/')
+}
+
+internal fun normalizeUpdateProxy(value: String): String? {
+    val uri = try {
+        URI(value.trim()).parseServerAuthority()
+    } catch (_: URISyntaxException) {
+        return null
+    }
+    val scheme = uri.scheme?.lowercase(Locale.ROOT)
+    if (scheme !in listOf("http", "socks5") || uri.host.isNullOrBlank() || uri.port !in 1..65535 ||
+        uri.rawUserInfo != null || uri.rawQuery != null || uri.rawFragment != null ||
+        uri.rawPath !in listOf("", "/")
+    ) return null
+    return "$scheme://${uri.rawAuthority}"
 }
 
 private data class ReleaseVersion(val major: Int, val minor: Int, val patch: Int) : Comparable<ReleaseVersion> {
@@ -110,9 +128,9 @@ internal class AppUpdateClient(
         .readTimeout(30, TimeUnit.SECONDS)
         .build(),
 ) {
-    suspend fun check(installedVersion: String, token: String?): AndroidRelease? {
+    suspend fun check(installedVersion: String, token: String?, proxyUrl: String? = null): AndroidRelease? {
         val request = githubRequest("releases?per_page=100", "application/vnd.github+json", token)
-        return read(request) { response ->
+        return read(request, proxyUrl) { response ->
             if (!response.isSuccessful) throw githubFailure(response)
             val raw = response.body?.string()
             val releases = try {
@@ -129,11 +147,12 @@ internal class AppUpdateClient(
         accelerator: String?,
         token: String?,
         cacheDir: File,
+        proxyUrl: String? = null,
         onProgress: (Int) -> Unit,
     ): File {
         val request = when {
             release.requiresAuthorization -> githubRequest("releases/assets/${release.assetId}", "application/octet-stream", token)
-            accelerator != null && release.canAccelerate -> Request.Builder()
+            proxyUrl == null && accelerator != null && release.canAccelerate -> Request.Builder()
                 .url("$accelerator/${release.apkUrl}")
                 .header("User-Agent", "FarmAndroid")
                 .build()
@@ -142,7 +161,7 @@ internal class AppUpdateClient(
                 .header("User-Agent", "FarmAndroid")
                 .build()
         }
-        return read(request) { response ->
+        return read(request, proxyUrl) { response ->
             if (!response.isSuccessful) {
                 if (release.requiresAuthorization) throw githubFailure(response)
                 throw UpdateException("下载失败（HTTP ${response.code}）")
@@ -202,9 +221,18 @@ internal class AppUpdateClient(
         else -> UpdateException("GitHub 请求失败（HTTP ${response.code}）")
     }
 
-    private suspend fun <T> read(request: Request, consume: (Response) -> T): T =
-        suspendCancellableCoroutine { continuation ->
-            val call = client.newCall(request)
+    private suspend fun <T> read(request: Request, proxyUrl: String?, consume: (Response) -> T): T {
+        val routeClient = if (proxyUrl != null) {
+            val address = normalizeUpdateProxy(proxyUrl) ?: throw UpdateException("代理地址无效，请检查协议、主机和端口")
+            val uri = URI(address)
+            val type = if (uri.scheme == "socks5") Proxy.Type.SOCKS else Proxy.Type.HTTP
+            val proxy = Proxy(type, InetSocketAddress.createUnresolved(uri.host.removeSurrounding("[", "]"), uri.port))
+            client.newBuilder().proxy(proxy).build()
+        } else {
+            client
+        }
+        return suspendCancellableCoroutine { continuation ->
+            val call = routeClient.newCall(request)
             continuation.invokeOnCancellation { call.cancel() }
             call.enqueue(object : Callback {
                 override fun onFailure(call: Call, e: IOException) {
@@ -216,4 +244,5 @@ internal class AppUpdateClient(
                 }
             })
         }
+    }
 }

@@ -54,7 +54,9 @@ import androidx.compose.material.icons.rounded.Storefront
 import androidx.compose.material.icons.rounded.Terminal
 import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.material.icons.rounded.WarningAmber
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -88,6 +90,10 @@ import com.qqfarm.mobile.data.model.DailyGiftItem
 import com.qqfarm.mobile.data.model.GameSpace
 import com.qqfarm.mobile.data.model.RanchPayload
 import com.qqfarm.mobile.data.model.RunLogEntry
+import com.qqfarm.mobile.data.model.RunLogScope
+import com.qqfarm.mobile.data.model.RUN_LOG_RETENTION_DAYS
+import com.qqfarm.mobile.data.model.runLogScope
+import com.qqfarm.mobile.data.model.scope
 import com.qqfarm.mobile.data.network.FarmApiClient
 import com.qqfarm.mobile.ui.components.AppleEmptyState
 import com.qqfarm.mobile.ui.components.AppleGroupedCard
@@ -96,6 +102,7 @@ import com.qqfarm.mobile.ui.components.AppleIconBadge
 import com.qqfarm.mobile.ui.components.AppleMetricTile
 import com.qqfarm.mobile.ui.components.AppleQuickEntryRow
 import com.qqfarm.mobile.ui.components.AppleSectionHeader
+import com.qqfarm.mobile.ui.components.AppleRadius
 import com.qqfarm.mobile.ui.components.AppleSegmentedControl
 import com.qqfarm.mobile.ui.components.AppleStatusPill
 import com.qqfarm.mobile.ui.components.QuickEntryItem
@@ -124,7 +131,7 @@ fun OverviewScreen(
     onRefresh: () -> Unit,
     onOpenAccountSwitcher: () -> Unit,
     onStartAccount: (String) -> Unit,
-    onClearLogs: () -> Unit,
+    onClearLogs: suspend (String) -> Unit,
     onMessage: (String) -> Unit,
     onSwitchSpace: (GameSpace) -> Unit,
     onOpenDiscover: (Int, Int) -> Unit,
@@ -141,11 +148,11 @@ fun OverviewScreen(
         }
     }
 
-    var showAllLogs by remember { mutableStateOf(false) }
-
     val accountId = session.config.currentAccountId
+    var openLogScope by remember(accountId, gameSpace) { mutableStateOf<RunLogScope?>(null) }
     val isOnline = session.status?.connected == true && accountId.isNotBlank()
     var showBuyFertilizer by remember(accountId, isOnline, gameSpace) { mutableStateOf(false) }
+    var showBuyCans by remember(accountId, isOnline, gameSpace) { mutableStateOf(false) }
     var ranchPayload by remember { mutableStateOf<RanchPayload?>(null) }
     var ranchLoading by remember { mutableStateOf(false) }
     var ranchError by remember { mutableStateOf("") }
@@ -215,7 +222,8 @@ fun OverviewScreen(
                 onSwitchToFarm = { onSwitchSpace(GameSpace.FARM) },
                 onOpenDiscover = onOpenDiscover,
                 onOpenWorkspace = onOpenWorkspace,
-                onOpenAllLogs = { showAllLogs = true },
+                onRefillCans = { showBuyCans = true },
+                onOpenAllLogs = { openLogScope = it },
             )
         } else {
             val status = session.status
@@ -691,50 +699,26 @@ fun OverviewScreen(
                     }
                 }
 
-                // Live Run Logs Preview
                 item {
-                    AppleSectionHeader(
-                        title = "运行日志",
-                        actionLabel = "查看全部",
-                        onAction = { showAllLogs = true },
+                    RunLogsPreview(
+                        entries = session.logs,
+                        businessScope = gameSpace.runLogScope,
+                        onOpen = { openLogScope = it },
                     )
-                    Spacer(modifier = Modifier.height(4.dp))
-                    val previewLogs = session.logs.takeLast(8).reversed()
-                    AppleGroupedCard {
-                        if (previewLogs.isEmpty()) {
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(24.dp),
-                                contentAlignment = Alignment.Center,
-                            ) {
-                                Text(
-                                    text = "暂无运行日志",
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    color = apple.secondaryText,
-                                )
-                            }
-                        } else {
-                            previewLogs.forEachIndexed { idx, log ->
-                                LogEntryRow(entry = log)
-                                if (idx < previewLogs.lastIndex) {
-                                    AppleHairlineDivider(startIndent = 16.dp)
-                                }
-                            }
-                        }
-                    }
                 }
             }
         }
     }
 
-    if (showAllLogs) {
+    openLogScope?.let { openedScope ->
         FullLogsSheet(
-            accountId = session.config.currentAccountId,
-            realtimeLogs = session.logs,
-            apiClient = apiClient,
+            accountId = accountId,
+            accountName = session.currentAccount?.displayTitle.orEmpty(),
+            entries = session.logs,
+            businessScope = gameSpace.runLogScope,
+            initialScope = openedScope,
             onClear = onClearLogs,
-            onDismiss = { showAllLogs = false },
+            onDismiss = { openLogScope = null },
         )
     }
 
@@ -745,6 +729,19 @@ fun OverviewScreen(
             onPurchased = onRefresh,
             onMessage = onMessage,
             onDismiss = { showBuyFertilizer = false },
+        )
+    }
+
+    if (showBuyCans) {
+        RanchCanRefillSheet(
+            accountId = accountId,
+            apiClient = apiClient,
+            onPurchased = {
+                onRefresh()
+                scope.launch { loadRanchOverview() }
+            },
+            onMessage = onMessage,
+            onDismiss = { showBuyCans = false },
         )
     }
 }
@@ -798,6 +795,35 @@ private fun DailyGiftRow(gift: DailyGiftItem) {
 }
 
 @Composable
+private fun RunLogsPreview(
+    entries: List<RunLogEntry>,
+    businessScope: RunLogScope,
+    onOpen: (RunLogScope) -> Unit,
+) {
+    val apple = LocalAppleColors.current
+    val scopes = listOf(businessScope, RunLogScope.SYSTEM)
+    var selected by remember(businessScope) { mutableIntStateOf(0) }
+    val scope = scopes[selected]
+    val logs = remember(entries, scope) { entries.filter { it.scope == scope }.takeLast(8).asReversed() }
+    AppleSectionHeader(title = "运行日志", actionLabel = "查看全部", onAction = { onOpen(scope) })
+    Spacer(modifier = Modifier.height(6.dp))
+    AppleSegmentedControl(scopes.map { it.label }, selected, onSelect = { selected = it })
+    Spacer(modifier = Modifier.height(8.dp))
+    AppleGroupedCard {
+        if (logs.isEmpty()) {
+            Box(modifier = Modifier.fillMaxWidth().padding(24.dp), contentAlignment = Alignment.Center) {
+                Text("暂无${scope.label}", style = MaterialTheme.typography.bodyMedium, color = apple.secondaryText)
+            }
+        } else {
+            logs.forEachIndexed { index, entry ->
+                LogEntryRow(entry)
+                if (index < logs.lastIndex) AppleHairlineDivider(startIndent = 16.dp)
+            }
+        }
+    }
+}
+
+@Composable
 private fun LogEntryRow(entry: RunLogEntry) {
     val apple = LocalAppleColors.current
     val accent = when {
@@ -833,7 +859,7 @@ private fun LogEntryRow(entry: RunLogEntry) {
                     color = accent,
                 )
                 Text(
-                    text = entry.time.takeLast(8),
+                    text = entry.time.takeLast(14),
                     style = MaterialTheme.typography.labelSmall.copy(fontFeatureSettings = "tnum"),
                     color = apple.secondaryText,
                 )
@@ -852,38 +878,34 @@ private fun LogEntryRow(entry: RunLogEntry) {
 @Composable
 private fun FullLogsSheet(
     accountId: String,
-    realtimeLogs: List<RunLogEntry>,
-    apiClient: FarmApiClient,
-    onClear: () -> Unit,
+    accountName: String,
+    entries: List<RunLogEntry>,
+    businessScope: RunLogScope,
+    initialScope: RunLogScope,
+    onClear: suspend (String) -> Unit,
     onDismiss: () -> Unit,
 ) {
     val apple = LocalAppleColors.current
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-    val scope = rememberCoroutineScope()
-
-    var selectedModule by remember { mutableStateOf("") }
+    val scopes = listOf(businessScope, RunLogScope.SYSTEM)
+    var scopeIndex by remember(initialScope) { mutableIntStateOf(if (initialScope == RunLogScope.SYSTEM) 1 else 0) }
+    val selectedScope = scopes[scopeIndex]
+    var selectedModule by remember(selectedScope) { mutableStateOf("") }
     var warnOnly by remember { mutableStateOf(false) }
     var keyword by remember { mutableStateOf("") }
-    var serverLogs by remember { mutableStateOf<List<RunLogEntry>?>(null) }
+    var showCleanup by remember(accountId) { mutableStateOf(false) }
 
-    LaunchedEffect(accountId, selectedModule, warnOnly, keyword) {
-        if (selectedModule.isBlank() && !warnOnly && keyword.isBlank()) {
-            serverLogs = null
-        } else {
-            runCatching {
-                apiClient.fetchLogs(
-                    accountId = accountId,
-                    module = selectedModule,
-                    keyword = keyword.trim(),
-                    isWarn = if (warnOnly) true else null,
-                    limit = 200,
-                )
-            }.onSuccess { serverLogs = it }
+    val displayLogs = remember(entries, selectedScope, selectedModule, warnOnly, keyword) {
+        val terms = keyword.trim().split(Regex("\\s+")).filter { it.isNotEmpty() }
+        entries.asReversed().filter { log ->
+            log.scope == selectedScope && (!warnOnly || log.isWarn) &&
+                (selectedModule.isBlank() || selectedModule == log.module) &&
+                terms.all { term ->
+                    log.msg.contains(term, ignoreCase = true) ||
+                        log.tag.contains(term, ignoreCase = true) ||
+                        log.searchText.contains(term, ignoreCase = true)
+                }
         }
-    }
-
-    val displayLogs = remember(serverLogs, realtimeLogs) {
-        (serverLogs ?: realtimeLogs).reversed()
     }
 
     ModalBottomSheet(
@@ -911,16 +933,12 @@ private fun FullLogsSheet(
                     AppleIconBadge(icon = Icons.Rounded.Terminal, tint = apple.indigo)
                     Text("完整运行日志", style = MaterialTheme.typography.titleLarge, color = apple.primaryText)
                 }
-                IconButton(onClick = {
-                    scope.launch {
-                        onClear()
-                        serverLogs = emptyList()
-                    }
-                }) {
-                    Icon(Icons.Rounded.ClearAll, contentDescription = "清空日志", tint = apple.red)
+                IconButton(onClick = { showCleanup = true }, enabled = accountId.isNotBlank()) {
+                    Icon(Icons.Rounded.ClearAll, contentDescription = "日志清理", tint = apple.red)
                 }
             }
 
+            AppleSegmentedControl(scopes.map { it.label }, scopeIndex, onSelect = { scopeIndex = it })
             AppleSearchField(
                 value = keyword,
                 onValueChange = { keyword = it },
@@ -928,15 +946,11 @@ private fun FullLogsSheet(
                 modifier = Modifier.fillMaxWidth(),
             )
 
-            val modules = listOf(
-                "" to "全部",
-                "farm" to "农场",
-                "ranch" to "牧场",
-                "friend" to "好友",
-                "warehouse" to "仓库",
-                "task" to "任务",
-                "system" to "系统",
-            )
+            val modules = if (selectedScope == RunLogScope.FARM) {
+                listOf("" to "全部", "farm" to "农场", "friend" to "好友", "warehouse" to "仓库", "task" to "任务")
+            } else {
+                emptyList()
+            }
             LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 item {
                     AppleFilterChip(
@@ -979,6 +993,58 @@ private fun FullLogsSheet(
             }
         }
     }
+    if (showCleanup) {
+        LogCleanupDialog(accountId, accountName, onClear, onDismiss = { showCleanup = false })
+    }
+}
+
+@Composable
+internal fun LogCleanupDialog(
+    accountId: String,
+    accountName: String,
+    onClear: suspend (String) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val scope = rememberCoroutineScope()
+    var clearing by remember { mutableStateOf(false) }
+    var error by remember { mutableStateOf("") }
+    val target = accountName.ifBlank { "当前账号" }
+    AlertDialog(
+        onDismissRequest = { if (!clearing) onDismiss() },
+        shape = RoundedCornerShape(AppleRadius.card),
+        title = { Text("日志清理") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("App 自动清理 $RUN_LOG_RETENTION_DAYS 天前的运行日志。")
+                Text(
+                    if (accountId.isBlank()) "选择账号后可清空日志。"
+                    else "立即清空会删除「$target」的服务端运行日志。",
+                )
+                if (error.isNotBlank()) Text(error, color = MaterialTheme.colorScheme.error)
+            }
+        },
+        confirmButton = {
+            Button(
+                enabled = !clearing && accountId.isNotBlank(),
+                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
+                onClick = {
+                    clearing = true
+                    error = ""
+                    scope.launch {
+                        try {
+                            onClear(accountId)
+                            onDismiss()
+                        } catch (e: ApiException) {
+                            error = e.message
+                        } finally {
+                            clearing = false
+                        }
+                    }
+                },
+            ) { Text(if (clearing) "正在清理…" else "立即清空") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss, enabled = !clearing) { Text("取消") } },
+    )
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -1108,7 +1174,8 @@ private fun RanchOverviewContent(
     onSwitchToFarm: () -> Unit,
     onOpenDiscover: (Int, Int) -> Unit,
     onOpenWorkspace: (Int) -> Unit,
-    onOpenAllLogs: () -> Unit,
+    onRefillCans: () -> Unit,
+    onOpenAllLogs: (RunLogScope) -> Unit,
 ) {
     val apple = LocalAppleColors.current
     val status = session.status
@@ -1131,6 +1198,10 @@ private fun RanchOverviewContent(
                     )
                 }
             }
+            item {
+                Spacer(modifier = Modifier.height(12.dp))
+                RunLogsPreview(session.logs, RunLogScope.RANCH, onOpenAllLogs)
+            }
         }
         return
     }
@@ -1150,6 +1221,10 @@ private fun RanchOverviewContent(
                         onAction = onRetry,
                     )
                 }
+            }
+            item {
+                Spacer(modifier = Modifier.height(12.dp))
+                RunLogsPreview(session.logs, RunLogScope.RANCH, onOpenAllLogs)
             }
         }
         return
@@ -1439,7 +1514,7 @@ private fun RanchOverviewContent(
                     Spacer(modifier = Modifier.height(12.dp))
                 }
 
-                AppleSectionHeader(title = "牧场库存")
+                AppleSectionHeader(title = "牧场库存", actionLabel = "补充罐头", onAction = onRefillCans)
                 Spacer(modifier = Modifier.height(4.dp))
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     EqualHeightRow(spacing = 10.dp) {
@@ -1557,34 +1632,8 @@ private fun RanchOverviewContent(
             }
         }
 
-        // Shared Run Logs Preview
         item {
-            AppleSectionHeader(
-                title = "运行日志",
-                actionLabel = "查看全部",
-                onAction = onOpenAllLogs,
-            )
-            Spacer(modifier = Modifier.height(4.dp))
-            val previewLogs = session.logs.takeLast(8).reversed()
-            AppleGroupedCard {
-                if (previewLogs.isEmpty()) {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(24.dp),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        Text("暂无运行日志", style = MaterialTheme.typography.bodyMedium, color = apple.secondaryText)
-                    }
-                } else {
-                    previewLogs.forEachIndexed { idx, log ->
-                        LogEntryRow(entry = log)
-                        if (idx < previewLogs.lastIndex) {
-                            AppleHairlineDivider(startIndent = 16.dp)
-                        }
-                    }
-                }
-            }
+            RunLogsPreview(session.logs, RunLogScope.RANCH, onOpenAllLogs)
         }
     }
 }

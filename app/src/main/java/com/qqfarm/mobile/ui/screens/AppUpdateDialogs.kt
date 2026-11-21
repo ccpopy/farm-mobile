@@ -8,13 +8,14 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Speed
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.LinearProgressIndicator
@@ -29,7 +30,6 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.SpanStyle
@@ -44,9 +44,13 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.qqfarm.mobile.BuildConfig
 import com.qqfarm.mobile.data.network.DEFAULT_UPDATE_ACCELERATOR
 import com.qqfarm.mobile.data.network.normalizeUpdateAccelerator
+import com.qqfarm.mobile.data.network.normalizeUpdateProxy
 import com.qqfarm.mobile.data.prefs.StoredConfig
+import com.qqfarm.mobile.data.prefs.UpdateDownloadMode
+import com.qqfarm.mobile.data.prefs.UpdateDownloadSettings
 import com.qqfarm.mobile.ui.components.AppleRadius
-import com.qqfarm.mobile.ui.components.AppleSwitch
+import com.qqfarm.mobile.ui.components.AppleSegmentedControl
+import com.qqfarm.mobile.ui.components.AppleSettingRow
 import com.qqfarm.mobile.ui.state.AppUpdateViewModel
 import com.qqfarm.mobile.ui.state.UpdateUiState
 import com.qqfarm.mobile.ui.theme.LocalAppleColors
@@ -54,32 +58,71 @@ import java.io.File
 import java.util.Locale
 
 @Composable
-internal fun AcceleratorAddressDialog(currentAddress: String, onSave: (String) -> Unit, onDismiss: () -> Unit) {
-    var address by rememberSaveable { mutableStateOf(currentAddress) }
-    val normalized = remember(address) { normalizeUpdateAccelerator(address) }
+internal fun UpdateDownloadSettingsDialog(
+    settings: UpdateDownloadSettings,
+    onSave: (UpdateDownloadSettings) -> Unit,
+    onDismiss: () -> Unit,
+    canAccelerate: Boolean = true,
+    title: String = "下载方式",
+) {
+    val modes = UpdateDownloadMode.entries.filter { canAccelerate || it != UpdateDownloadMode.ACCELERATOR }
+    var selected by rememberSaveable { mutableStateOf(settings.forRelease(canAccelerate).mode) }
+    var accelerator by rememberSaveable { mutableStateOf(settings.acceleratorUrl) }
+    var proxy by rememberSaveable { mutableStateOf(settings.proxyUrl) }
+    val normalizedAccelerator = remember(accelerator) { normalizeUpdateAccelerator(accelerator) }
+    val normalizedProxy = remember(proxy) { normalizeUpdateProxy(proxy) }
+    val saved = when (selected) {
+        UpdateDownloadMode.DIRECT -> settings.copy(mode = selected)
+        UpdateDownloadMode.ACCELERATOR -> normalizedAccelerator?.let { settings.copy(mode = selected, acceleratorUrl = it) }
+        UpdateDownloadMode.PROXY -> normalizedProxy?.let { settings.copy(mode = selected, proxyUrl = it) }
+    }
 
     AlertDialog(
         onDismissRequest = onDismiss,
         shape = RoundedCornerShape(AppleRadius.card),
-        title = { Text("下载加速地址") },
+        title = { Text(title) },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedTextField(
-                    value = address,
-                    onValueChange = { address = it },
-                    label = { Text("HTTPS 地址") },
-                    placeholder = { Text(DEFAULT_UPDATE_ACCELERATOR) },
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
-                    singleLine = true,
-                    isError = address.isNotBlank() && normalized == null,
-                    supportingText = { Text("支持输入域名或完整 HTTPS 地址，服务需支持拼接 GitHub 下载链接") },
-                    modifier = Modifier.fillMaxWidth(),
+            Column(
+                modifier = Modifier.verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                AppleSegmentedControl(
+                    options = modes.map { it.label },
+                    selectedIndex = modes.indexOf(selected),
+                    onSelect = { selected = modes[it] },
                 )
-                TextButton(onClick = { address = DEFAULT_UPDATE_ACCELERATOR }) { Text("恢复默认地址") }
+                when (selected) {
+                    UpdateDownloadMode.DIRECT -> Text("使用当前网络访问 GitHub", style = MaterialTheme.typography.bodySmall)
+                    UpdateDownloadMode.ACCELERATOR -> {
+                        OutlinedTextField(
+                            value = accelerator,
+                            onValueChange = { accelerator = it },
+                            label = { Text("加速地址") },
+                            placeholder = { Text(DEFAULT_UPDATE_ACCELERATOR) },
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
+                            singleLine = true,
+                            isError = accelerator.isNotBlank() && normalizedAccelerator == null,
+                            supportingText = { Text("用于公开安装包，填写域名或 HTTPS 地址") },
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                        TextButton(onClick = { accelerator = DEFAULT_UPDATE_ACCELERATOR }) { Text("恢复默认地址") }
+                    }
+                    UpdateDownloadMode.PROXY -> OutlinedTextField(
+                        value = proxy,
+                        onValueChange = { proxy = it },
+                        label = { Text("代理地址") },
+                        placeholder = { Text("http://192.168.1.2:7890") },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
+                        singleLine = true,
+                        isError = proxy.isNotBlank() && normalizedProxy == null,
+                        supportingText = { Text("填写 http://主机:端口 或 socks5://主机:端口") },
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
             }
         },
         confirmButton = {
-            Button(onClick = { normalized?.let(onSave) }, enabled = normalized != null) { Text("保存") }
+            Button(onClick = { saved?.let(onSave) }, enabled = saved != null) { Text("保存") }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("取消") } },
     )
@@ -173,12 +216,28 @@ internal fun AppUpdateDialogs(model: AppUpdateViewModel, config: StoredConfig) {
             text = { Text(current.message) },
             confirmButton = { TextButton(onClick = model::dismiss) { Text("确定") } },
         )
-        is UpdateUiState.Available -> UpdateAvailableDialog(
-            update = current,
-            onSetAcceleration = model::setDownloadAcceleration,
-            onConfirm = model::download,
-            onDismiss = model::dismiss,
-        )
+        is UpdateUiState.Available -> {
+            var editingDownload by rememberSaveable { mutableStateOf(false) }
+            if (editingDownload) {
+                UpdateDownloadSettingsDialog(
+                    settings = current.downloadSettings,
+                    canAccelerate = current.release.canAccelerate,
+                    title = "本次下载方式",
+                    onSave = {
+                        model.setDownloadSettings(it)
+                        editingDownload = false
+                    },
+                    onDismiss = { editingDownload = false },
+                )
+            } else {
+                UpdateAvailableDialog(
+                    update = current,
+                    onEditDownloadSettings = { editingDownload = true },
+                    onConfirm = model::download,
+                    onDismiss = model::dismiss,
+                )
+            }
+        }
         is UpdateUiState.Downloading -> AlertDialog(
             onDismissRequest = {},
             shape = dialogShape,
@@ -205,7 +264,7 @@ internal fun AppUpdateDialogs(model: AppUpdateViewModel, config: StoredConfig) {
 @Composable
 private fun UpdateAvailableDialog(
     update: UpdateUiState.Available,
-    onSetAcceleration: (Boolean) -> Unit,
+    onEditDownloadSettings: () -> Unit,
     onConfirm: () -> Unit,
     onDismiss: () -> Unit,
 ) {
@@ -248,32 +307,20 @@ private fun UpdateAvailableDialog(
                         modifier = Modifier.heightIn(max = 240.dp).verticalScroll(rememberScrollState()),
                     )
                 }
-                val accelerator = update.accelerator
-                if (accelerator != null) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Column(
-                            modifier = Modifier.weight(1f),
-                            verticalArrangement = Arrangement.spacedBy(2.dp),
-                        ) {
-                            Text(if (update.useAcceleration) "本次使用下载加速" else "本次直连 GitHub")
-                            Text(
-                                text = if (update.useAcceleration) accelerator else "https://github.com",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = apple.secondaryText,
-                            )
-                        }
-                        AppleSwitch(checked = update.useAcceleration, onCheckedChange = onSetAcceleration)
-                    }
-                } else {
-                    Text(
-                        if (update.release.requiresAuthorization) "私有仓库使用 GitHub 授权直连下载"
-                        else "发布的安装包缺少校验值，本次直连 GitHub",
-                    )
-                }
+                val settings = update.downloadSettings
+                AppleSettingRow(
+                    icon = Icons.Rounded.Speed,
+                    iconTint = apple.emerald,
+                    title = "本次下载",
+                    trailingText = settings.mode.label,
+                    subtitle = when (settings.mode) {
+                        UpdateDownloadMode.DIRECT -> null
+                        UpdateDownloadMode.ACCELERATOR -> settings.acceleratorUrl
+                        UpdateDownloadMode.PROXY -> settings.proxyUrl
+                    },
+                    showChevron = true,
+                    onClick = onEditDownloadSettings,
+                )
                 update.error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
             }
         },

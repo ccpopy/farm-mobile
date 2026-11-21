@@ -26,7 +26,6 @@ import androidx.compose.material.icons.rounded.Eco
 import androidx.compose.material.icons.rounded.FilterList
 import androidx.compose.material.icons.rounded.Group
 import androidx.compose.material.icons.rounded.Key
-import androidx.compose.material.icons.rounded.Link
 import androidx.compose.material.icons.rounded.Logout
 import androidx.compose.material.icons.rounded.MenuBook
 import androidx.compose.material.icons.rounded.Notifications
@@ -38,6 +37,7 @@ import androidx.compose.material.icons.rounded.Person
 import androidx.compose.material.icons.rounded.Pets
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.Speed
+import androidx.compose.material.icons.rounded.DeleteSweep
 import androidx.compose.material.icons.rounded.SystemUpdateAlt
 import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.material.icons.rounded.VolumeOff
@@ -71,6 +71,7 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.qqfarm.mobile.BuildConfig
+import com.qqfarm.mobile.data.model.RUN_LOG_RETENTION_DAYS
 import com.qqfarm.mobile.data.model.ActivityNotifyGroup
 import com.qqfarm.mobile.data.model.ActivityNotifyType
 import com.qqfarm.mobile.data.network.ActivityNotificationManager
@@ -104,6 +105,7 @@ fun SettingsScreen(
     onToggleNotifyType: (String, Boolean) -> Unit,
     onApplyNotifyTypes: (Set<String>) -> Unit,
     onSendTestNotification: () -> Boolean,
+    onClearLogs: suspend (String) -> Unit,
     onMessage: (String) -> Unit,
 ) {
     val apple = LocalAppleColors.current
@@ -114,7 +116,8 @@ fun SettingsScreen(
 
     var showNotifySheet by remember { mutableStateOf(false) }
     var showLogoutConfirm by remember { mutableStateOf(false) }
-    var showAcceleratorEditor by rememberSaveable { mutableStateOf(false) }
+    var showDownloadEditor by rememberSaveable { mutableStateOf(false) }
+    var showLogCleanup by remember(session.config.currentAccountId) { mutableStateOf(false) }
 
     var notificationsGranted by remember {
         mutableStateOf(ActivityNotificationManager.areNotificationsEnabled(context))
@@ -370,34 +373,43 @@ fun SettingsScreen(
                     onClick = { updateModel.check(session.config) },
                 )
                 AppleHairlineDivider()
-                AppleSwitchRow(
+                AppleSettingRow(
                     icon = Icons.Rounded.Speed,
                     iconTint = apple.emerald,
-                    title = "下载加速",
-                    checked = session.config.useUpdateAcceleration,
-                    onCheckedChange = updateModel::setPreferredAcceleration,
+                    title = "下载方式",
+                    trailingText = session.config.updateDownload.mode.label,
+                    showChevron = true,
+                    onClick = { showDownloadEditor = true },
                 )
                 AppleHairlineDivider()
                 AppleSettingRow(
-                    icon = Icons.Rounded.Link,
-                    iconTint = apple.indigo,
-                    title = "加速地址",
-                    subtitle = session.config.updateAcceleratorUrl,
+                    icon = Icons.Rounded.DeleteSweep,
+                    iconTint = apple.orange,
+                    title = "日志清理",
+                    trailingText = "保留 $RUN_LOG_RETENTION_DAYS 天",
                     showChevron = true,
-                    onClick = { showAcceleratorEditor = true },
+                    onClick = { showLogCleanup = true },
                 )
             }
         }
     }
 
-    if (showAcceleratorEditor) {
-        AcceleratorAddressDialog(
-            currentAddress = session.config.updateAcceleratorUrl,
-            onSave = { address ->
-                updateModel.setAcceleratorUrl(address)
-                showAcceleratorEditor = false
+    if (showDownloadEditor) {
+        UpdateDownloadSettingsDialog(
+            settings = session.config.updateDownload,
+            onSave = { settings ->
+                updateModel.setPreferredDownloadSettings(settings)
+                showDownloadEditor = false
             },
-            onDismiss = { showAcceleratorEditor = false },
+            onDismiss = { showDownloadEditor = false },
+        )
+    }
+    if (showLogCleanup) {
+        LogCleanupDialog(
+            accountId = session.config.currentAccountId,
+            accountName = session.currentAccount?.displayTitle.orEmpty(),
+            onClear = onClearLogs,
+            onDismiss = { showLogCleanup = false },
         )
     }
     AppUpdateDialogs(updateModel, session.config)

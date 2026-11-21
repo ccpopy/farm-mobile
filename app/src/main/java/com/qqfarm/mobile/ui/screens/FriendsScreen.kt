@@ -54,6 +54,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -69,12 +70,14 @@ import com.qqfarm.mobile.data.model.FriendItem
 import com.qqfarm.mobile.data.model.GameSpace
 import com.qqfarm.mobile.data.model.InteractRecord
 import com.qqfarm.mobile.data.model.FriendLandsPayload
-import com.qqfarm.mobile.data.model.RanchFriendDetail
+import com.qqfarm.mobile.data.model.RanchAnimal
 import com.qqfarm.mobile.data.model.RanchFriendSummary
 import com.qqfarm.mobile.data.model.RanchQuote
+import com.qqfarm.mobile.data.model.RanchViewSnapshot
 import com.qqfarm.mobile.data.network.FarmApiClient
 import com.qqfarm.mobile.data.network.ApiException
 import com.qqfarm.mobile.ui.components.AppleEmptyState
+import com.qqfarm.mobile.ui.components.AppleLoadingState
 import com.qqfarm.mobile.ui.components.AppleGroupedCard
 import com.qqfarm.mobile.ui.components.AppleHairlineDivider
 import com.qqfarm.mobile.ui.components.AppleSegmentedControl
@@ -82,6 +85,7 @@ import com.qqfarm.mobile.ui.components.AppleStatusPill
 import com.qqfarm.mobile.ui.components.RanchQuoteConfirmSheet
 import com.qqfarm.mobile.ui.components.RemoteAssetImage
 import com.qqfarm.mobile.ui.components.formatCompactCount
+import com.qqfarm.mobile.ui.components.formatDurationSec
 import com.qqfarm.mobile.ui.state.SessionUiState
 import com.qqfarm.mobile.ui.theme.LocalAppleColors
 import kotlinx.coroutines.CancellationException
@@ -92,6 +96,9 @@ import com.qqfarm.mobile.ui.components.EqualHeightRow
 import com.qqfarm.mobile.ui.components.AppleFilterChip
 import com.qqfarm.mobile.ui.components.AppleSearchField
 import com.qqfarm.mobile.ui.components.swipeToSwitchTabs
+import java.time.Instant
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
@@ -115,41 +122,47 @@ fun FriendsScreen(
     val isConnected = session.status?.connected == true && accountId.isNotBlank()
 
     var subTab by remember { mutableIntStateOf(0) }
-    var refreshing by remember { mutableStateOf(false) }
+    var refreshing by remember(accountId, isConnected, subTab) { mutableStateOf(false) }
+    var loadError by remember(accountId, isConnected, subTab) { mutableStateOf("") }
+    val loadedTabs = remember(accountId, isConnected) { mutableStateMapOf<Int, Boolean>() }
     var busyOp by remember { mutableStateOf(false) }
 
-    var friends by remember { mutableStateOf<List<FriendItem>>(emptyList()) }
-    var records by remember { mutableStateOf<List<InteractRecord>>(emptyList()) }
-    var blacklist by remember { mutableStateOf<List<FriendBlacklistItem>>(emptyList()) }
+    var friends by remember(accountId, isConnected) { mutableStateOf<List<FriendItem>>(emptyList()) }
+    var records by remember(accountId, isConnected) { mutableStateOf<List<InteractRecord>>(emptyList()) }
+    var blacklist by remember(accountId, isConnected) { mutableStateOf<List<FriendBlacklistItem>>(emptyList()) }
 
     var searchKeyword by remember { mutableStateOf("") }
     var onlyActionable by remember { mutableStateOf(false) }
     var inspectedFriend by remember(accountId, isConnected) { mutableStateOf<FriendItem?>(null) }
 
     suspend fun loadTab(forceSync: Boolean = false) {
-        if (!isConnected) return
+        if (!isConnected || refreshing) return
+        val tab = subTab
         refreshing = true
+        loadError = ""
         try {
-            when (subTab) {
+            when (tab) {
                 0 -> {
                     val res = apiClient.fetchFriends(accountId, forceSync = forceSync)
                     friends = res.friends
-                    runCatching { apiClient.fetchFriendBlacklist(accountId) }.onSuccess { blacklist = it }
+                    loadedTabs[0] = true
+                    try {
+                        blacklist = apiClient.fetchFriendBlacklist(accountId)
+                        loadedTabs[2] = true
+                    } catch (e: ApiException) {
+                        onMessage(e.message)
+                    }
                 }
                 1 -> records = apiClient.fetchInteractRecords(accountId)
                 2 -> blacklist = apiClient.fetchFriendBlacklist(accountId)
             }
-        } catch (e: Exception) {
-            onMessage(e.message ?: "读取好友数据失败")
+            loadedTabs[tab] = true
+        } catch (e: ApiException) {
+            loadError = e.message
+            if (loadedTabs[tab] == true) onMessage(e.message)
         } finally {
             refreshing = false
         }
-    }
-
-    LaunchedEffect(accountId) {
-        friends = emptyList()
-        records = emptyList()
-        blacklist = emptyList()
     }
 
     LaunchedEffect(accountId, isConnected, subTab) {
@@ -190,11 +203,30 @@ fun FriendsScreen(
                     }
                 }
             } else {
+                val hasData = loadedTabs[subTab] == true
                 PullToRefreshBox(
-                isRefreshing = refreshing,
+                isRefreshing = refreshing && hasData,
                 onRefresh = { scope.launch { loadTab(subTab == 0) } },
                 modifier = Modifier.fillMaxSize(),
             ) {
+                if (!hasData) {
+                    if (loadError.isBlank()) {
+                        AppleLoadingState()
+                    } else {
+                        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                            AppleGroupedCard(modifier = Modifier.padding(16.dp)) {
+                                AppleEmptyState(
+                                    icon = Icons.Rounded.Group,
+                                    title = "好友数据读取失败",
+                                    subtitle = loadError,
+                                    actionLabel = "重新加载",
+                                    onAction = { scope.launch { loadTab(subTab == 0) } },
+                                )
+                            }
+                        }
+                    }
+                    return@PullToRefreshBox
+                }
                 when (subTab) {
                     0 -> {
                         val blockedGids = remember(blacklist) { blacklist.map { it.gid }.toSet() }
@@ -692,7 +724,7 @@ private fun FriendLandsSheet(
                         .height(220.dp),
                     contentAlignment = Alignment.Center,
                 ) {
-                    CircularProgressIndicator()
+                    AppleLoadingState()
                 }
             } else if (errorMsg.isNotBlank()) {
                 AppleGroupedCard(contentPadding = PaddingValues(20.dp)) {
@@ -745,10 +777,9 @@ private fun RanchFriendsContent(
     val accountId = session.config.currentAccountId
     val isConnected = session.status?.connected == true && accountId.isNotBlank()
 
-    var refreshing by remember(isConnected) { mutableStateOf(false) }
-    var unlocked by remember { mutableStateOf(true) }
-    var lockedReason by remember { mutableStateOf("") }
-    var friends by remember { mutableStateOf<List<RanchFriendSummary>>(emptyList()) }
+    var refreshing by remember(accountId, isConnected) { mutableStateOf(false) }
+    var snapshot by remember(accountId, isConnected) { mutableStateOf<RanchViewSnapshot?>(null) }
+    var loadError by remember(accountId, isConnected) { mutableStateOf("") }
     var keyword by remember { mutableStateOf("") }
     var selectedFriend by remember(accountId, isConnected) { mutableStateOf<RanchFriendSummary?>(null) }
     var reportedEntry by remember(accountId) { mutableStateOf(false) }
@@ -756,6 +787,7 @@ private fun RanchFriendsContent(
     suspend fun loadFriendsList() {
         if (!isConnected || refreshing) return
         refreshing = true
+        loadError = ""
         try {
             if (!reportedEntry) {
                 reportedEntry = true
@@ -767,19 +799,17 @@ private fun RanchFriendsContent(
                     onMessage(e.message)
                 }
             }
-            val snap = apiClient.fetchRanchView(accountId, "friends")
-            unlocked = snap.base.unlocked
-            lockedReason = snap.base.reason
-            friends = snap.friends
+            snapshot = apiClient.fetchRanchView(accountId, "friends")
         } catch (e: ApiException) {
-            onMessage(e.message)
+            loadError = e.message
+            if (snapshot != null) onMessage(e.message)
         } finally {
             refreshing = false
         }
     }
 
     LaunchedEffect(accountId, isConnected) {
-        if (isConnected) loadFriendsList() else friends = emptyList()
+        if (isConnected) loadFriendsList()
     }
 
     if (!isConnected) {
@@ -801,25 +831,45 @@ private fun RanchFriendsContent(
     }
 
     PullToRefreshBox(
-        isRefreshing = refreshing,
+        isRefreshing = refreshing && snapshot != null,
         onRefresh = { scope.launch { loadFriendsList() } },
         modifier = Modifier
             .fillMaxSize()
             .background(apple.background),
     ) {
-        if (!unlocked) {
+        val current = snapshot
+        if (current == null) {
+            if (loadError.isBlank()) {
+                AppleLoadingState()
+            } else {
+                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    AppleGroupedCard(modifier = Modifier.padding(16.dp)) {
+                        AppleEmptyState(
+                            icon = Icons.Rounded.Group,
+                            title = "好友牧场读取失败",
+                            subtitle = loadError,
+                            actionLabel = "重新加载",
+                            onAction = { scope.launch { loadFriendsList() } },
+                        )
+                    }
+                }
+            }
+            return@PullToRefreshBox
+        }
+        if (!current.base.unlocked) {
             LazyColumn(modifier = Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp)) {
                 item {
                     AppleGroupedCard {
                         AppleEmptyState(
                             icon = Icons.Rounded.Pets,
                             title = "牧场暂未解锁",
-                            subtitle = lockedReason.ifBlank { "达到牧场解锁条件后即可拜访好友牧场" },
+                            subtitle = current.base.reason.ifBlank { "达到牧场解锁条件后即可拜访好友牧场" },
                         )
                     }
                 }
             }
         } else {
+            val friends = current.friends
             val filtered = remember(friends, keyword) {
                 val kw = keyword.trim().lowercase()
                 if (kw.isEmpty()) friends else friends.filter {
@@ -927,6 +977,28 @@ private fun RanchFriendsContent(
     }
 }
 
+private val ranchFriendTimeFormat = DateTimeFormatter.ofPattern("MM-dd HH:mm")
+
+@Composable
+private fun RanchFriendAnimalTimes(animal: RanchAnimal, nowMs: Long) {
+    if (animal.canHarvest) return
+    val deadlines = remember(animal) {
+        buildList {
+            if (animal.deliveringUntilMs > 0L) add("产出" to animal.deliveringUntilMs)
+            if (animal.nextAtMs > 0L && animal.nextAtMs != animal.deliveringUntilMs) {
+                add((if (animal.stage == 4) "预计可收获" else "下一阶段") to animal.nextAtMs)
+            }
+        }
+    }
+    val color = LocalAppleColors.current.secondaryText
+    deadlines.forEach { (label, deadline) ->
+        val time = remember(deadline) { ranchFriendTimeFormat.format(Instant.ofEpochMilli(deadline).atZone(ZoneId.systemDefault())) }
+        val remaining = deadline - nowMs
+        val status = if (remaining > 0L) "余 ${formatDurationSec((remaining + 999L) / 1000L)}" else "待刷新"
+        Text("$label $time · $status", style = MaterialTheme.typography.labelSmall, color = color)
+    }
+}
+
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 private fun RanchFriendDetailSheet(
@@ -940,19 +1012,21 @@ private fun RanchFriendDetailSheet(
     val scope = rememberCoroutineScope()
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
-    var loading by remember { mutableStateOf(true) }
-    var busy by remember { mutableStateOf(false) }
-    var detail by remember { mutableStateOf<RanchFriendDetail?>(null) }
-    var errorMsg by remember { mutableStateOf("") }
-    var pendingOp by remember { mutableStateOf<PendingRanchFriendOp?>(null) }
+    var loading by remember(accountId, friend.gid) { mutableStateOf(true) }
+    var busy by remember(accountId, friend.gid) { mutableStateOf(false) }
+    var snapshot by remember(accountId, friend.gid) { mutableStateOf<RanchViewSnapshot?>(null) }
+    var errorMsg by remember(accountId, friend.gid) { mutableStateOf("") }
+    var pendingOp by remember(accountId, friend.gid) { mutableStateOf<PendingRanchFriendOp?>(null) }
 
     suspend fun loadDetail() {
         loading = true
         errorMsg = ""
         try {
-            detail = apiClient.fetchRanchView(accountId, "friends", hostGid = friend.gid).friendRanch
-            if (detail == null) errorMsg = "未返回好友牧场数据"
+            val loaded = apiClient.fetchRanchView(accountId, "friends", hostGid = friend.gid)
+            if (loaded.friendRanch == null) throw ApiException("未返回好友牧场数据")
+            snapshot = loaded
         } catch (e: ApiException) {
+            snapshot = null
             errorMsg = e.message
         } finally {
             loading = false
@@ -983,7 +1057,17 @@ private fun RanchFriendDetailSheet(
         loadDetail()
     }
 
-    val ranch = detail
+    val current = snapshot
+    val ranch = current?.friendRanch
+    var clockTickMs by remember { mutableLongStateOf(SystemClock.elapsedRealtime()) }
+    LaunchedEffect(ranch) {
+        if (ranch != null) {
+            while (true) {
+                clockTickMs = SystemClock.elapsedRealtime()
+                delay(1000L)
+            }
+        }
+    }
     val actionsEnabled = !busy && !loading && errorMsg.isBlank()
     ModalBottomSheet(
         onDismissRequest = { if (!busy) onDismiss() },
@@ -1027,23 +1111,23 @@ private fun RanchFriendDetailSheet(
                     }
                 }
                 IconButton(onClick = { scope.launch { loadDetail() } }, enabled = !loading && !busy) {
-                    Icon(Icons.Rounded.Refresh, contentDescription = "刷新")
+                    if (loading && ranch != null) {
+                        CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+                    } else {
+                        Icon(Icons.Rounded.Refresh, contentDescription = "刷新")
+                    }
                 }
             }
 
             if (loading && ranch == null) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(180.dp),
-                    contentAlignment = Alignment.Center,
-                ) { CircularProgressIndicator() }
+                AppleLoadingState(Modifier.fillMaxWidth().height(180.dp))
             } else if (errorMsg.isNotBlank()) {
                 AppleGroupedCard(contentPadding = PaddingValues(16.dp)) {
                     Text(errorMsg, style = MaterialTheme.typography.bodyMedium, color = apple.red)
                 }
-            } else if (ranch != null) {
+            } else if (current != null && ranch != null) {
                 val d = ranch
+                val nowMs = current.base.serverNowMs + (clockTickMs - current.base.fetchedAtElapsedMs).coerceAtLeast(0L)
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -1092,13 +1176,20 @@ private fun RanchFriendDetailSheet(
                                 horizontalArrangement = Arrangement.SpaceBetween,
                                 verticalAlignment = Alignment.CenterVertically,
                             ) {
-                                Column {
+                                Column(modifier = Modifier.weight(1f)) {
                                     Text(pen.name, style = MaterialTheme.typography.titleSmall, color = apple.primaryText)
-                                    Text(
-                                        text = "蚊子 ${pen.mosquitoes}/${pen.mosquitoLimit}",
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = apple.secondaryText,
-                                    )
+                                    FlowRow(
+                                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                        verticalArrangement = Arrangement.spacedBy(4.dp),
+                                    ) {
+                                        AppleStatusPill(
+                                            "蚊子 ${pen.mosquitoes}/${pen.mosquitoLimit}",
+                                            if (pen.mosquitoes > 0) apple.indigo else apple.secondaryText,
+                                            showDot = false,
+                                        )
+                                        val stealable = pen.shelves.count { it.canSteal }
+                                        if (stealable > 0) AppleStatusPill("可偷取 $stealable", apple.green, showDot = false)
+                                    }
                                 }
                                 OutlinedButton(
                                     onClick = {
@@ -1140,6 +1231,7 @@ private fun RanchFriendDetailSheet(
                                                 style = MaterialTheme.typography.labelSmall,
                                                 color = apple.secondaryText,
                                             )
+                                            RanchFriendAnimalTimes(animal, nowMs)
                                         }
                                         if (animal.canStroke) {
                                             Button(

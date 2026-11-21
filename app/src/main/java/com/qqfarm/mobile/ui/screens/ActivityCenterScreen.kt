@@ -64,6 +64,7 @@ import com.qqfarm.mobile.data.model.GameSpace
 import com.qqfarm.mobile.data.network.ApiException
 import com.qqfarm.mobile.data.network.FarmApiClient
 import com.qqfarm.mobile.ui.components.AppleEmptyState
+import com.qqfarm.mobile.ui.components.AppleLoadingState
 import com.qqfarm.mobile.ui.components.AppleGroupedCard
 import com.qqfarm.mobile.ui.components.AppleHairlineDivider
 import com.qqfarm.mobile.ui.components.AppleSectionHeader
@@ -147,8 +148,9 @@ fun ActivityCenterScreen(
             directory = apiClient.fetchActivityDirectory(accountId, gameSpace == GameSpace.RANCH)
         } catch (e: ApiException) {
             errorText = e.message
+        } finally {
+            loading = false
         }
-        loading = false
     }
 
     val activeDetail = selectedActivity
@@ -219,12 +221,16 @@ fun ActivityCenterScreen(
     }
 
     PullToRefreshBox(
-        isRefreshing = loading,
+        isRefreshing = loading && directory != null,
         onRefresh = ::loadDirectory,
         modifier = Modifier
             .fillMaxSize()
             .background(apple.background),
     ) {
+        if (directory == null && errorText == null) {
+            AppleLoadingState()
+            return@PullToRefreshBox
+        }
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
             contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 24.dp),

@@ -63,8 +63,10 @@ import androidx.compose.ui.unit.sp
 import com.qqfarm.mobile.data.model.CommerceItem
 import com.qqfarm.mobile.data.model.SolarCalendarState
 import com.qqfarm.mobile.data.model.SolarEvent
+import com.qqfarm.mobile.data.network.ApiException
 import com.qqfarm.mobile.data.network.FarmApiClient
 import com.qqfarm.mobile.ui.components.AppleEmptyState
+import com.qqfarm.mobile.ui.components.AppleLoadingState
 import com.qqfarm.mobile.ui.components.AppleFilterChip
 import com.qqfarm.mobile.ui.components.AppleGroupedCard
 import com.qqfarm.mobile.ui.components.AppleHairlineDivider
@@ -94,12 +96,12 @@ fun SolarCalendarScreen(
     val accountId = session.config.currentAccountId
     val isConnected = session.status?.connected == true && accountId.isNotBlank()
 
-    var refreshing by remember { mutableStateOf(false) }
+    var refreshing by remember(accountId, isConnected) { mutableStateOf(false) }
     var busy by remember { mutableStateOf(false) }
-    var state by remember { mutableStateOf<SolarCalendarState?>(null) }
-    var errorMsg by remember { mutableStateOf("") }
-    var selectedSeasonId by remember { mutableIntStateOf(0) }
-    var quizEvent by remember { mutableStateOf<SolarEvent?>(null) }
+    var state by remember(accountId, isConnected) { mutableStateOf<SolarCalendarState?>(null) }
+    var errorMsg by remember(accountId, isConnected) { mutableStateOf("") }
+    var selectedSeasonId by remember(accountId) { mutableIntStateOf(0) }
+    var quizEvent by remember(accountId, isConnected) { mutableStateOf<SolarEvent?>(null) }
 
     var clockTickMs by remember { mutableLongStateOf(SystemClock.elapsedRealtime()) }
     LaunchedEffect(Unit) {
@@ -119,16 +121,19 @@ fun SolarCalendarScreen(
     }
 
     suspend fun loadCalendar() {
-        if (!isConnected) return
+        if (!isConnected || refreshing) return
         refreshing = true
         errorMsg = ""
-        runCatching { apiClient.fetchSolarCalendar(accountId) }
-            .onSuccess { cal ->
-                state = cal
-                selectedSeasonId = pickDefaultSeason(cal, cal.serverTimeSec)
-            }
-            .onFailure { errorMsg = it.message ?: "节令日历读取失败" }
-        refreshing = false
+        try {
+            val cal = apiClient.fetchSolarCalendar(accountId)
+            state = cal
+            selectedSeasonId = pickDefaultSeason(cal, cal.serverTimeSec)
+        } catch (e: ApiException) {
+            errorMsg = e.message
+            if (state != null) onMessage(e.message)
+        } finally {
+            refreshing = false
+        }
     }
 
     fun performAction(action: String, body: JSONObject) {
@@ -179,21 +184,25 @@ fun SolarCalendarScreen(
     }
 
     PullToRefreshBox(
-        isRefreshing = refreshing,
-        onRefresh = { scope.launch { loadCalendar() } },
+        isRefreshing = refreshing && state != null,
+        onRefresh = { if (!busy) scope.launch { loadCalendar() } },
         modifier = Modifier.fillMaxSize(),
     ) {
         val current = state
         if (current == null) {
+            if (errorMsg.isBlank()) {
+                AppleLoadingState()
+                return@PullToRefreshBox
+            }
             LazyColumn(modifier = Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp)) {
                 item {
                     AppleGroupedCard {
                         AppleEmptyState(
                             icon = Icons.Rounded.CalendarMonth,
-                            title = if (errorMsg.isNotBlank()) errorMsg else if (refreshing) "正在读取节令日历..." else "暂未获取到节令日历",
-                            subtitle = "按当前账号读取二十四节令与答题奖励进度",
-                            actionLabel = if (!refreshing) "重新加载" else null,
-                            onAction = if (!refreshing) ({ scope.launch { loadCalendar() } }) else null,
+                            title = "节令日历读取失败",
+                            subtitle = errorMsg,
+                            actionLabel = "重新加载",
+                            onAction = { scope.launch { loadCalendar() } },
                         )
                     }
                 }

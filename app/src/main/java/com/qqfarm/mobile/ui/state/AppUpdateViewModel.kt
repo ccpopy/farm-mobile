@@ -10,6 +10,8 @@ import com.qqfarm.mobile.data.network.AndroidRelease
 import com.qqfarm.mobile.data.network.AppUpdateClient
 import com.qqfarm.mobile.data.network.UpdateException
 import com.qqfarm.mobile.data.prefs.StoredConfig
+import com.qqfarm.mobile.data.prefs.UpdateDownloadMode
+import com.qqfarm.mobile.data.prefs.UpdateDownloadSettings
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -27,8 +29,7 @@ internal sealed interface UpdateUiState {
     data class Notice(val title: String, val message: String) : UpdateUiState
     data class Available(
         val release: AndroidRelease,
-        val accelerator: String?,
-        val useAcceleration: Boolean,
+        val downloadSettings: UpdateDownloadSettings,
         val error: String? = null,
     ) : UpdateUiState
     data class Downloading(val update: Available, val percent: Int = 0) : UpdateUiState
@@ -58,12 +59,11 @@ internal class AppUpdateViewModel(application: Application) : AndroidViewModel(a
         _state.value = UpdateUiState.Checking
         task = viewModelScope.launch {
             try {
-                val release = updates.check(BuildConfig.VERSION_NAME, githubToken)
+                val release = updates.check(BuildConfig.VERSION_NAME, githubToken, config.updateDownload.activeProxyUrl)
                 _state.value = if (release == null) {
                     UpdateUiState.Notice("暂无可用更新", "当前版本 ${BuildConfig.VERSION_NAME}")
                 } else {
-                    val accelerator = config.updateAcceleratorUrl.takeIf { release.canAccelerate }
-                    UpdateUiState.Available(release, accelerator, config.useUpdateAcceleration && accelerator != null)
+                    UpdateUiState.Available(release, config.updateDownload.forRelease(release.canAccelerate))
                 }
             } catch (e: UpdateException) {
                 if (e.authorizationRequired) {
@@ -73,18 +73,24 @@ internal class AppUpdateViewModel(application: Application) : AndroidViewModel(a
                     _state.value = UpdateUiState.Notice("检查更新失败", e.message.orEmpty())
                 }
             } catch (_: IOException) {
-                _state.value = UpdateUiState.Notice("检查更新失败", "连接 GitHub 失败，请检查网络后重试")
+                val message = if (config.updateDownload.mode == UpdateDownloadMode.PROXY) {
+                    "无法通过代理连接 GitHub，请核对代理地址"
+                } else {
+                    "连接 GitHub 失败，可在下载方式中配置代理后重试"
+                }
+                _state.value = UpdateUiState.Notice("检查更新失败", message)
             }
         }
     }
 
     fun download() {
         val update = _state.value as? UpdateUiState.Available ?: return
-        val accelerated = update.accelerator.takeIf { update.useAcceleration }
+        val settings = update.downloadSettings
+        val accelerator = settings.acceleratorUrl.takeIf { settings.mode == UpdateDownloadMode.ACCELERATOR }
         _state.value = UpdateUiState.Downloading(update)
         task = viewModelScope.launch {
             try {
-                val apk = updates.download(update.release, accelerated, githubToken, app.cacheDir) { percent ->
+                val apk = updates.download(update.release, accelerator, githubToken, app.cacheDir, settings.activeProxyUrl) { percent ->
                     _state.update { state ->
                         if (state is UpdateUiState.Downloading && state.update === update) {
                             state.copy(percent = percent)
@@ -110,25 +116,26 @@ internal class AppUpdateViewModel(application: Application) : AndroidViewModel(a
                     githubToken = null
                     _state.value = UpdateUiState.Authorization(e.message.orEmpty())
                 } else {
-                    _state.value = update.copy(error = if (accelerated != null) "${e.message}，可关闭本次加速后重试" else e.message)
+                    _state.value = update.copy(error = e.message)
                 }
             } catch (_: IOException) {
-                _state.value = update.copy(error = if (accelerated != null) "加速下载失败，可关闭本次加速后重试" else "下载失败，请检查网络与可用空间")
+                val message = when (settings.mode) {
+                    UpdateDownloadMode.ACCELERATOR -> "加速下载失败，可切换下载方式后重试"
+                    UpdateDownloadMode.PROXY -> "代理下载失败，请核对代理地址后重试"
+                    UpdateDownloadMode.DIRECT -> "下载失败，请检查网络与可用空间"
+                }
+                _state.value = update.copy(error = message)
             }
         }
     }
 
-    fun setDownloadAcceleration(enabled: Boolean) {
+    fun setDownloadSettings(settings: UpdateDownloadSettings) {
         val update = _state.value as? UpdateUiState.Available ?: return
-        _state.value = update.copy(useAcceleration = enabled && update.accelerator != null, error = null)
+        _state.value = update.copy(downloadSettings = settings.forRelease(update.release.canAccelerate), error = null)
     }
 
-    fun setPreferredAcceleration(enabled: Boolean) {
-        viewModelScope.launch { preferences.updateDownloadAcceleration(enabled) }
-    }
-
-    fun setAcceleratorUrl(url: String) {
-        viewModelScope.launch { preferences.updateAcceleratorUrl(url) }
+    fun setPreferredDownloadSettings(settings: UpdateDownloadSettings) {
+        viewModelScope.launch { preferences.updateDownloadSettings(settings) }
     }
 
     fun takeAutomaticInstall(): File? {

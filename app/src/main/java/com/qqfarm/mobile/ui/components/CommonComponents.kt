@@ -59,6 +59,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
@@ -501,6 +502,20 @@ fun AppleMetricTile(
                     overflow = TextOverflow.Ellipsis,
                 )
             }
+        }
+    }
+}
+
+@Composable
+internal fun AppleLoadingState(modifier: Modifier = Modifier.fillMaxSize()) {
+    var visible by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) {
+        delay(180L)
+        visible = true
+    }
+    Box(modifier = modifier, contentAlignment = Alignment.Center) {
+        if (visible) {
+            CircularProgressIndicator(modifier = Modifier.size(28.dp), strokeWidth = 2.5.dp)
         }
     }
 }
