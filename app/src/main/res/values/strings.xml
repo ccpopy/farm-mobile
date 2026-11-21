@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">农场助手</string>
+    <string name="relogin_channel_name">账号重连提醒</string>
+    <string name="relogin_channel_desc">当农场账号掉线需要重新扫码或更新凭证时推送提醒</string>
+    <string name="activity_channel_name">农牧动态推送</string>
+    <string name="activity_channel_desc">农场收获种植、好友偷取帮忙、牧场动态及收益等简洁通知</string>
+</resources>

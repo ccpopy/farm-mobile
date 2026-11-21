@@ -1,0 +1,102 @@
+name: Android Release APK
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  build-apk:
+    name: Build Release APK
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.11.1'
+
+      - name: Check and assemble Release APK
+        run: gradle lintRelease assembleRelease --no-daemon
+
+      - name: Sign and verify Release APK
+        id: apk
+        shell: bash
+        env:
+          ANDROID_RELEASE_KEYSTORE_BASE64: ${{ secrets.ANDROID_RELEASE_KEYSTORE_BASE64 }}
+          ANDROID_RELEASE_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_RELEASE_KEYSTORE_PASSWORD }}
+        run: |
+          if [[ -z "$ANDROID_RELEASE_KEYSTORE_BASE64" || -z "$ANDROID_RELEASE_KEYSTORE_PASSWORD" ]]; then
+            echo "::error::Android release signing secrets are missing."
+            exit 1
+          fi
+
+          output_dir=app/build/outputs/apk/release
+          unsigned_apk="$output_dir/app-release-unsigned.apk"
+          build_tools="$ANDROID_HOME/build-tools/35.0.0"
+          badging="$("$build_tools/aapt" dump badging "$unsigned_apk")"
+          package_info="$(sed -n '/^package:/p' <<< "$badging")"
+          echo "$package_info"
+          version="$(sed -n "s/.*versionName='\([^']*\)'.*/\1/p" <<< "$package_info")"
+          if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ || "$GITHUB_REF_NAME" != "v$version" ]]; then
+            echo "::error::APK version must match the v version tag."
+            exit 1
+          fi
+          if [[ "$package_info" != "package: name='io.github.ccpopy.farmmobile' "* ]] || grep -q '^application-debuggable' <<< "$badging"; then
+            echo "::error::Expected a non-debuggable io.github.ccpopy.farmmobile APK."
+            exit 1
+          fi
+
+          keystore="$(mktemp "$RUNNER_TEMP/android-release.XXXXXXXX")"
+          trap 'rm -f "$keystore"' EXIT
+          printf '%s' "$ANDROID_RELEASE_KEYSTORE_BASE64" | base64 --decode > "$keystore"
+          aligned_apk="$RUNNER_TEMP/android-release-aligned.apk"
+          apk="$output_dir/farm-mobile-$version-release.apk"
+          "$build_tools/zipalign" -f -P 16 4 "$unsigned_apk" "$aligned_apk"
+          "$build_tools/apksigner" sign --ks "$keystore" --ks-type PKCS12 --ks-key-alias farm-mobile \
+            --ks-pass env:ANDROID_RELEASE_KEYSTORE_PASSWORD --key-pass env:ANDROID_RELEASE_KEYSTORE_PASSWORD \
+            --out "$apk" "$aligned_apk"
+          "$build_tools/apksigner" verify --print-certs "$apk"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Publish GitHub Release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_VERSION: ${{ steps.apk.outputs.version }}
+        run: |
+          tag="v$RELEASE_VERSION"
+          apk="app/build/outputs/apk/release/farm-mobile-$RELEASE_VERSION-release.apk"
+          if is_draft="$(gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json isDraft --jq '.isDraft' 2>/dev/null)"; then
+            gh release upload "$tag" "$apk" --repo "$GITHUB_REPOSITORY" --clobber
+            if [[ "$is_draft" == "true" ]]; then
+              gh release edit "$tag" --repo "$GITHUB_REPOSITORY" --draft=false --verify-tag
+            fi
+          else
+            gh release create "$tag" "$apk" \
+              --repo "$GITHUB_REPOSITORY" \
+              --verify-tag \
+              --title "Farm Mobile v$RELEASE_VERSION" \
+              --generate-notes
+          fi
+
+      - name: Upload Release APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: farm-mobile-${{ steps.apk.outputs.version }}-release
+          path: app/build/outputs/apk/release/farm-mobile-${{ steps.apk.outputs.version }}-release.apk
+          if-no-files-found: error

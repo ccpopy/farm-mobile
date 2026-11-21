@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- 晨光天空：上浅下暖的薄荷绿 -->
+    <path android:pathData="M0,0h108v108h-108z">
+        <aapt:attr name="android:fillColor">
+            <gradient
+                android:endX="54"
+                android:endY="108"
+                android:startX="54"
+                android:startY="0"
+                android:type="linear">
+                <item
+                    android:color="#FFF3FCF6"
+                    android:offset="0.0" />
+                <item
+                    android:color="#FFC9EED7"
+                    android:offset="1.0" />
+            </gradient>
+        </aapt:attr>
+    </path>
+    <!-- 左上角柔和的阳光 -->
+    <path
+        android:fillColor="#33FFC94D"
+        android:pathData="M10,30a20,20 0,1 0,40 0a20,20 0,1 0,-40 0z" />
+</vector>

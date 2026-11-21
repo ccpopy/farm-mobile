@@ -1,0 +1,21 @@
+# Gradle & Build Outputs
+.gradle/
+.kotlin/
+build/
+app/build/
+*/build/
+
+# IDE & Local Environment
+local.properties
+*.iml
+.idea/
+.cxx/
+captures/
+
+# Keystores & Signing
+*.jks
+*.keystore
+
+# OS
+.DS_Store
+Thumbs.db

@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 状态栏通知小图标：纯白剪影（系统只取 alpha） -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M3,19.5C3,16.5 7,14.5 12,14.5C17,14.5 21,16.5 21,19.5C21,20.3 20.3,21 19.5,21L4.5,21C3.7,21 3,20.3 3,19.5Z" />
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M11.2,13.5L11.2,10.2C11.2,9.8 11.6,9.4 12,9.4C12.4,9.4 12.8,9.8 12.8,10.2L12.8,13.5Z" />
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M12,12C9,12.2 5.6,10.2 5,5.6C9,5.3 12.2,7.8 12,12Z" />
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M12,10.3C12.2,6 15.2,3 20,2.8C20.2,7.6 17,10.6 12,10.3Z" />
+</vector>

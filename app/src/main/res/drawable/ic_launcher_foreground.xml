@@ -1,0 +1,81 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- 土丘 -->
+    <path android:pathData="M22,80C22,70.5 36,64 54,64C72,64 86,70.5 86,80C86,82.2 84.2,84 82,84L26,84C23.8,84 22,82.2 22,80Z">
+        <aapt:attr name="android:fillColor">
+            <gradient
+                android:endX="54"
+                android:endY="84"
+                android:startX="54"
+                android:startY="64"
+                android:type="linear">
+                <item
+                    android:color="#FFA9764B"
+                    android:offset="0.0" />
+                <item
+                    android:color="#FF7A4F2E"
+                    android:offset="1.0" />
+            </gradient>
+        </aapt:attr>
+    </path>
+    <!-- 土粒 -->
+    <path
+        android:fillColor="#FF6A4227"
+        android:pathData="M37.5,75a1.6,1.6 0,1 0,3.2 0a1.6,1.6 0,1 0,-3.2 0zM63.5,77a1.6,1.6 0,1 0,3.2 0a1.6,1.6 0,1 0,-3.2 0zM49,79.5a1.2,1.2 0,1 0,2.4 0a1.2,1.2 0,1 0,-2.4 0zM72,72.5a1.2,1.2 0,1 0,2.4 0a1.2,1.2 0,1 0,-2.4 0z" />
+    <!-- 茎 -->
+    <path
+        android:fillColor="#FF178A4E"
+        android:pathData="M52,67L52,52C52,50.9 52.9,50 54,50C55.1,50 56,50.9 56,52L56,67Z" />
+    <!-- 左叶 -->
+    <path android:pathData="M54,58C44.5,58.5 34.5,52 32.5,38.5C45,37.5 54.5,45 54,58Z">
+        <aapt:attr name="android:fillColor">
+            <gradient
+                android:endX="54"
+                android:endY="58"
+                android:startX="32.5"
+                android:startY="38.5"
+                android:type="linear">
+                <item
+                    android:color="#FF6FE09A"
+                    android:offset="0.0" />
+                <item
+                    android:color="#FF2DBE6C"
+                    android:offset="1.0" />
+            </gradient>
+        </aapt:attr>
+    </path>
+    <!-- 右叶 -->
+    <path android:pathData="M54,52C54.5,38 64,28.5 79.5,28C80,43.5 70,53 54,52Z">
+        <aapt:attr name="android:fillColor">
+            <gradient
+                android:endX="54"
+                android:endY="52"
+                android:startX="79.5"
+                android:startY="28"
+                android:type="linear">
+                <item
+                    android:color="#FF4FD486"
+                    android:offset="0.0" />
+                <item
+                    android:color="#FF1B9A57"
+                    android:offset="1.0" />
+            </gradient>
+        </aapt:attr>
+    </path>
+    <!-- 叶脉高光 -->
+    <path
+        android:pathData="M38.5,43.5C44,46.5 49,50.5 52.5,55.5"
+        android:strokeWidth="1.4"
+        android:strokeColor="#66FFFFFF"
+        android:strokeLineCap="round" />
+    <path
+        android:pathData="M74,33.5C67,37.5 61,43 56.5,49.5"
+        android:strokeWidth="1.4"
+        android:strokeColor="#66FFFFFF"
+        android:strokeLineCap="round" />
+</vector>

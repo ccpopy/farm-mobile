@@ -1,0 +1,764 @@
+package com.qqfarm.mobile.data.model
+
+enum class GameSpace(
+    val key: String,
+    val label: String,
+) {
+    FARM("farm", "农场"),
+    RANCH("ranch", "牧场"),
+}
+
+data class CommerceItem(
+    val id: Int = 0,
+    val count: Long = 0L,
+    val name: String = "",
+    val image: String = "",
+    val rarity: Int = 0,
+    val description: String = "",
+)
+
+// ---- Solar Calendar ----
+
+data class SolarSeason(
+    val id: Int,
+    val name: String,
+    val year: String = "",
+    val description: String = "",
+    val eventIds: List<Int> = emptyList(),
+    val litCount: Int = 0,
+    val totalCount: Int = 0,
+    val claimed: Boolean = false,
+    val canClaim: Boolean = false,
+    val rewards: List<CommerceItem> = emptyList(),
+)
+
+data class SolarEvent(
+    val id: Int,
+    val name: String,
+    val description: String = "",
+    val startTimeSec: Long = 0L,
+    val endTimeSec: Long = 0L,
+    val status: Int = 0,
+    val directClaimed: Boolean = false,
+    val quizClaimed: Boolean = false,
+    val quizWrongToday: Boolean = false,
+    val wrongOptions: List<Int> = emptyList(),
+    val question: String = "",
+    val options: List<String> = emptyList(),
+    val errorTips: String = "",
+    val answerIndex: Int? = null,
+    val rewards: List<CommerceItem> = emptyList(),
+    val questionRewards: List<CommerceItem> = emptyList(),
+    val canClaim: Boolean = false,
+    val canAnswer: Boolean = false,
+)
+
+data class SolarCalendarState(
+    val serverTimeSec: Long = 0L,
+    val receivedAtElapsedMs: Long = 0L,
+    val defaultEventId: Int = 0,
+    val seasons: List<SolarSeason> = emptyList(),
+    val events: List<SolarEvent> = emptyList(),
+)
+
+data class SolarActionResult(
+    val rewards: List<CommerceItem> = emptyList(),
+    val correct: Boolean? = null,
+    val calendar: SolarCalendarState? = null,
+    val refreshRequired: Boolean = false,
+)
+
+// ---- Mall / Props Shop / Mystery Shop ----
+
+data class MallCurrency(
+    val id: Int,
+    val name: String,
+    val image: String,
+    val count: Long,
+    val balanceKnown: Boolean,
+)
+
+data class MallLimit(
+    val type: Int,
+    val bought: Int,
+    val max: Int,
+    val remaining: Int?,
+)
+
+data class MallMembership(
+    val isSvip: Boolean = false,
+    val remainingDays: Int = 0,
+)
+
+data class MallGoods(
+    val id: Int,
+    val name: String,
+    val type: Int = 0,
+    val rewards: List<CommerceItem> = emptyList(),
+    val priceId: Int = 0,
+    val priceName: String = "",
+    val priceImage: String = "",
+    val priceCount: Long = 0L,
+    val priceBalance: Long? = null,
+    val originalPrice: Long? = null,
+    val isFree: Boolean = false,
+    val limit: MallLimit? = null,
+    val isLimited: Boolean = false,
+    val discountText: String = "",
+    val isDiscounted: Boolean = false,
+    val discountEndTimeMs: Long = 0L,
+    val available: Boolean = false,
+    val purchasable: Boolean = false,
+    val purchaseStatus: String = "available",
+    val unavailableReason: String = "",
+)
+
+data class MallCatalog(
+    val shopId: Int = 0,
+    val slotType: Int = 1,
+    val subSlotType: Int = 0,
+    val serverTimeMs: Long = 0L,
+    val receivedAtElapsedMs: Long = 0L,
+    val refreshCountdownSec: Long = 0L,
+    val membership: MallMembership? = null,
+    val currencies: List<MallCurrency> = emptyList(),
+    val goods: List<MallGoods> = emptyList(),
+)
+
+data class MallPurchaseResult(
+    val rewards: List<CommerceItem> = emptyList(),
+    val catalog: MallCatalog? = null,
+    val refreshRequired: Boolean = false,
+)
+
+data class MysteryNpcOffer(
+    val id: Int,
+    val reward: CommerceItem,
+    val priceId: Int = 0,
+    val priceName: String = "",
+    val priceImage: String = "",
+    val priceCount: Long = 0L,
+    val priceBalance: Long? = null,
+    val originalPrice: Long = 0L,
+    val unitPrice: Long = 0L,
+    val unitOriginalPrice: Long = 0L,
+    val discountPercent: Int = 0,
+)
+
+data class MysteryShopState(
+    val active: Boolean = false,
+    val purchaseState: String = "",
+    val serverTimeMs: Long = 0L,
+    val receivedAtElapsedMs: Long = 0L,
+    val activeTimeMs: Long = 0L,
+    val expireTimeMs: Long = 0L,
+    val npc: MysteryNpcOffer? = null,
+    val rawJson: String = "{}",
+)
+
+data class MysteryPurchaseResult(
+    val shop: MysteryShopState? = null,
+    val reward: CommerceItem? = null,
+    val price: CommerceItem? = null,
+)
+
+// ---- Extended Ranch Models ----
+
+data class RanchCurrency(
+    val id: Int,
+    val name: String,
+    val image: String,
+    val count: Long,
+)
+
+data class RanchFacilityNext(
+    val level: Int,
+    val capacity: Int,
+    val durationSec: Long,
+    val requiredLevel: Int,
+    val available: Boolean,
+    val costs: List<CommerceItem> = emptyList(),
+)
+
+data class RanchFacility(
+    val id: String,
+    val moduleType: Int,
+    val name: String,
+    val level: Int,
+    val state: Int,
+    val active: Boolean,
+    val canActivate: Boolean,
+    val capacity: Int,
+    val upgradeState: Int,
+    val upgradeEndTimeMs: Long,
+    val ranchCount: Int,
+    val ranchCapacity: Int,
+    val hasRanch: Boolean,
+    val feedCount: Int,
+    val feedRemainingSec: Long,
+    val hasFeed: Boolean,
+    val next: RanchFacilityNext? = null,
+)
+
+data class RanchBagItem(
+    val uid: String,
+    val id: Int,
+    val name: String,
+    val image: String,
+    val count: Long,
+    val type: Int = 0,
+    val locked: Boolean = false,
+    val animalId: Int = 0,
+    val husbandryType: String = "",
+    val giantCub: Boolean = false,
+    val canSell: Boolean = false,
+    val isCan: Boolean = false,
+    val canSpeedUpSec: Long = 0L,
+    val isProduct: Boolean = false,
+    val weightX10: Int = 0,
+    val sellPrices: List<CommerceItem> = emptyList(),
+)
+
+data class RanchTaskItem(
+    val id: String,
+    val category: String,
+    val desc: String,
+    val progress: Int,
+    val total: Int,
+    val unlocked: Boolean,
+    val canClaim: Boolean,
+    val claimed: Boolean,
+)
+
+data class RanchBookAnimal(
+    val id: Int,
+    val name: String,
+    val image: String,
+    val unlocked: Boolean = false,
+    val hasGiant: Boolean = false,
+    val giantName: String = "",
+    val giantImage: String = "",
+    val giantUnlocked: Boolean = false,
+    val giantIsNew: Boolean = false,
+    val giantTierName: String = "",
+    val giantWeightKg: String = "",
+    val giantHarvestCount: String = "",
+)
+
+data class RanchBookGiantLevel(
+    val level: Int,
+    val score: Long,
+    val claimed: Boolean,
+    val canClaim: Boolean,
+    val rewards: List<CommerceItem> = emptyList(),
+)
+
+data class RanchBookMutationRule(
+    val type: Int,
+    val name: String,
+    val description: String,
+    val baseProbabilityPercent: Int,
+)
+
+data class RanchBookData(
+    val normalLevel: Int = 0,
+    val normalProgress: Int = 0,
+    val normalNextProgress: Int = 0,
+    val normalCanClaim: Boolean = false,
+    val normalRewards: List<CommerceItem> = emptyList(),
+    val giantScore: Long = 0L,
+    val giantLevels: List<RanchBookGiantLevel> = emptyList(),
+    val animals: List<RanchBookAnimal> = emptyList(),
+    val mutations: List<RanchBookMutationRule> = emptyList(),
+)
+
+data class RanchMarketShelf(
+    val id: Int,
+    val name: String,
+    val sort: Int,
+)
+
+data class RanchShopGood(
+    val id: String,
+    val name: String,
+    val reward: CommerceItem,
+    val rewards: List<CommerceItem> = emptyList(),
+    val priceId: Int = 0,
+    val priceName: String = "",
+    val priceImage: String = "",
+    val priceCount: Long = 0L,
+    val priceBalance: Long? = null,
+    val available: Boolean = false,
+    val free: Boolean = false,
+    val maxCount: Int = 1,
+    val remaining: Int? = null,
+    val requiredLevel: Int = 0,
+    val shelfId: Int = 0,
+    val husbandryType: String = "",
+)
+
+data class RanchFriendSummary(
+    val gid: String,
+    val name: String,
+    val avatarUrl: String = "",
+)
+
+data class RanchFriendShelf(
+    val penId: String,
+    val slot: Int,
+    val canSteal: Boolean,
+    val products: List<CommerceItem> = emptyList(),
+)
+
+data class RanchFriendPen(
+    val id: String,
+    val name: String,
+    val mosquitoes: Int,
+    val mosquitoLimit: Int,
+    val mosquitoRoom: Int,
+    val animals: List<RanchAnimal> = emptyList(),
+    val shelves: List<RanchFriendShelf> = emptyList(),
+)
+
+data class RanchFriendDetail(
+    val gid: String,
+    val level: Int = 0,
+    val canSteal: Boolean = false,
+    val stealableShelves: Int = 0,
+    val strokeRemaining: Int = 0,
+    val mosquitoRemaining: Int = 0,
+    val cleanableHazards: Int = 0,
+    val notice: String = "",
+    val ranches: List<RanchFriendPen> = emptyList(),
+)
+
+data class RanchViewSnapshot(
+    val base: RanchPayload,
+    val bag: List<RanchBagItem> = emptyList(),
+    val tasks: List<RanchTaskItem> = emptyList(),
+    val book: RanchBookData? = null,
+    val shopGoods: List<RanchShopGood> = emptyList(),
+    val marketPresent: Boolean = false,
+    val marketShelves: List<RanchMarketShelf> = emptyList(),
+    val marketGoods: List<RanchShopGood> = emptyList(),
+    val canShopGoods: List<RanchShopGood> = emptyList(),
+    val friends: List<RanchFriendSummary> = emptyList(),
+    val friendRanch: RanchFriendDetail? = null,
+)
+
+data class RanchQuote(
+    val action: String,
+    val label: String,
+    val count: Int = 0,
+    val skipped: Boolean = false,
+    val signature: String = "",
+    val costItems: List<CommerceItem> = emptyList(),
+    val rewards: List<CommerceItem> = emptyList(),
+    val message: String = "",
+)
+
+data class RanchOperateResult(
+    val status: String = "confirmed",
+    val notice: String = "",
+    val refreshRequired: Boolean = false,
+    val sceneRestored: Boolean = true,
+)
+
+// ---- Activity Center Models ----
+
+data class ActivityDirectoryItem(
+    val id: String,
+    val activityIds: List<String> = emptyList(),
+    val name: String,
+    val startTimeMs: Long? = null,
+    val endTimeMs: Long? = null,
+    val instanceId: String? = null,
+    val gameplayKey: String? = null,
+    val gameplayTargets: List<String> = emptyList(),
+    val detailTarget: String? = null,
+)
+
+data class ActivityDirectoryResponse(
+    val serverTimeMs: Long = 0L,
+    val receivedAtElapsedMs: Long = 0L,
+    val activities: List<ActivityDirectoryItem> = emptyList(),
+)
+
+data class MugeTier(
+    val id: String,
+    val threshold: Long,
+    val status: Int,
+    val rewards: List<CommerceItem> = emptyList(),
+)
+
+data class MugeTask(
+    val id: String,
+    val description: String,
+    val progress: Int,
+    val target: Int,
+    val status: Int,
+    val unlockDay: Int,
+    val points: Int,
+    val rewards: List<CommerceItem> = emptyList(),
+)
+
+data class MugeQuestionOption(
+    val value: Int,
+    val label: String,
+    val text: String,
+)
+
+data class MugeQuestion(
+    val id: Int,
+    val title: String,
+    val options: List<MugeQuestionOption> = emptyList(),
+)
+
+data class MugePersonality(
+    val answers: Map<Int, Int> = emptyMap(),
+    val personalityId: Int = 0,
+    val settleCount: Int = 0,
+    val image: String = "",
+    val shareRewardClaimed: Boolean = false,
+)
+
+data class MugeState(
+    val activityId: String = "",
+    val title: String = "牧歌初启",
+    val serverTimeMs: Long = 0L,
+    val receivedAtElapsedMs: Long = 0L,
+    val startTimeMs: Long = 0L,
+    val endTimeMs: Long = 0L,
+    val active: Boolean = false,
+    val rules: List<String> = emptyList(),
+    val celebrationTotal: Long = 0L,
+    val celebrationTiers: List<MugeTier> = emptyList(),
+    val friendsCount: Long = 0L,
+    val friendsTiers: List<MugeTier> = emptyList(),
+    val handbookAvailable: Boolean = false,
+    val handbookPoints: Int = 0,
+    val handbookTiers: List<MugeTier> = emptyList(),
+    val handbookTasks: List<MugeTask> = emptyList(),
+    val personality: MugePersonality? = null,
+    val questions: List<MugeQuestion> = emptyList(),
+)
+
+data class MilkTeaRecipe(
+    val recipeId: String,
+    val name: String,
+    val image: String,
+    val description: String,
+    val unlocked: Boolean,
+    val isAdvanced: Boolean,
+    val tokenPrice: Long,
+    val coinPrice: Long,
+    val boostTokenPrice: Long,
+    val boostCoinPrice: Long,
+    val advancedStockCups: Long,
+    val fruitId: Int,
+)
+
+data class MilkTeaFruit(
+    val uid: String,
+    val id: Int,
+    val name: String,
+    val image: String,
+    val count: Long,
+    val locked: Boolean,
+    val mutations: List<String> = emptyList(),
+)
+
+data class MilkTeaSlot(
+    val slotIndex: Int,
+    val employeeName: String,
+    val talentName: String,
+    val endAtSec: Long,
+)
+
+data class MilkTeaCandidate(
+    val gid: String,
+    val name: String,
+    val talentName: String,
+    val talentId: Int,
+    val isRobot: Boolean,
+    val state: Int,
+    val stateUntilSec: Long,
+    val rehireAtSec: Long,
+)
+
+data class MilkTeaGoods(
+    val id: String,
+    val name: String,
+    val rewards: List<CommerceItem> = emptyList(),
+    val costs: List<CommerceItem> = emptyList(),
+    val available: Boolean = false,
+    val remaining: Int? = null,
+    val purchaseLimit: Int = 0,
+    val limitPeriod: String = "",
+    val unmetConditionText: String = "",
+)
+
+data class MilkTeaFundTier(
+    val id: String,
+    val targetLevel: Int,
+    val state: Int,
+    val rewards: List<CommerceItem> = emptyList(),
+)
+
+data class MilkTeaLevel(
+    val level: Int,
+    val revenueRequired: Long,
+    val basePopularity: Int,
+    val employeeSlots: Int,
+    val rewards: List<CommerceItem> = emptyList(),
+    val recipes: List<String> = emptyList(),
+)
+
+data class MilkTeaInteraction(
+    val id: Int,
+    val name: String,
+    val description: String,
+    val image: String,
+    val ready: Boolean,
+)
+
+data class MilkTeaSlip(
+    val shiftId: String,
+    val shopName: String,
+    val employerName: String,
+    val beginAtSec: Long,
+    val endAtSec: Long,
+    val finalWage: Long,
+    val wageStatus: Int,
+)
+
+data class MilkTeaWorkState(
+    val talentName: String = "",
+    val talentDesc: String = "",
+    val hasShift: Boolean = false,
+    val shiftId: String = "",
+    val shopName: String = "",
+    val employerName: String = "",
+    val employerAvatar: String = "",
+    val beginAtSec: Long = 0L,
+    val endAtSec: Long = 0L,
+    val baseWage: Long? = null,
+    val interactLimit: Int = 0,
+    val interactCount: Int = 0,
+    val interactDone: Boolean = false,
+    val slips: List<MilkTeaSlip> = emptyList(),
+    val interactions: List<MilkTeaInteraction> = emptyList(),
+)
+
+data class MilkTeaState(
+    val id: String = "",
+    val active: Boolean = false,
+    val settling: Boolean = false,
+    val serverTimeSec: Long = 0L,
+    val receivedAtElapsedMs: Long = 0L,
+    val startTimeSec: Long = 0L,
+    val endTimeSec: Long = 0L,
+    val opened: Boolean = false,
+    val shopName: String = "",
+    val level: Int = 0,
+    val totalRevenue: Long = 0L,
+    val nextLevelRevenue: Long = 0L,
+    val canUpgrade: Boolean = false,
+    val hireDisabled: Boolean = false,
+    val renameCdUntilSec: Long = 0L,
+    val effectiveCupsPerHour: Int = 0,
+    val cashierElapsedSec: Long = 0L,
+    val cashierCapacitySec: Long = 0L,
+    val salesItemId: Int = 1042,
+    val boostCupsPerUse: Int = 0,
+    val boostCoinPrices: Map<String, Long> = emptyMap(),
+    val employeeSlotCount: Int = 0,
+    val balances: Map<Int, Long> = emptyMap(),
+    val recommendedNames: List<String> = emptyList(),
+    val pendingRewards: List<CommerceItem> = emptyList(),
+    val pendingCups: List<Pair<String, Int>> = emptyList(),
+    val slots: List<MilkTeaSlot> = emptyList(),
+    val recipes: List<MilkTeaRecipe> = emptyList(),
+    val fruits: List<MilkTeaFruit> = emptyList(),
+    val goods: List<MilkTeaGoods> = emptyList(),
+    val canCraft: Boolean = false,
+    val canExchange: Boolean = false,
+    val fundUnlocked: Boolean = false,
+    val fundCosts: List<CommerceItem> = emptyList(),
+    val fundTiers: List<MilkTeaFundTier> = emptyList(),
+    val levels: List<MilkTeaLevel> = emptyList(),
+    val hireWageTotal: Long = 0L,
+    val hireDurations: List<Pair<Int, Int>> = emptyList(),
+    val candidates: List<MilkTeaCandidate> = emptyList(),
+    val work: MilkTeaWorkState? = null,
+    val rules: List<String> = emptyList(),
+)
+
+data class ShareRewardMilestone(
+    val id: String,
+    val threshold: Long,
+    val state: Int,
+    val rewards: List<CommerceItem> = emptyList(),
+)
+
+data class ShareRewardState(
+    val id: String = "",
+    val title: String = "快乐不独享",
+    val active: Boolean = false,
+    val startTimeMs: Long = 0L,
+    val endTimeMs: Long = 0L,
+    val serverTimeMs: Long = 0L,
+    val receivedAtElapsedMs: Long = 0L,
+    val score: Long = 0L,
+    val dailyReward: Int = 0,
+    val firstShareReward: Int = 0,
+    val firstShareAwarded: Boolean = false,
+    val canShare: Boolean = false,
+    val canClaimDaily: Boolean = false,
+    val canClaimMilestones: Boolean = false,
+    val claimedCount: Int = 0,
+    val claimLimit: Int = 0,
+    val poolClaimedCount: Int = 0,
+    val poolClaimLimit: Int = 0,
+    val milestones: List<ShareRewardMilestone> = emptyList(),
+    val rules: List<String> = emptyList(),
+)
+
+data class AutumnWishState(
+    val title: String = "秋祈良愿",
+    val active: Boolean = false,
+    val startTimeMs: Long = 0L,
+    val endTimeMs: Long = 0L,
+    val serverTimeMs: Long = 0L,
+    val receivedAtElapsedMs: Long = 0L,
+    val day: Int = 0,
+    val remaining: Int = 0,
+    val canDraw: Boolean = false,
+    val canClaim: Boolean = false,
+    val choices: List<Pair<Int, String>> = emptyList(),
+    val pendingChooseId: Int = 0,
+    val pendingText: String = "",
+    val pendingRewards: List<CommerceItem> = emptyList(),
+    val rewardDays: List<Pair<Int, CommerceItem>> = emptyList(),
+    val rules: List<String> = emptyList(),
+)
+
+data class StellarPassNode(
+    val id: String,
+    val level: String,
+    val claimed: Boolean,
+    val claimable: Boolean,
+    val locked: Boolean,
+    val rewards: List<CommerceItem> = emptyList(),
+)
+
+data class StellarConstellationGroup(
+    val id: String,
+    val name: String,
+    val explain: String,
+    val visualState: String,
+    val rewards: List<CommerceItem> = emptyList(),
+)
+
+data class StellarShopGoods(
+    val id: String,
+    val name: String,
+    val item: CommerceItem,
+    val cost: CommerceItem,
+    val exchangeable: Boolean,
+    val soldOut: Boolean,
+    val maxExchangeCount: Int,
+)
+
+data class StellarSolarTerm(
+    val id: String,
+    val name: String,
+    val description: String,
+    val claimed: Boolean,
+    val claimable: Boolean,
+    val locked: Boolean,
+    val rewards: List<CommerceItem> = emptyList(),
+)
+
+data class StellarSnapshot(
+    val title: String = "千星游记",
+    val serverTimeMs: Long = 0L,
+    val receivedAtElapsedMs: Long = 0L,
+    val endTimeMs: Long = 0L,
+    val passLevel: String = "0",
+    val passProgress: Int = 0,
+    val passProgressMax: Int = 0,
+    val canClaimPass: Boolean = false,
+    val passNodes: List<StellarPassNode> = emptyList(),
+    val canLightConstellation: Boolean = false,
+    val constellationGroups: List<StellarConstellationGroup> = emptyList(),
+    val shopCurrencyName: String = "星砂",
+    val shopBalance: String = "--",
+    val shopBalanceKnown: Boolean = false,
+    val shopGoods: List<StellarShopGoods> = emptyList(),
+    val solarTerms: List<StellarSolarTerm> = emptyList(),
+)
+
+data class SeasonalSimpleStage(
+    val id: String,
+    val label: String,
+    val statusText: String,
+    val claimable: Boolean = false,
+    val claimed: Boolean = false,
+    val rewards: List<CommerceItem> = emptyList(),
+)
+
+data class QixiState(
+    val title: String = "鹊桥寄情",
+    val active: Boolean = false,
+    val endTimeMs: Long = 0L,
+    val featherBalance: String = "--",
+    val sachetBalance: String = "--",
+    val canClaimBridge: Boolean = false,
+    val stages: List<SeasonalSimpleStage> = emptyList(),
+)
+
+data class QingMeiState(
+    val title: String = "青酿换万金",
+    val balance: String = "--",
+    val dailySeedClaimed: Boolean = false,
+    val started: Boolean = false,
+    val currentRound: Int = 0,
+    val maxRounds: Int = 3,
+    val finished: Boolean = false,
+    val currentQuoteGold: String = "0",
+    val canStart: Boolean = false,
+    val canContinue: Boolean = false,
+    val canSettle: Boolean = false,
+    val ingredientsCount: Int = 0,
+    val firstIngredientUid: String = "",
+    val firstIngredientCount: Long = 0L,
+)
+
+data class CharityState(
+    val title: String = "公益小红花",
+    val active: Boolean = false,
+    val endTimeMs: Long = 0L,
+    val loveBalance: String = "0",
+    val donatedLove: String = "0",
+    val agreementAccepted: Boolean = false,
+    val canClaimSeeds: Boolean = false,
+    val canShare: Boolean = false,
+    val canDonateLove: Boolean = false,
+    val canClaimDailyGift: Boolean = false,
+    val stages: List<SeasonalSimpleStage> = emptyList(),
+)
+
+data class WeatherState(
+    val title: String = "雨落成诗",
+    val active: Boolean = false,
+    val endTimeMs: Long = 0L,
+    val badgeBalance: String = "--",
+    val collectionBottleCount: String = "--",
+    val rainBottleCount: String = "--",
+    val activeWeatherName: String = "",
+    val canExchangeCollector: Boolean = false,
+    val canSummonRain: Boolean = false,
+    val nextResearchNodeId: String = "",
+    val canAdvanceResearch: Boolean = false,
+)

@@ -1,0 +1,448 @@
+package com.qqfarm.mobile.ui.screens
+
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.ArrowBack
+import androidx.compose.material.icons.rounded.CheckCircle
+import androidx.compose.material.icons.rounded.ContentPaste
+import androidx.compose.material.icons.rounded.Dns
+import androidx.compose.material.icons.rounded.Key
+import androidx.compose.material.icons.rounded.Lock
+import androidx.compose.material.icons.rounded.Person
+import androidx.compose.material.icons.rounded.VerifiedUser
+import androidx.compose.material.icons.rounded.Visibility
+import androidx.compose.material.icons.rounded.VisibilityOff
+import androidx.compose.material3.Button
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
+import androidx.compose.ui.unit.dp
+import com.qqfarm.mobile.data.model.ServerVersionInfo
+import com.qqfarm.mobile.data.prefs.StoredConfig
+import com.qqfarm.mobile.ui.components.AppleGroupedCard
+import com.qqfarm.mobile.ui.components.AppleIconBadge
+import com.qqfarm.mobile.ui.components.AppleSegmentedControl
+import com.qqfarm.mobile.ui.components.AppleStatusPill
+import com.qqfarm.mobile.ui.theme.LocalAppleColors
+import kotlinx.coroutines.launch
+import androidx.compose.material.icons.rounded.Eco
+
+@Composable
+fun ServerSetupScreen(
+    initialConfig: StoredConfig,
+    isReconfiguring: Boolean,
+    onBack: () -> Unit,
+    onTestConnection: suspend (String) -> Result<ServerVersionInfo>,
+    onConnectWithToken: suspend (String, String) -> Result<Unit>,
+    onConnectWithPassword: suspend (String, String, String) -> Result<String>,
+    onSuccessMessage: (String) -> Unit,
+) {
+    val apple = LocalAppleColors.current
+    val clipboard = LocalClipboardManager.current
+    val scope = rememberCoroutineScope()
+
+    var serverUrl by remember(initialConfig.serverUrl) {
+        mutableStateOf(initialConfig.serverUrl)
+    }
+    var authTabIndex by remember(initialConfig.authMode) {
+        mutableIntStateOf(
+            if (initialConfig.authMode == StoredConfig.AUTH_MODE_API_TOKEN) 1 else 0
+        )
+    }
+    var apiToken by remember(initialConfig.authToken) {
+        mutableStateOf(
+            if (initialConfig.authMode == StoredConfig.AUTH_MODE_API_TOKEN) initialConfig.authToken else ""
+        )
+    }
+    var showToken by remember { mutableStateOf(false) }
+
+    var username by remember(initialConfig.username) { mutableStateOf(initialConfig.username) }
+    var password by remember { mutableStateOf("") }
+    var showPassword by remember { mutableStateOf(false) }
+
+    var testing by remember { mutableStateOf(false) }
+    var submitting by remember { mutableStateOf(false) }
+    var verifiedInfo by remember { mutableStateOf<ServerVersionInfo?>(null) }
+    var errorMsg by remember { mutableStateOf("") }
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(apple.background)
+            .statusBarsPadding()
+            .imePadding()
+            .verticalScroll(rememberScrollState())
+            .padding(horizontal = 20.dp, vertical = 16.dp),
+        verticalArrangement = Arrangement.spacedBy(18.dp),
+    ) {
+        if (isReconfiguring) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                TextButton(
+                    onClick = onBack,
+                    contentPadding = PaddingValues(horizontal = 4.dp, vertical = 4.dp),
+                ) {
+                    Icon(Icons.Rounded.ArrowBack, contentDescription = "返回", modifier = Modifier.size(18.dp))
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text("返回设置")
+                }
+            }
+        } else {
+            Spacer(modifier = Modifier.height(8.dp))
+        }
+
+        Column(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            AppleIconBadge(
+                icon = Icons.Rounded.Eco,
+                tint = MaterialTheme.colorScheme.primary,
+                size = 64.dp,
+                containerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.14f),
+            )
+            Text(
+                text = if (isReconfiguring) "服务器与授权" else "QQ农场助手",
+                style = MaterialTheme.typography.displaySmall,
+                color = apple.primaryText,
+            )
+            Text(
+                text = "配置远程 Node 后端地址并选择安全授权方式",
+                style = MaterialTheme.typography.bodyMedium,
+                color = apple.secondaryText,
+            )
+        }
+
+        AppleGroupedCard(contentPadding = PaddingValues(16.dp)) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                AppleIconBadge(icon = Icons.Rounded.Dns, tint = apple.blue, size = 30.dp)
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "远程服务器地址",
+                        style = MaterialTheme.typography.titleSmall,
+                        color = apple.primaryText,
+                    )
+                    Text(
+                        text = "支持局域网 IP、域名或反向代理 HTTPS 地址",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = apple.secondaryText,
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            OutlinedTextField(
+                value = serverUrl,
+                onValueChange = {
+                    serverUrl = it
+                    verifiedInfo = null
+                },
+                label = { Text("服务器 URL") },
+                placeholder = { Text("https://farm.example.com") },
+                singleLine = true,
+                keyboardOptions = KeyboardOptions(
+                    keyboardType = KeyboardType.Uri,
+                    imeAction = ImeAction.Next,
+                ),
+                shape = RoundedCornerShape(14.dp),
+                modifier = Modifier.fillMaxWidth(),
+            )
+
+            Spacer(modifier = Modifier.height(10.dp))
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                if (verifiedInfo != null) {
+                    val v = verifiedInfo!!
+                    AppleStatusPill(
+                        text = "已连通 · v${v.botVersion.ifBlank { v.clientVersion.ifBlank { "OK" } }}",
+                        color = apple.green,
+                    )
+                } else {
+                    Text(
+                        text = "建议先测试服务器连通性",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = apple.secondaryText,
+                    )
+                }
+
+                OutlinedButton(
+                    onClick = {
+                        errorMsg = ""
+                        testing = true
+                        scope.launch {
+                            val res = onTestConnection(serverUrl)
+                            res.onSuccess { info ->
+                                verifiedInfo = info
+                            }.onFailure { err ->
+                                verifiedInfo = null
+                                errorMsg = err.message ?: "无法连接到服务器"
+                            }
+                            testing = false
+                        }
+                    },
+                    enabled = !testing && !submitting && serverUrl.isNotBlank(),
+                    shape = RoundedCornerShape(12.dp),
+                    contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp),
+                ) {
+                    if (testing) {
+                        CircularProgressIndicator(modifier = Modifier.size(15.dp), strokeWidth = 2.dp)
+                        Spacer(modifier = Modifier.width(6.dp))
+                    } else if (verifiedInfo != null) {
+                        Icon(
+                            Icons.Rounded.CheckCircle,
+                            contentDescription = null,
+                            tint = apple.green,
+                            modifier = Modifier.size(16.dp),
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                    }
+                    Text("测试连接")
+                }
+            }
+        }
+
+        AppleSegmentedControl(
+            options = listOf("账号密码登录", "会话 Token"),
+            selectedIndex = authTabIndex,
+            onSelect = {
+                authTabIndex = it
+                errorMsg = ""
+            },
+        )
+
+        AppleGroupedCard(contentPadding = PaddingValues(16.dp)) {
+            if (authTabIndex == 0) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    AppleIconBadge(icon = Icons.Rounded.VerifiedUser, tint = apple.emerald, size = 30.dp)
+                    Column {
+                        Text(
+                            text = "管理员登录",
+                            style = MaterialTheme.typography.titleSmall,
+                            color = apple.primaryText,
+                        )
+                        Text(
+                            text = "使用与 Web 管理面板相同的用户名和密码",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = apple.secondaryText,
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                OutlinedTextField(
+                    value = username,
+                    onValueChange = { username = it },
+                    label = { Text("用户名") },
+                    leadingIcon = { Icon(Icons.Rounded.Person, contentDescription = null) },
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
+                    shape = RoundedCornerShape(14.dp),
+                    modifier = Modifier.fillMaxWidth(),
+                )
+
+                Spacer(modifier = Modifier.height(10.dp))
+
+                OutlinedTextField(
+                    value = password,
+                    onValueChange = { password = it },
+                    label = { Text("密码") },
+                    leadingIcon = { Icon(Icons.Rounded.Lock, contentDescription = null) },
+                    singleLine = true,
+                    visualTransformation = if (showPassword) VisualTransformation.None else PasswordVisualTransformation(),
+                    trailingIcon = {
+                        IconButton(onClick = { showPassword = !showPassword }) {
+                            Icon(
+                                imageVector = if (showPassword) Icons.Rounded.VisibilityOff else Icons.Rounded.Visibility,
+                                contentDescription = "显示/隐藏密码",
+                            )
+                        }
+                    },
+                    keyboardOptions = KeyboardOptions(
+                        keyboardType = KeyboardType.Password,
+                        imeAction = ImeAction.Done,
+                    ),
+                    shape = RoundedCornerShape(14.dp),
+                    modifier = Modifier.fillMaxWidth(),
+                )
+
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    text = "适配上游 liyangpengs/qq-farm-bot：会话由服务端内存维护，服务端重启后重新登录即可。",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = apple.secondaryText,
+                )
+            } else {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    AppleIconBadge(icon = Icons.Rounded.Key, tint = apple.orange, size = 30.dp)
+                    Column {
+                        Text(
+                            text = "会话 Token 授权",
+                            style = MaterialTheme.typography.titleSmall,
+                            color = apple.primaryText,
+                        )
+                        Text(
+                            text = "粘贴已登录 Web 管理面板的 x-admin-token 会话凭证",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = apple.secondaryText,
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                OutlinedTextField(
+                    value = apiToken,
+                    onValueChange = { apiToken = it },
+                    label = { Text("x-admin-token") },
+                    placeholder = { Text("粘贴 48 位会话 Token") },
+                    singleLine = true,
+                    visualTransformation = if (showToken) VisualTransformation.None else PasswordVisualTransformation(),
+                    trailingIcon = {
+                        Row {
+                            IconButton(
+                                onClick = {
+                                    clipboard.getText()?.text?.let { pasted ->
+                                        apiToken = pasted.trim()
+                                    }
+                                },
+                            ) {
+                                Icon(Icons.Rounded.ContentPaste, contentDescription = "粘贴")
+                            }
+                            IconButton(onClick = { showToken = !showToken }) {
+                                Icon(
+                                    imageVector = if (showToken) Icons.Rounded.VisibilityOff else Icons.Rounded.Visibility,
+                                    contentDescription = "显示/隐藏",
+                                )
+                            }
+                        }
+                    },
+                    shape = RoundedCornerShape(14.dp),
+                    modifier = Modifier.fillMaxWidth(),
+                )
+
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    text = "可在浏览器开发者工具请求头或本地会话存储中获取当前有效的 x-admin-token。",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = apple.secondaryText,
+                )
+            }
+        }
+
+        if (errorMsg.isNotBlank()) {
+            Surface(
+                shape = RoundedCornerShape(14.dp),
+                color = apple.red.copy(alpha = 0.12f),
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Text(
+                    text = errorMsg,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = apple.red,
+                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
+                )
+            }
+        }
+
+        Button(
+            onClick = {
+                errorMsg = ""
+                submitting = true
+                scope.launch {
+                    if (authTabIndex == 0) {
+                        val res = onConnectWithPassword(serverUrl, username, password)
+                        res.onSuccess { note ->
+                            onSuccessMessage(note.ifBlank { "登录成功，已连接远程服务器" })
+                        }.onFailure { err ->
+                            errorMsg = err.message ?: "登录失败"
+                        }
+                    } else {
+                        val res = onConnectWithToken(serverUrl, apiToken)
+                        res.onSuccess {
+                            onSuccessMessage("已连接远程服务器")
+                        }.onFailure { err ->
+                            errorMsg = err.message ?: "Token 验证失败"
+                        }
+                    }
+                    submitting = false
+                }
+            },
+            enabled = !submitting && !testing && serverUrl.isNotBlank(),
+            shape = RoundedCornerShape(14.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(52.dp),
+        ) {
+            if (submitting) {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(20.dp),
+                    color = Color.White,
+                    strokeWidth = 2.dp,
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+            }
+            Text(
+                text = if (isReconfiguring) "保存并切换" else "验证并连接",
+                style = MaterialTheme.typography.titleSmall,
+            )
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+    }
+}
