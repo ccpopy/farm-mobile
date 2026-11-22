@@ -1,0 +1,152 @@
+name: iOS Build
+
+on:
+  push:
+    branches: [ ios ]
+  pull_request:
+    paths:
+      - "ios/**"
+      - ".github/workflows/ios-build.yml"
+  workflow_dispatch:
+    inputs:
+      selftest_server:
+        description: "Optional simulator self-test server URL"
+        required: false
+        default: ""
+      selftest_user:
+        description: "Self-test admin username"
+        required: false
+        default: "admin"
+      selftest_pass:
+        description: "Self-test admin password"
+        required: false
+        default: ""
+
+concurrency:
+  group: ios-build-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build iOS Simulator
+    runs-on: macos-15
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: ios
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Show Xcode version
+        run: xcodebuild -version
+
+      - name: Build for iOS Simulator
+        run: |
+          set -o pipefail
+          xcodebuild \
+            -project FarmMobile.xcodeproj \
+            -scheme FarmMobile \
+            -configuration Debug \
+            -sdk iphonesimulator \
+            -destination 'generic/platform=iOS Simulator' \
+            -derivedDataPath build/DerivedData \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            build
+
+      - name: Package simulator app
+        if: success()
+        run: |
+          APP_PATH=$(find build/DerivedData/Build/Products/Debug-iphonesimulator -maxdepth 1 -name "FarmMobile.app" -print -quit)
+          if [ -z "$APP_PATH" ]; then
+            echo "FarmMobile.app not found"
+            exit 1
+          fi
+          ditto -c -k --sequesterRsrc --keepParent "$APP_PATH" FarmMobile-simulator.zip
+
+      - name: Upload simulator app
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: FarmMobile-simulator
+          path: ios/FarmMobile-simulator.zip
+          retention-days: 7
+
+      - name: Self-test in iOS Simulator
+        continue-on-error: true
+        if: github.event_name == 'workflow_dispatch' && github.event.inputs.selftest_server != ''
+        run: |
+          set -euo pipefail
+          DEVICE_ID=$(xcrun simctl list devices available | grep -E "iPhone" | head -1 | sed -E 's/.*\(([0-9A-Fa-f-]{36})\).*/\1/')
+          echo "Simulator: $DEVICE_ID"
+          xcrun simctl boot "$DEVICE_ID" || true
+          xcrun simctl bootstatus "$DEVICE_ID" -b
+          APP_PATH=$(find build/DerivedData/Build/Products/Debug-iphonesimulator -maxdepth 1 -name "FarmMobile.app" -print -quit)
+          xcrun simctl install "$DEVICE_ID" "$APP_PATH"
+          xcrun simctl launch "$DEVICE_ID" io.github.ccpopy.farmmobile --farm-selftest --farm-server="${{ github.event.inputs.selftest_server }}" --farm-user="${{ github.event.inputs.selftest_user }}" --farm-pass="${{ github.event.inputs.selftest_pass }}"
+          sleep 60
+          CONTAINER=$(xcrun simctl get_app_container "$DEVICE_ID" io.github.ccpopy.farmmobile data)
+          echo "Container: $CONTAINER"
+          echo "--- progress ---"
+          cat "$CONTAINER/Documents/selftest-progress.txt" || true
+          echo ""
+          echo "--- result ---"
+          cat "$CONTAINER/Documents/selftest.json" || true
+          echo ""
+          cp "$CONTAINER/Documents/selftest.json" selftest.json
+          grep -q '"loginOk":true' selftest.json
+          grep -q '"socketConnected":true' selftest.json
+
+      - name: Build unsigned device app
+        if: success()
+        run: |
+          set -o pipefail
+          xcodebuild \
+            -project FarmMobile.xcodeproj \
+            -scheme FarmMobile \
+            -configuration Release \
+            -sdk iphoneos \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath build/DeviceDerivedData \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            CODE_SIGN_ENTITLEMENTS="" \
+            build
+
+      - name: Package unsigned IPA
+        if: success()
+        run: |
+          set -euo pipefail
+          APP_PATH=$(find build/DeviceDerivedData/Build/Products/Release-iphoneos -maxdepth 1 -name "FarmMobile.app" -print -quit)
+          if [ -z "$APP_PATH" ]; then
+            echo "FarmMobile.app not found"
+            exit 1
+          fi
+          rm -rf Payload FarmMobile-unsigned.ipa
+          mkdir -p Payload
+          ditto "$APP_PATH" Payload/FarmMobile.app
+          zip -qry FarmMobile-unsigned.ipa Payload
+          ls -lh FarmMobile-unsigned.ipa
+
+      - name: Upload unsigned IPA
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: FarmMobile-unsigned-ipa
+          path: ios/FarmMobile-unsigned.ipa
+          retention-days: 7
+
+      - name: Upload build log on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-build-artifacts
+          path: ios/build
+          if-no-files-found: ignore
+          retention-days: 3
