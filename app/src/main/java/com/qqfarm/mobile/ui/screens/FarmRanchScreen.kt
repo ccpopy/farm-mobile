@@ -6,6 +6,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
@@ -69,12 +70,14 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.qqfarm.mobile.data.model.BagItem
 import com.qqfarm.mobile.data.model.BagPayload
+import com.qqfarm.mobile.data.model.DogFood
 import com.qqfarm.mobile.data.model.LandItem
 import com.qqfarm.mobile.data.model.LandsPayload
 import com.qqfarm.mobile.data.model.PetSnapshot
@@ -1546,6 +1549,52 @@ private fun BagItemActionSheet(
 
 // ---- Pets View ----
 
+@Composable
+private fun DogFoodCard(food: DogFood, canFeed: Boolean, onFeed: () -> Unit, modifier: Modifier = Modifier) {
+    val apple = LocalAppleColors.current
+    Surface(
+        modifier = modifier,
+        shape = RoundedCornerShape(AppleRadius.card),
+        color = apple.card,
+        border = BorderStroke(0.5.dp, apple.separator),
+    ) {
+        Column(
+            modifier = Modifier.fillMaxWidth().padding(8.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            RemoteAssetImage(
+                url = food.image,
+                contentDescription = food.name,
+                fallbackIcon = Icons.Rounded.Pets,
+                modifier = Modifier.size(32.dp),
+            )
+            Spacer(modifier = Modifier.height(4.dp))
+            Text(
+                text = food.name,
+                style = MaterialTheme.typography.labelMedium,
+                color = apple.primaryText,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Text(
+                text = "库存 ${food.count}",
+                style = MaterialTheme.typography.labelSmall,
+                color = apple.secondaryText,
+            )
+            Spacer(modifier = Modifier.height(4.dp))
+            OutlinedButton(
+                onClick = onFeed,
+                enabled = canFeed,
+                shape = RoundedCornerShape(10.dp),
+                contentPadding = PaddingValues(horizontal = 4.dp, vertical = 2.dp),
+                modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
+            ) {
+                Text("喂食", style = MaterialTheme.typography.labelSmall)
+            }
+        }
+    }
+}
+
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun PetsContent(
@@ -1639,46 +1688,22 @@ private fun PetsContent(
         if (snapshot.foods.isNotEmpty()) {
             item { AppleSectionHeader(title = "补充狗粮") }
             item {
-                LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    items(snapshot.foods) { food ->
-                        Surface(
-                            shape = RoundedCornerShape(14.dp),
-                            color = apple.card,
-                            border = BorderStroke(0.5.dp, apple.separator),
-                        ) {
-                            Column(
-                                modifier = Modifier.width(126.dp).padding(12.dp),
-                                horizontalAlignment = Alignment.CenterHorizontally,
-                            ) {
-                                RemoteAssetImage(
-                                    url = food.image,
-                                    contentDescription = food.name,
-                                    fallbackIcon = Icons.Rounded.Pets,
-                                    modifier = Modifier.size(36.dp),
-                                )
-                                Spacer(modifier = Modifier.height(6.dp))
-                                Text(
-                                    text = food.name,
-                                    style = MaterialTheme.typography.labelMedium,
-                                    color = apple.primaryText,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis,
-                                )
-                                Text(
-                                    text = "库存 ${food.count}",
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = apple.secondaryText,
-                                )
-                                Spacer(modifier = Modifier.height(6.dp))
-                                OutlinedButton(
-                                    onClick = { selectedFoodId = food.id },
-                                    enabled = !busy && snapshot.maxFeedCount(food) > 0,
-                                    shape = RoundedCornerShape(10.dp),
-                                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp),
-                                    modifier = Modifier.fillMaxWidth().height(30.dp),
-                                ) {
-                                    Text("喂食", style = MaterialTheme.typography.labelSmall)
+                BoxWithConstraints(Modifier.fillMaxWidth()) {
+                    val gap = 8.dp
+                    val minCardWidth = 16.dp + 64.dp * LocalDensity.current.fontScale.coerceAtLeast(1f)
+                    val columns = ((maxWidth + gap) / (minCardWidth + gap)).toInt().coerceIn(1, 3)
+                    Column(verticalArrangement = Arrangement.spacedBy(gap)) {
+                        snapshot.foods.chunked(columns).forEach { row ->
+                            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(gap)) {
+                                row.forEach { food ->
+                                    DogFoodCard(
+                                        food = food,
+                                        canFeed = !busy && snapshot.maxFeedCount(food) > 0,
+                                        onFeed = { selectedFoodId = food.id },
+                                        modifier = Modifier.weight(1f),
+                                    )
                                 }
+                                repeat(columns - row.size) { Spacer(Modifier.weight(1f)) }
                             }
                         }
                     }
