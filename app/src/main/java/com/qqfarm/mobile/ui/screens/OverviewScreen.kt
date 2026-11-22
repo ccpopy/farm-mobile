@@ -88,6 +88,9 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.repeatOnLifecycle
 import com.qqfarm.mobile.data.model.DailyGiftItem
 import com.qqfarm.mobile.data.model.GameSpace
 import com.qqfarm.mobile.data.model.RanchCareer
@@ -126,6 +129,22 @@ import com.qqfarm.mobile.ui.components.AppleFilterChip
 import com.qqfarm.mobile.ui.components.AppleSearchField
 import com.qqfarm.mobile.ui.components.AppleAlertDialog
 
+private const val INSPECTION_STATUS_REFRESH_MS = 4_000L
+private const val INSPECTION_LABEL_GRACE_MS = 12_000L
+
+private fun inspectionCountdownText(nextRunAtMs: Long?, serverNowMs: Long, online: Boolean, quiet: Boolean): String {
+    if (!online) return "账号未登录"
+    if (quiet) return "静默中"
+    if (nextRunAtMs == null || nextRunAtMs == 0L) return "等待下次巡查"
+
+    val remainingMs = nextRunAtMs - serverNowMs
+    return when {
+        remainingMs > 0L -> formatDurationSec((remainingMs + 999L) / 1000L)
+        remainingMs > -INSPECTION_LABEL_GRACE_MS -> "巡查中..."
+        else -> "等待下次巡查"
+    }
+}
+
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun OverviewScreen(
@@ -133,6 +152,7 @@ fun OverviewScreen(
     apiClient: FarmApiClient,
     gameSpace: GameSpace,
     onRefresh: () -> Unit,
+    onRefreshInspectionStatus: suspend () -> Unit,
     onOpenAccountSwitcher: () -> Unit,
     onStartAccount: (String) -> Unit,
     onClearLogs: suspend (String) -> Unit,
@@ -237,13 +257,32 @@ fun OverviewScreen(
             val status = session.status
             val account = session.currentAccount
             val isOnline = status?.connected == true
-            val elapsedSinceSnapshotSec = if (status != null && status.receivedAtElapsedMs > 0L) {
-                ((clockTickMs - status.receivedAtElapsedMs) / 1000L).coerceAtLeast(0L)
+            val elapsedSinceSnapshotMs = if (status != null && status.receivedAtElapsedMs > 0L) {
+                (clockTickMs - status.receivedAtElapsedMs).coerceAtLeast(0L)
             } else 0L
+            val elapsedSinceSnapshotSec = elapsedSinceSnapshotMs / 1000L
             val estimatedServerNowMs = if (status != null && status.serverTimeMs > 0L) {
-                status.serverTimeMs + elapsedSinceSnapshotSec * 1000L
+                status.serverTimeMs + elapsedSinceSnapshotMs
             } else {
                 System.currentTimeMillis()
+            }
+
+            val farmQuiet = status?.farmQuiet == true
+            val friendQuiet = status?.friendQuiet == true
+            val farmRunAtMs = status?.nextFarmRunAtMs
+            val friendRunAtMs = status?.nextFriendRunAtMs
+            val farmOverdue = !farmQuiet && farmRunAtMs != null && farmRunAtMs <= estimatedServerNowMs
+            val friendOverdue = !friendQuiet && friendRunAtMs != null && friendRunAtMs <= estimatedServerNowMs
+            val needsInspectionStatus = isOnline && (farmOverdue || friendOverdue)
+            val lifecycle = LocalLifecycleOwner.current.lifecycle
+            LaunchedEffect(lifecycle, accountId, needsInspectionStatus) {
+                if (!needsInspectionStatus) return@LaunchedEffect
+                lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
+                    while (true) {
+                        delay(INSPECTION_STATUS_REFRESH_MS)
+                        onRefreshInspectionStatus()
+                    }
+                }
             }
 
             val uptimeSec = if (isOnline && status != null) {
@@ -579,24 +618,8 @@ fun OverviewScreen(
                 item {
                     AppleSectionHeader(title = "下次巡查倒计时")
                     Spacer(modifier = Modifier.height(4.dp))
-                    val farmCountdown = when {
-                        !isOnline -> "账号未登录"
-                        status?.farmQuiet == true -> "静默中"
-                        status != null && status.nextFarmRunAtMs > 0L -> {
-                            val rem = ((status.nextFarmRunAtMs - estimatedServerNowMs) / 1000L).coerceAtLeast(0L)
-                            if (rem > 0L) formatDurationSec(rem) else "巡查中..."
-                        }
-                        else -> "巡查中..."
-                    }
-                    val friendCountdown = when {
-                        !isOnline -> "账号未登录"
-                        status?.friendQuiet == true -> "静默中"
-                        status != null && status.nextFriendRunAtMs > 0L -> {
-                            val rem = ((status.nextFriendRunAtMs - estimatedServerNowMs) / 1000L).coerceAtLeast(0L)
-                            if (rem > 0L) formatDurationSec(rem) else "巡查中..."
-                        }
-                        else -> "巡查中..."
-                    }
+                    val farmCountdown = inspectionCountdownText(farmRunAtMs, estimatedServerNowMs, isOnline, farmQuiet)
+                    val friendCountdown = inspectionCountdownText(friendRunAtMs, estimatedServerNowMs, isOnline, friendQuiet)
 
                     AppleGroupedCard {
                         Row(

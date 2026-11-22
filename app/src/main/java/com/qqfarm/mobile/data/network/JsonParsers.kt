@@ -127,8 +127,19 @@ object JsonParsers {
         }
         val forecastObj = dataObj.optJSONObject("levelForecast")
         val forecastText = buildForecastText(forecastObj)
-        val serverTime = dataObj.optLongFlex("serverTime", serverTimeHintMs)
-            .let { if (it > 0L) it else System.currentTimeMillis() }
+        val snapshotTimeMs = dataObj.optLongFlex("serverTime").takeIf { it > 0L }
+        val serverNowMs = serverTimeHintMs.takeIf { it > 0L } ?: snapshotTimeMs ?: System.currentTimeMillis()
+
+        fun nextRunAtMs(deadlineKey: String, vararg remainingKeys: String): Long? {
+            val deadline = dataObj.optLongFlex(deadlineKey, nextChecks.optLongFlex(deadlineKey, -1L))
+            if (deadline >= 0L) return deadline
+
+            // 上游服务端也会只返回快照时的剩余秒数，0 表示等待下次排程。
+            val remaining = remainingKeys.firstNotNullOfOrNull { key ->
+                nextChecks.optLongFlex(key, -1L).takeIf { it >= 0L }
+            } ?: return null
+            return if (remaining == 0L) 0L else (snapshotTimeMs ?: serverNowMs) + remaining * 1000L
+        }
 
         return StatusSnapshot(
             accountId = accountId,
@@ -150,19 +161,13 @@ object JsonParsers {
                 needed = progressObj?.optLongFlex("needed") ?: 0L,
             ),
             levelForecastText = forecastText,
-            nextFarmRunAtMs = dataObj.optLongFlex(
-                "nextFarmRunAt",
-                nextChecks.optLongFlex("nextFarmRunAt"),
-            ),
-            nextFriendRunAtMs = dataObj.optLongFlex(
-                "nextFriendRunAt",
-                nextChecks.optLongFlex("nextFriendRunAt"),
-            ),
+            nextFarmRunAtMs = nextRunAtMs("nextFarmRunAt", "farmRemainSec"),
+            nextFriendRunAtMs = nextRunAtMs("nextFriendRunAt", "friendRemainSec", "helpRemainSec", "stealRemainSec"),
             farmQuiet = nextChecks.optBoolFlex("farmQuiet"),
             friendQuiet = nextChecks.optBoolFlex("friendQuiet")
                 || nextChecks.optBoolFlex("helpQuiet")
                 || nextChecks.optBoolFlex("stealQuiet"),
-            serverTimeMs = serverTime,
+            serverTimeMs = serverNowMs,
             receivedAtElapsedMs = SystemClock.elapsedRealtime(),
             operations = opsMap,
             ranchOperations = dataObj.optJSONObject("ranchOperations")?.let { ops ->

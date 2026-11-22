@@ -331,6 +331,7 @@ fun FarmNavHost(viewModel: AppSessionViewModel) {
                                 session = session,
                                 apiClient = viewModel.apiClient,
                                 gameSpace = gameSpace,
+                                onRefreshInspectionStatus = viewModel::refreshInspectionStatus,
                                 onRefresh = {
                                     viewModel.refreshAccounts()
                                     viewModel.refreshOverview()

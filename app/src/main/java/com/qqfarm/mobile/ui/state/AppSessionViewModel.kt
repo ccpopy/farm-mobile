@@ -486,6 +486,26 @@ class AppSessionViewModel(application: Application) : AndroidViewModel(applicati
         }
     }
 
+    internal suspend fun refreshInspectionStatus() {
+        val before = _uiState.value
+        val config = before.config
+        val accountId = config.currentAccountId
+        if (accountId.isBlank() || before.status?.connected != true || before.statusLoading) return
+
+        val snapshot = try {
+            apiClient.fetchStatus(accountId)
+        } catch (_: ApiException) {
+            return
+        }
+
+        val current = _uiState.value
+        if (isActiveConnection(config) && current.config.currentAccountId == accountId &&
+            current.status === before.status && !current.statusLoading
+        ) {
+            _uiState.value = current.copy(status = snapshot)
+        }
+    }
+
     private fun refreshRunLogs() {
         val before = _uiState.value
         val config = before.config
