@@ -209,7 +209,6 @@ fun SettingsScreen(
                     icon = Icons.Rounded.Tune,
                     iconTint = apple.indigo,
                     title = "自动化设置",
-                    subtitle = "种植与养殖策略、日常农牧、施肥、好友与神秘商人",
                     trailingText = session.currentAccount?.name?.takeIf { it.isNotBlank() },
                     showChevron = true,
                     onClick = onOpenAutomation,
@@ -219,7 +218,6 @@ fun SettingsScreen(
                     icon = Icons.Rounded.MenuBook,
                     iconTint = apple.emerald,
                     title = "图鉴",
-                    subtitle = "查看作物、超变与蓝晶藏品进度，领取图鉴奖励",
                     showChevron = true,
                     onClick = onOpenIllustrated,
                 )
@@ -302,7 +300,6 @@ fun SettingsScreen(
                     icon = if (notificationsGranted) Icons.Rounded.NotificationsActive else Icons.Rounded.NotificationsOff,
                     iconTint = if (notificationsGranted) apple.green else apple.orange,
                     title = "系统通知权限",
-                    subtitle = if (notificationsGranted) "已允许在本机通知栏显示提醒" else "默认未授权，开启推送前需先授予权限",
                     trailingText = if (notificationsGranted) "已授权" else "去授权",
                     trailingColor = if (notificationsGranted) apple.green else apple.orange,
                     showChevron = true,
@@ -319,7 +316,6 @@ fun SettingsScreen(
                     icon = Icons.Rounded.Notifications,
                     iconTint = apple.emerald,
                     title = "农牧动态推送",
-                    subtitle = "偷取、帮忙、种植、收获、牧场与出售等（屏蔽系统杂讯）",
                     trailingText = pushStatusText,
                     trailingColor = if (session.config.activityPushEnabled) apple.emerald else apple.secondaryText,
                     showChevron = true,
@@ -367,8 +363,7 @@ fun SettingsScreen(
                     AppleSwitchRow(
                         icon = Icons.Rounded.Palette,
                         iconTint = apple.indigo,
-                        title = "动态壁纸取色 (Material You)",
-                        subtitle = "开启后主按钮随系统壁纸色调变化；自定义强调色生效时优先使用自定义色",
+                        title = "动态壁纸取色",
                         checked = session.config.dynamicColor,
                         onCheckedChange = onUpdateDynamicColor,
                     )
