@@ -6,6 +6,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
@@ -88,6 +89,7 @@ import com.qqfarm.mobile.ui.components.formatCompactCount
 import com.qqfarm.mobile.ui.components.formatNumber
 import com.qqfarm.mobile.ui.components.formatDurationSec
 import com.qqfarm.mobile.ui.state.SessionUiState
+import com.qqfarm.mobile.ui.components.retainSheetHeight
 import com.qqfarm.mobile.ui.theme.LocalAppleColors
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
@@ -97,6 +99,7 @@ import java.math.BigInteger
 import java.util.Locale
 import com.qqfarm.mobile.ui.components.AppleSwitch
 import com.qqfarm.mobile.ui.components.AppleFilterChip
+import com.qqfarm.mobile.ui.components.searchHeader
 import com.qqfarm.mobile.ui.components.AppleSearchField
 import com.qqfarm.mobile.ui.components.swipeToSwitchTabs
 
@@ -565,7 +568,7 @@ private fun FarmMallContent(
                         }
 
                         // Filter chips & Search
-                        item {
+                        searchHeader {
                             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                                 LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                     filterDefs.forEachIndexed { idx, label ->
@@ -1385,7 +1388,7 @@ private fun MallPurchaseSheet(
                 .fillMaxWidth()
                 .navigationBarsPadding()
                 .heightIn(max = 560.dp)
-                .verticalScroll(rememberScrollState())
+                .retainSheetHeight()
                 .padding(horizontal = 20.dp, vertical = 8.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
@@ -1395,7 +1398,7 @@ private fun MallPurchaseSheet(
 }
 
 @Composable
-internal fun MallPurchaseContent(
+internal fun ColumnScope.MallPurchaseContent(
     goods: MallGoods,
     pending: Boolean,
     onDismiss: () -> Unit,
@@ -1414,75 +1417,80 @@ internal fun MallPurchaseContent(
     val totalCost = if (goods.isFree) 0L else goods.priceCount * count.toLong()
 
     Text(goods.name, style = MaterialTheme.typography.titleLarge, color = apple.primaryText)
-    if (goods.isFree || (goods.priceId > 0 && goods.priceCount > 0L)) {
-        Text(
-            text = if (goods.isFree) "免费领取" else "单价 ${formatNumber(goods.priceCount)} ${goods.priceName}",
-            style = MaterialTheme.typography.bodySmall,
-            color = apple.secondaryText,
-        )
-    }
-
-    AppleGroupedCard(contentPadding = PaddingValues(12.dp), containerColor = apple.elevated) {
-        Text("每份包含 (${goods.rewards.size})", style = MaterialTheme.typography.labelMedium, color = apple.secondaryText)
-        Spacer(modifier = Modifier.height(6.dp))
-        goods.rewards.forEach { rew ->
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(vertical = 4.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                RemoteAssetImage(
-                    url = rew.image,
-                    contentDescription = rew.name,
-                    fallbackIcon = Icons.Rounded.CardGiftcard,
-                    modifier = Modifier.size(22.dp),
-                )
-                Text(rew.name, style = MaterialTheme.typography.bodyMedium, color = apple.primaryText, modifier = Modifier.weight(1f))
-                Text("×${formatNumber(rew.count)}", style = MaterialTheme.typography.titleSmall.copy(fontFeatureSettings = "tnum"), color = apple.primaryText)
-            }
-        }
-    }
-
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically,
+    Column(
+        modifier = Modifier.fillMaxWidth().weight(1f, fill = false).verticalScroll(rememberScrollState()),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        Column {
-            Text("购买数量", style = MaterialTheme.typography.titleSmall, color = apple.primaryText)
-            if (goods.limit != null) {
-                Text("$limitLabel · 可买 $maxCount 份", style = MaterialTheme.typography.labelSmall, color = apple.secondaryText)
+        if (goods.isFree || (goods.priceId > 0 && goods.priceCount > 0L)) {
+            Text(
+                text = if (goods.isFree) "免费领取" else "单价 ${formatNumber(goods.priceCount)} ${goods.priceName}",
+                style = MaterialTheme.typography.bodySmall,
+                color = apple.secondaryText,
+            )
+        }
+
+        AppleGroupedCard(contentPadding = PaddingValues(12.dp), containerColor = apple.elevated) {
+            Text("每份包含 (${goods.rewards.size})", style = MaterialTheme.typography.labelMedium, color = apple.secondaryText)
+            Spacer(modifier = Modifier.height(6.dp))
+            goods.rewards.forEach { rew ->
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    RemoteAssetImage(
+                        url = rew.image,
+                        contentDescription = rew.name,
+                        fallbackIcon = Icons.Rounded.CardGiftcard,
+                        modifier = Modifier.size(22.dp),
+                    )
+                    Text(rew.name, style = MaterialTheme.typography.bodyMedium, color = apple.primaryText, modifier = Modifier.weight(1f))
+                    Text("×${formatNumber(rew.count)}", style = MaterialTheme.typography.titleSmall.copy(fontFeatureSettings = "tnum"), color = apple.primaryText)
+                }
             }
         }
-        AppleQuantityStepper(value = count, max = maxCount, onChange = { requestedCount = it }, enabled = !pending)
-    }
 
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Column {
-            Text("合计", style = MaterialTheme.typography.titleSmall, color = apple.primaryText)
-            if (!goods.isFree && goods.priceBalance != null) {
-                Text("当前余额 ${formatNumber(goods.priceBalance)}", style = MaterialTheme.typography.labelSmall, color = apple.secondaryText)
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column {
+                Text("购买数量", style = MaterialTheme.typography.titleSmall, color = apple.primaryText)
+                if (goods.limit != null) {
+                    Text("$limitLabel · 可买 $maxCount 份", style = MaterialTheme.typography.labelSmall, color = apple.secondaryText)
+                }
             }
+            AppleQuantityStepper(value = count, max = maxCount, onChange = { requestedCount = it }, enabled = !pending)
         }
-        Text(
-            text = when {
-                count == 0 -> "—"
-                goods.isFree -> "免费"
-                else -> "${formatNumber(totalCost)} ${goods.priceName}"
-            },
-            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold, fontFeatureSettings = "tnum"),
-            color = if (goods.isFree) apple.emerald else apple.primaryText,
-        )
-    }
 
-    if (!action.enabled) {
-        Text(action.reason, style = MaterialTheme.typography.bodySmall, color = apple.secondaryText)
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column {
+                Text("合计", style = MaterialTheme.typography.titleSmall, color = apple.primaryText)
+                if (!goods.isFree && goods.priceBalance != null) {
+                    Text("当前余额 ${formatNumber(goods.priceBalance)}", style = MaterialTheme.typography.labelSmall, color = apple.secondaryText)
+                }
+            }
+            Text(
+                text = when {
+                    count == 0 -> "—"
+                    goods.isFree -> "免费"
+                    else -> "${formatNumber(totalCost)} ${goods.priceName}"
+                },
+                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold, fontFeatureSettings = "tnum"),
+                color = if (goods.isFree) apple.emerald else apple.primaryText,
+            )
+        }
+
+        if (!action.enabled) {
+            Text(action.reason, style = MaterialTheme.typography.bodySmall, color = apple.secondaryText)
+        }
     }
 
     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {

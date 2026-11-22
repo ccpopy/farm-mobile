@@ -69,10 +69,11 @@ internal fun BagPrioritySheet(
     ) }
     var stock by remember(accountId, connected, ranch) { mutableStateOf<List<BagPriorityItem>?>(null) }
     var error by remember(accountId, connected, ranch) { mutableStateOf("") }
+    var loading by remember(accountId, connected, ranch) { mutableStateOf(connected) }
     var revision by remember { mutableIntStateOf(0) }
     LaunchedEffect(accountId, connected, ranch, revision) {
         if (!connected) return@LaunchedEffect
-        stock = null
+        loading = true
         error = ""
         try {
             stock = if (ranch) {
@@ -81,7 +82,10 @@ internal fun BagPrioritySheet(
                 availableCubStacks(view.bag)
             } else apiClient.fetchBagSeeds(accountId)
         } catch (e: ApiException) {
+            stock = null
             error = e.message
+        } finally {
+            loading = false
         }
     }
     val housing = if (group == 0) "窝" else "棚"
@@ -133,9 +137,9 @@ internal fun BagPrioritySheet(
                 }
                 IconButton(
                     onClick = { revision++ },
-                    enabled = connected && (stock != null || error.isNotEmpty()),
+                    enabled = connected && !loading,
                 ) {
-                    if (connected && stock == null && error.isEmpty()) {
+                    if (loading && stock != null) {
                         CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
                     } else {
                         Icon(Icons.Rounded.Refresh, contentDescription = "刷新")
@@ -235,14 +239,14 @@ internal fun BagPrioritySheet(
                                 )
                             }
                             IconButton(
-                                enabled = index > 0,
+                                enabled = !loading && index > 0,
                                 onClick = { move(index, index - 1) },
                                 modifier = Modifier.size(36.dp),
                             ) {
                                 Icon(Icons.Rounded.KeyboardArrowUp, contentDescription = "上移${item.name}")
                             }
                             IconButton(
-                                enabled = index < visible.lastIndex,
+                                enabled = !loading && index < visible.lastIndex,
                                 onClick = { move(index, index + 1) },
                                 modifier = Modifier.size(36.dp),
                             ) {
@@ -267,7 +271,7 @@ internal fun BagPrioritySheet(
                             else model.copy(bagSeedPriority = orders[0])
                         onApply(next)
                     },
-                    enabled = stock != null,
+                    enabled = !loading && stock != null,
                     shape = RoundedCornerShape(AppleRadius.tile),
                     modifier = Modifier.weight(1f).height(46.dp),
                 ) { Text("完成") }

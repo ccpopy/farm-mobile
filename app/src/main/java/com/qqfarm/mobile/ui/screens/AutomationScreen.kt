@@ -91,6 +91,7 @@ import com.qqfarm.mobile.ui.components.AppleSwitch
 import com.qqfarm.mobile.ui.components.AppleSwitchRow
 import com.qqfarm.mobile.ui.components.EqualHeightRow
 import com.qqfarm.mobile.ui.state.SessionUiState
+import com.qqfarm.mobile.ui.components.retainSheetHeight
 import com.qqfarm.mobile.ui.theme.LocalAppleColors
 import kotlinx.coroutines.async
 import kotlinx.coroutines.launch
@@ -1006,6 +1007,7 @@ private fun SeedPickerSheet(
                 .heightIn(max = 600.dp)
                 .navigationBarsPadding()
                 .imePadding()
+                .retainSheetHeight()
                 .padding(horizontal = 16.dp)
                 .padding(bottom = 20.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp),

@@ -120,6 +120,7 @@ import com.qqfarm.mobile.ui.components.AppleActionPill
 import com.qqfarm.mobile.ui.components.EqualHeightRow
 import com.qqfarm.mobile.ui.components.AppleSwitch
 import com.qqfarm.mobile.ui.components.AppleFilterChip
+import com.qqfarm.mobile.ui.components.searchHeader
 import com.qqfarm.mobile.ui.components.AppleSearchField
 import com.qqfarm.mobile.ui.components.swipeToSwitchTabs
 
@@ -838,7 +839,7 @@ private fun RanchWorkspaceAnimalTile(
                         Text(
                             text = "巨",
                             style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp, fontWeight = FontWeight.Bold),
-                            color = Color.White,
+                            color = SoilGold.onAccent(),
                             modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.dp),
                         )
                     }
@@ -928,7 +929,7 @@ private fun RanchWorkspaceAnimalTile(
                     onClick = onHarvest,
                     enabled = !busy,
                     shape = btnShape,
-                    colors = ButtonDefaults.buttonColors(containerColor = apple.green, contentColor = Color.White),
+                    colors = ButtonDefaults.buttonColors(containerColor = apple.green, contentColor = apple.green.onAccent()),
                     contentPadding = btnPadding,
                     modifier = buttonModifier,
                 ) { Text("收获", style = btnTextStyle, maxLines = 1) }
@@ -1801,7 +1802,7 @@ private fun RanchBookTab(
             }
         }
 
-        item {
+        searchHeader {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     listOf("全部 (${list.size})", "已收集 ($ownedCount)", "未收集 (${list.size - ownedCount})").forEachIndexed { idx, label ->

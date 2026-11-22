@@ -118,6 +118,7 @@ import com.qqfarm.mobile.ui.components.formatDurationSec
 import com.qqfarm.mobile.ui.components.formatNumber
 import com.qqfarm.mobile.ui.components.spaceAccent
 import com.qqfarm.mobile.ui.state.SessionUiState
+import com.qqfarm.mobile.ui.components.retainSheetHeight
 import com.qqfarm.mobile.ui.theme.LocalAppleColors
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -964,25 +965,19 @@ private fun FullLogsSheet(
             }
 
             AppleGroupedCard {
-                if (displayLogs.isEmpty()) {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(32.dp),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        Text("无匹配日志", color = apple.secondaryText)
-                    }
-                } else {
-                    LazyColumn(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(420.dp),
-                    ) {
-                        items(displayLogs) { item ->
-                            LogEntryRow(entry = item)
-                            AppleHairlineDivider(startIndent = 16.dp)
+                LazyColumn(
+                    modifier = Modifier.fillMaxWidth().height(420.dp),
+                ) {
+                    if (displayLogs.isEmpty()) {
+                        item {
+                            Box(Modifier.fillMaxWidth().padding(32.dp), contentAlignment = Alignment.Center) {
+                                Text("无匹配日志", color = apple.secondaryText)
+                            }
                         }
+                    }
+                    items(displayLogs) { item ->
+                        LogEntryRow(entry = item)
+                        AppleHairlineDivider(startIndent = 16.dp)
                     }
                 }
             }
@@ -1085,7 +1080,7 @@ private fun BuyFertilizerSheet(
                 .fillMaxWidth()
                 .navigationBarsPadding()
                 .heightIn(max = 560.dp)
-                .verticalScroll(rememberScrollState())
+                .retainSheetHeight()
                 .padding(horizontal = 16.dp)
                 .padding(bottom = 24.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -1097,8 +1092,8 @@ private fun BuyFertilizerSheet(
                 onSelect = { if (!purchasing) typeIndex = it },
             )
             when {
-                loading -> Box(
-                    modifier = Modifier.fillMaxWidth().height(100.dp),
+                loading && selectedOffer == null -> Box(
+                    modifier = Modifier.fillMaxWidth().height(260.dp),
                     contentAlignment = Alignment.Center,
                 ) { CircularProgressIndicator() }
 
@@ -1113,7 +1108,7 @@ private fun BuyFertilizerSheet(
 
                 else -> MallPurchaseContent(
                     goods = selectedOffer,
-                    pending = purchasing,
+                    pending = purchasing || loading,
                     onDismiss = onDismiss,
                     onConfirm = { count ->
                         if (purchasing) return@MallPurchaseContent

@@ -110,6 +110,7 @@ import com.qqfarm.mobile.ui.components.formatCompactCount
 import com.qqfarm.mobile.ui.components.formatDurationSec
 import com.qqfarm.mobile.ui.components.formatTimestamp
 import com.qqfarm.mobile.ui.state.SessionUiState
+import com.qqfarm.mobile.ui.components.retainSheetHeight
 import com.qqfarm.mobile.ui.theme.LocalAppleColors
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
@@ -3411,7 +3412,7 @@ private fun QixiDetailContent(
                     .fillMaxWidth()
                     .navigationBarsPadding()
                     .heightIn(max = 520.dp)
-                    .verticalScroll(rememberScrollState())
+                    .retainSheetHeight()
                     .padding(horizontal = 20.dp, vertical = 8.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
@@ -3422,35 +3423,42 @@ private fun QixiDetailContent(
                     placeholder = "搜索好友昵称或 GID",
                     modifier = Modifier.fillMaxWidth(),
                 )
-                if (filteredFriends.isEmpty()) {
-                    Text(
-                        text = "未找到匹配好友",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = apple.secondaryText,
-                        modifier = Modifier.padding(vertical = 8.dp),
-                    )
-                }
-                filteredFriends.forEach { friend ->
-                    Surface(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clip(RoundedCornerShape(AppleRadius.tile))
-                            .clickable {
-                                selectedFriend = friend
-                                manualGid = friend.gid.toString()
-                                showFriendPicker = false
-                            },
-                        shape = RoundedCornerShape(AppleRadius.tile),
-                        color = apple.elevated,
-                        border = BorderStroke(0.5.dp, apple.separator),
-                    ) {
-                        Row(
-                            modifier = Modifier.padding(12.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.SpaceBetween,
+                LazyColumn(
+                    modifier = Modifier.fillMaxWidth().weight(1f, fill = false),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    if (filteredFriends.isEmpty()) {
+                        item {
+                            Text(
+                                text = "未找到匹配好友",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = apple.secondaryText,
+                                modifier = Modifier.padding(vertical = 8.dp),
+                            )
+                        }
+                    }
+                    items(filteredFriends, key = { it.gid }) { friend ->
+                        Surface(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(AppleRadius.tile))
+                                .clickable {
+                                    selectedFriend = friend
+                                    manualGid = friend.gid.toString()
+                                    showFriendPicker = false
+                                },
+                            shape = RoundedCornerShape(AppleRadius.tile),
+                            color = apple.elevated,
+                            border = BorderStroke(0.5.dp, apple.separator),
                         ) {
-                            Text(friend.name, style = MaterialTheme.typography.bodyMedium, color = apple.primaryText)
-                            Text("Lv.${friend.level}", style = MaterialTheme.typography.labelSmall, color = apple.secondaryText)
+                            Row(
+                                modifier = Modifier.padding(12.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                            ) {
+                                Text(friend.name, style = MaterialTheme.typography.bodyMedium, color = apple.primaryText)
+                                Text("Lv.${friend.level}", style = MaterialTheme.typography.labelSmall, color = apple.secondaryText)
+                            }
                         }
                     }
                 }

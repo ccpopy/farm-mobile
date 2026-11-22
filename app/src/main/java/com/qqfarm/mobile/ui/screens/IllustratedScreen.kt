@@ -6,6 +6,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
@@ -23,7 +24,9 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
+import androidx.compose.foundation.lazy.grid.LazyGridScope
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -75,6 +78,7 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.qqfarm.mobile.data.model.CollectionItemEntry
@@ -100,6 +104,7 @@ import com.qqfarm.mobile.ui.components.AppleHairlineDivider
 import com.qqfarm.mobile.ui.components.AppleProgressBar
 import com.qqfarm.mobile.ui.components.AppleQuantityStepper
 import com.qqfarm.mobile.ui.components.AppleRadius
+import com.qqfarm.mobile.ui.components.searchHeader
 import com.qqfarm.mobile.ui.components.AppleSearchField
 import com.qqfarm.mobile.ui.components.AppleStatusPill
 import com.qqfarm.mobile.ui.components.AppleTabStrip
@@ -110,6 +115,7 @@ import com.qqfarm.mobile.ui.components.swipeToSwitchTabs
 import com.qqfarm.mobile.ui.components.AppleAlertDialog
 import com.qqfarm.mobile.ui.state.SessionUiState
 import com.qqfarm.mobile.ui.theme.LocalAppleColors
+import com.qqfarm.mobile.ui.theme.onAccent
 import kotlinx.coroutines.launch
 import org.json.JSONArray
 import org.json.JSONObject
@@ -672,6 +678,33 @@ private fun CrossTabRewardNotice(
 
 // ---- Crop & Mutant Books Tab ----
 
+@Composable
+private fun SearchableBookGrid(
+    minTileWidth: Dp,
+    vararg filters: Any,
+    toolbar: @Composable ColumnScope.() -> Unit,
+    content: LazyGridScope.() -> Unit,
+) {
+    val gridState = rememberLazyGridState()
+    LaunchedEffect(*filters) { gridState.scrollToItem(0) }
+    Column(modifier = Modifier.fillMaxSize()) {
+        Column(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+            content = toolbar,
+        )
+        LazyVerticalGrid(
+            columns = GridCells.Adaptive(minSize = minTileWidth),
+            state = gridState,
+            modifier = Modifier.weight(1f),
+            contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 28.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+            content = content,
+        )
+    }
+}
+
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun CropOrMutantBookTab(
@@ -723,12 +756,53 @@ private fun CropOrMutantBookTab(
         }
     }
 
-    LazyVerticalGrid(
-        columns = GridCells.Adaptive(minSize = 84.dp),
-        modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 28.dp),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp),
+    SearchableBookGrid(
+        84.dp, book.type, filterKey, groupKey, search,
+        toolbar = {
+            AppleSearchField(
+                value = search,
+                onValueChange = { search = it },
+                placeholder = if (isMutant) "搜索超变果实名称" else "搜索作物名称",
+            )
+            if (isMutant) {
+                LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    item {
+                        AppleFilterChip(
+                            selected = groupKey == "all",
+                            onClick = { groupKey = "all" },
+                            accentColor = accent,
+                            label = { Text("全部分类") },
+                        )
+                    }
+                    MUTANT_GROUPS.forEach { (key, label) ->
+                        item {
+                            AppleFilterChip(
+                                selected = groupKey == key,
+                                onClick = { groupKey = key },
+                                accentColor = accent,
+                                label = { Text(label) },
+                            )
+                        }
+                    }
+                }
+            }
+            LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                val stateChips = buildList {
+                    add("all" to "全部 (${items.size})")
+                    add("owned" to "已收集 ($unlockedCount)")
+                    add("missing" to "未收集 (${items.size - unlockedCount})")
+                    if (!isMutant) add("buyable" to "可购买 ($buyableCount)")
+                }
+                items(stateChips, key = { it.first }) { (key, label) ->
+                    AppleFilterChip(
+                        selected = filterKey == key,
+                        onClick = { filterKey = key },
+                        accentColor = accent,
+                        label = { Text(label) },
+                    )
+                }
+            }
+        },
     ) {
         if (crossTabNotice != null) {
             item(span = { GridItemSpan(maxLineSpan) }, key = "cross_notice_${book.type}") {
@@ -751,54 +825,6 @@ private fun CropOrMutantBookTab(
                 onClaim = onClaimRewards,
                 onOpenDetails = onOpenRewardsSheet,
             )
-        }
-
-        item(span = { GridItemSpan(maxLineSpan) }, key = "toolbar_${book.type}") {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                AppleSearchField(
-                    value = search,
-                    onValueChange = { search = it },
-                    placeholder = if (isMutant) "搜索超变果实名称" else "搜索作物名称",
-                )
-                if (isMutant) {
-                    LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        item {
-                            AppleFilterChip(
-                                selected = groupKey == "all",
-                                onClick = { groupKey = "all" },
-                                accentColor = accent,
-                                label = { Text("全部分类") },
-                            )
-                        }
-                        MUTANT_GROUPS.forEach { (key, label) ->
-                            item {
-                                AppleFilterChip(
-                                    selected = groupKey == key,
-                                    onClick = { groupKey = key },
-                                    accentColor = accent,
-                                    label = { Text(label) },
-                                )
-                            }
-                        }
-                    }
-                }
-                LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    val stateChips = buildList {
-                        add("all" to "全部 (${items.size})")
-                        add("owned" to "已收集 ($unlockedCount)")
-                        add("missing" to "未收集 (${items.size - unlockedCount})")
-                        if (!isMutant) add("buyable" to "可购买 ($buyableCount)")
-                    }
-                    items(stateChips, key = { it.first }) { (key, label) ->
-                        AppleFilterChip(
-                            selected = filterKey == key,
-                            onClick = { filterKey = key },
-                            accentColor = accent,
-                            label = { Text(label) },
-                        )
-                    }
-                }
-            }
         }
 
         if (filteredItems.isEmpty()) {
@@ -981,7 +1007,7 @@ private fun IllustratedOverviewCard(
                 Button(
                     onClick = onClaim,
                     enabled = !busy,
-                    colors = ButtonDefaults.buttonColors(containerColor = accent, contentColor = Color.White),
+                    colors = ButtonDefaults.buttonColors(containerColor = accent, contentColor = accent.onAccent()),
                     shape = RoundedCornerShape(AppleRadius.control),
                     modifier = Modifier.weight(1.35f),
                 ) {
@@ -1027,66 +1053,60 @@ internal fun SeedShopGridContent(
         }
     }
 
-    LazyVerticalGrid(
-        columns = GridCells.Adaptive(minSize = 84.dp),
-        modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 28.dp),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
-        item(span = { GridItemSpan(maxLineSpan) }, key = "seed_shop_toolbar") {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Surface(
-                        shape = RoundedCornerShape(10.dp),
-                        color = apple.card,
-                        border = BorderStroke(0.5.dp, apple.separator),
-                    ) {
-                        Row(
-                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(6.dp),
-                        ) {
-                            Icon(
-                                Icons.Rounded.Paid,
-                                contentDescription = null,
-                                tint = apple.orange,
-                                modifier = Modifier.size(15.dp),
-                            )
-                            Text(
-                                text = "当前金币 ${formatNumber(goldBalance)}",
-                                style = MaterialTheme.typography.labelMedium.copy(fontFeatureSettings = "tnum"),
-                                color = apple.primaryText,
-                            )
-                        }
-                    }
-                }
+    SearchableBookGrid(
+        84.dp, filterKey, search,
+        toolbar = {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
                 AppleSearchField(
                     value = search,
                     onValueChange = { search = it },
                     placeholder = "搜索种子名称",
+                    modifier = Modifier.weight(1f),
                 )
-                LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    val stateChips = listOf(
-                        "all" to "全部 (${items.size})",
-                        "buyable" to "可购买 ($buyableCount)",
-                    )
-                    items(stateChips, key = { it.first }) { (key, label) ->
-                        AppleFilterChip(
-                            selected = filterKey == key,
-                            onClick = { filterKey = key },
-                            accentColor = accent,
-                            label = { Text(label) },
+                Surface(
+                    shape = RoundedCornerShape(10.dp),
+                    color = apple.card,
+                    border = BorderStroke(0.5.dp, apple.separator),
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
+                        Icon(
+                            Icons.Rounded.Paid,
+                            contentDescription = null,
+                            tint = apple.orange,
+                            modifier = Modifier.size(15.dp),
+                        )
+                        Text(
+                            text = "当前金币 ${formatCompactCount(goldBalance)}",
+                            style = MaterialTheme.typography.labelMedium.copy(fontFeatureSettings = "tnum"),
+                            color = apple.primaryText,
                         )
                     }
                 }
             }
-        }
-
+            LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                val stateChips = listOf(
+                    "all" to "全部 (${items.size})",
+                    "buyable" to "可购买 ($buyableCount)",
+                )
+                items(stateChips, key = { it.first }) { (key, label) ->
+                    AppleFilterChip(
+                        selected = filterKey == key,
+                        onClick = { filterKey = key },
+                        accentColor = accent,
+                        label = { Text(label) },
+                    )
+                }
+            }
+        },
+    ) {
         if (filteredItems.isEmpty()) {
             item(span = { GridItemSpan(maxLineSpan) }, key = "seed_shop_empty") {
                 AppleGroupedCard {
@@ -1186,7 +1206,7 @@ internal fun IllustratedGridTile(
                             .size(14.dp),
                     ) {
                         Box(contentAlignment = Alignment.Center) {
-                            Icon(Icons.Rounded.Check, contentDescription = null, tint = Color.White, modifier = Modifier.size(10.dp))
+                            Icon(Icons.Rounded.Check, contentDescription = null, tint = accent.onAccent(3f), modifier = Modifier.size(10.dp))
                         }
                     }
                 } else if (!seedShopMode && item.isNew) {
@@ -1200,7 +1220,7 @@ internal fun IllustratedGridTile(
                         Text(
                             "新",
                             style = MaterialTheme.typography.labelSmall.copy(fontSize = 8.sp, fontWeight = FontWeight.Bold),
-                            color = Color.White,
+                            color = apple.orange.onAccent(),
                             modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp),
                         )
                     }
@@ -1517,7 +1537,7 @@ private fun IllustratedRewardsSheet(
                     enabled = !busy,
                     colors = ButtonDefaults.buttonColors(
                         containerColor = if (isMutant) apple.orange else apple.emerald,
-                        contentColor = Color.White,
+                        contentColor = (if (isMutant) apple.orange else apple.emerald).onAccent(),
                     ),
                     shape = RoundedCornerShape(AppleRadius.card),
                     modifier = Modifier.fillMaxWidth().height(48.dp),
@@ -1644,12 +1664,51 @@ private fun CollectionsBookTab(
         }
     }
 
-    LazyVerticalGrid(
-        columns = GridCells.Adaptive(minSize = 104.dp),
-        modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 28.dp),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp),
+    SearchableBookGrid(
+        104.dp, seriesIdFilter, statusFilter, search,
+        toolbar = {
+            AppleSearchField(
+                value = search,
+                onValueChange = { search = it },
+                placeholder = "搜索藏品或系列名称",
+            )
+            LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                val statusChips = listOf(
+                    "all" to "全部 (${allItems.size})",
+                    "upgrade" to "待激活/可升星 ($upgradeableCount)",
+                    "active" to "已激活 ($activeCount)",
+                    "missing" to "未获得 ($missingCount)",
+                )
+                items(statusChips, key = { it.first }) { (key, label) ->
+                    AppleFilterChip(
+                        selected = statusFilter == key,
+                        onClick = { statusFilter = key },
+                        accentColor = apple.blue,
+                        label = { Text(label) },
+                    )
+                }
+            }
+            if (snapshot.series.size > 1) {
+                LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    item {
+                        AppleFilterChip(
+                            selected = seriesIdFilter == 0,
+                            onClick = { seriesIdFilter = 0 },
+                            accentColor = apple.blue,
+                            label = { Text("全部系列") },
+                        )
+                    }
+                    items(snapshot.series, key = { "filter_series_${it.id}" }) { s ->
+                        AppleFilterChip(
+                            selected = seriesIdFilter == s.id,
+                            onClick = { seriesIdFilter = s.id },
+                            accentColor = collectionRarityColor(s.rarity),
+                            label = { Text(s.name) },
+                        )
+                    }
+                }
+            }
+        },
     ) {
         if (crossTabNotice != null) {
             item(span = { GridItemSpan(maxLineSpan) }, key = "col_cross_notice") {
@@ -1669,52 +1728,6 @@ private fun CollectionsBookTab(
                 onClaim = onClaimMilestones,
                 onOpenMilestones = onOpenMilestonesSheet,
             )
-        }
-
-        item(span = { GridItemSpan(maxLineSpan) }, key = "col_toolbar") {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                AppleSearchField(
-                    value = search,
-                    onValueChange = { search = it },
-                    placeholder = "搜索藏品或系列名称",
-                )
-                LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    val statusChips = listOf(
-                        "all" to "全部 (${allItems.size})",
-                        "upgrade" to "待激活/可升星 ($upgradeableCount)",
-                        "active" to "已激活 ($activeCount)",
-                        "missing" to "未获得 ($missingCount)",
-                    )
-                    items(statusChips, key = { it.first }) { (key, label) ->
-                        AppleFilterChip(
-                            selected = statusFilter == key,
-                            onClick = { statusFilter = key },
-                            accentColor = apple.blue,
-                            label = { Text(label) },
-                        )
-                    }
-                }
-                if (snapshot.series.size > 1) {
-                    LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        item {
-                            AppleFilterChip(
-                                selected = seriesIdFilter == 0,
-                                onClick = { seriesIdFilter = 0 },
-                                accentColor = apple.blue,
-                                label = { Text("全部系列") },
-                            )
-                        }
-                        items(snapshot.series, key = { "filter_series_${it.id}" }) { s ->
-                            AppleFilterChip(
-                                selected = seriesIdFilter == s.id,
-                                onClick = { seriesIdFilter = s.id },
-                                accentColor = collectionRarityColor(s.rarity),
-                                label = { Text(s.name) },
-                            )
-                        }
-                    }
-                }
-            }
         }
 
         if (visibleSeries.isEmpty()) {
@@ -1890,7 +1903,7 @@ private fun CollectionOverviewCard(
                 Button(
                     onClick = onClaim,
                     enabled = !busy,
-                    colors = ButtonDefaults.buttonColors(containerColor = apple.orange, contentColor = Color.White),
+                    colors = ButtonDefaults.buttonColors(containerColor = apple.orange, contentColor = apple.orange.onAccent()),
                     shape = RoundedCornerShape(AppleRadius.control),
                     modifier = Modifier.weight(1.35f),
                 ) {
@@ -1969,7 +1982,7 @@ private fun CollectionSeriesTile(
                         Text(
                             "展示",
                             style = MaterialTheme.typography.labelSmall.copy(fontSize = 8.sp, fontWeight = FontWeight.Bold),
-                            color = Color.White,
+                            color = rarityColor.onAccent(),
                             modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.dp),
                         )
                     }
@@ -1984,7 +1997,7 @@ private fun CollectionSeriesTile(
                         Text(
                             if (item.activated) "升星" else "可激活",
                             style = MaterialTheme.typography.labelSmall.copy(fontSize = 8.sp, fontWeight = FontWeight.Bold),
-                            color = Color.White,
+                            color = apple.orange.onAccent(),
                             modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.dp),
                         )
                     }
@@ -2196,7 +2209,7 @@ private fun CollectionItemDetailSheet(
                     Button(
                         onClick = onRequestUpgrade,
                         enabled = !busy && item.canUpgrade,
-                        colors = ButtonDefaults.buttonColors(containerColor = rarityColor, contentColor = Color.White),
+                        colors = ButtonDefaults.buttonColors(containerColor = rarityColor, contentColor = rarityColor.onAccent()),
                         shape = RoundedCornerShape(AppleRadius.card),
                         modifier = Modifier.weight(1.25f),
                     ) {
@@ -2280,7 +2293,7 @@ private fun CollectionMilestonesSheet(
                 Button(
                     onClick = onClaimAll,
                     enabled = !busy,
-                    colors = ButtonDefaults.buttonColors(containerColor = apple.orange, contentColor = Color.White),
+                    colors = ButtonDefaults.buttonColors(containerColor = apple.orange, contentColor = apple.orange.onAccent()),
                     shape = RoundedCornerShape(AppleRadius.card),
                     modifier = Modifier.fillMaxWidth().height(48.dp),
                 ) {
@@ -2386,7 +2399,7 @@ private fun MutationCatalogTab(
         contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 28.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
-        item(key = "cat_toolbar") {
+        searchHeader {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 AppleSearchField(
                     value = search,
