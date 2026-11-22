@@ -13,6 +13,7 @@ import com.qqfarm.mobile.data.model.DogFood
 import com.qqfarm.mobile.data.model.FriendBlacklistItem
 import com.qqfarm.mobile.data.model.FriendItem
 import com.qqfarm.mobile.data.model.FriendLandsPayload
+import com.qqfarm.mobile.data.model.FriendOperationResult
 import com.qqfarm.mobile.data.model.FriendsPayload
 import com.qqfarm.mobile.data.model.InteractRecord
 import com.qqfarm.mobile.data.model.LandItem
@@ -293,6 +294,7 @@ object JsonParsers {
                 val fertTimes = if (item.has("leftInorcFertTimes") && !item.isNull("leftInorcFertTimes")) {
                     item.optIntFlex("leftInorcFertTimes")
                 } else null
+                val status = item.optStringClean("status", "empty")
                 val landInfo = item.optJSONObject("landInfo")?.let { parseLandUpgradeInfo(it) }
 
                 add(
@@ -300,7 +302,7 @@ object JsonParsers {
                         id = item.optIntFlex("id"),
                         level = item.optIntFlex("level", 1),
                         unlocked = item.optBoolFlex("unlocked", true),
-                        status = item.optStringClean("status", "empty"),
+                        status = if (status == "stealable" && item.optBoolNullable("stealable") == false) "unstealable" else status,
                         plantName = item.optStringClean("plantName"),
                         phaseName = item.optStringClean("phaseName"),
                         seedImage = item.optStringClean("seedImage"),
@@ -351,6 +353,15 @@ object JsonParsers {
         )
     }
 
+    fun parseFriendOperation(response: JSONObject): FriendOperationResult {
+        val data = response.optJSONObject("data") ?: throw ApiException("服务器未返回好友操作结果")
+        val message = data.optStringClean("message")
+        if (!data.optBoolFlex("ok")) throw ApiException(message.ifBlank { "服务器未确认好友操作结果" })
+        val count = data.optIntFlex("count", -1).takeIf { it >= 0 }
+        val display = message.ifBlank { count?.let { "本次操作 $it 块土地" } ?: "服务器已确认操作" }
+        return FriendOperationResult(display, count)
+    }
+
     fun parseFriendLandsPayload(obj: JSONObject): FriendLandsPayload {
         val actions = obj.optJSONObject("summary")
         fun ids(key: String) = FeatureJsonParsers.parseIntList(actions?.optJSONArray(key)).filter { it > 0 }.toSet()
@@ -362,8 +373,8 @@ object JsonParsers {
         val lands = parseLandsPayload(obj).lands.map { land ->
             val eligible = land.unlocked && !land.occupiedByMaster
             val status = when {
-                eligible && land.id in stealable -> "stealable"
-                land.status == "stealable" || land.status == "harvested" -> "unstealable"
+                land.status == "stealable" -> if (eligible && land.id in stealable) "stealable" else "unstealable"
+                land.status == "harvested" || land.status == "harvestable" -> "unstealable"
                 else -> land.status
             }
             land.copy(
@@ -375,7 +386,6 @@ object JsonParsers {
         }
         return FriendLandsPayload(
             lands = lands,
-            stealableCount = lands.count { it.status == "stealable" },
             dryCount = lands.count { it.needWater },
             weedCount = lands.count { it.needWeed },
             insectCount = lands.count { it.needBug },

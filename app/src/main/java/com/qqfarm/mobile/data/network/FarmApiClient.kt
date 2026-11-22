@@ -13,6 +13,7 @@ import com.qqfarm.mobile.data.model.CollectionSnapshot
 import com.qqfarm.mobile.data.model.DailyGiftsSummary
 import com.qqfarm.mobile.data.model.FriendBlacklistItem
 import com.qqfarm.mobile.data.model.FriendLandsPayload
+import com.qqfarm.mobile.data.model.FriendOperationResult
 import com.qqfarm.mobile.data.model.FriendsPayload
 import com.qqfarm.mobile.data.model.IllustratedBookItem
 import com.qqfarm.mobile.data.model.IllustratedClaimResult
@@ -618,23 +619,21 @@ class FarmApiClient {
     }
 
     suspend fun fetchFriendLands(accountId: String, friendGid: Long): FriendLandsPayload {
-        val json = executeJson("GET", "/api/friend/$friendGid/lands", accountIdOverride = accountId)
-        return JsonParsers.parseFriendLandsPayload(json.optJSONObject("data") ?: JSONObject())
+        val json = executeJson("GET", "/api/friend/$friendGid/lands", accountIdOverride = accountId, client = longPollClient)
+        val data = json.optJSONObject("data") ?: throw ApiException("服务器未返回好友农田")
+        if (data.optJSONArray("lands") == null) throw ApiException("服务器未返回好友地块")
+        return JsonParsers.parseFriendLandsPayload(data)
     }
 
-    suspend fun operateFriend(accountId: String, friendGid: Long, opType: String): String {
+    suspend fun operateFriend(accountId: String, friendGid: Long, opType: String): FriendOperationResult {
         val json = executeJson(
             "POST",
             "/api/friend/$friendGid/op",
             body = JSONObject().put("opType", opType),
             accountIdOverride = accountId,
+            client = longPollClient,
         )
-        val data = json.optJSONObject("data") ?: JSONObject()
-        val message = data.optStringClean("message")
-        if (!data.optBoolFlex("ok", true)) {
-            throw ApiException(message.ifBlank { "好友农场操作失败" })
-        }
-        return message.ifBlank { "操作已执行" }
+        return JsonParsers.parseFriendOperation(json)
     }
 
     suspend fun fetchInteractRecords(accountId: String): List<InteractRecord> {

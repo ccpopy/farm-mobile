@@ -7,6 +7,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
@@ -22,6 +23,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -47,6 +49,9 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.SnackbarDuration
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -105,6 +110,7 @@ import kotlinx.coroutines.launch
 import org.json.JSONObject
 import com.qqfarm.mobile.ui.components.EqualHeightRow
 import com.qqfarm.mobile.ui.components.AppleFilterChip
+import com.qqfarm.mobile.ui.components.searchHeader
 import com.qqfarm.mobile.ui.components.AppleSearchField
 import com.qqfarm.mobile.ui.components.swipeToSwitchTabs
 import java.time.Instant
@@ -199,14 +205,28 @@ fun FriendsScreen(
         busyOp = true
         scope.launch {
             try {
-                val message = try {
-                    apiClient.operateFriend(accountId, friend.gid, opType)
+                val before = try {
+                    apiClient.fetchFriendLands(accountId, friend.gid)
                 } catch (e: ApiException) {
-                    e.message
+                    updateFriendActions(friend.gid, null)
+                    onMessage(e.message)
+                    return@launch
                 }
-                onMessage(message)
+                updateFriendActions(friend.gid, before)
+                if ((opType == "steal" && before.stealableCount == 0) || (opType == "farming" && !before.needsCare)) {
+                    onMessage(if (opType == "steal") "当前没有可偷取的土地" else "当前没有需要照顾的土地")
+                    return@launch
+                }
+                val result = try {
+                    apiClient.operateFriend(accountId, friend.gid, opType).also { onMessage(it.message) }
+                } catch (e: ApiException) {
+                    onMessage(e.message)
+                    null
+                }
+                val emptyAttempt = before.takeIf { opType == "steal" && result?.count == 0 }
                 try {
-                    updateFriendActions(friend.gid, apiClient.fetchFriendLands(accountId, friend.gid))
+                    val refreshed = apiClient.fetchFriendLands(accountId, friend.gid).afterEmptySteal(emptyAttempt)
+                    updateFriendActions(friend.gid, refreshed)
                 } catch (e: ApiException) {
                     updateFriendActions(friend.gid, null)
                     onMessage("好友状态刷新失败：${e.message}")
@@ -297,7 +317,7 @@ fun FriendsScreen(
                             contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 24.dp),
                             verticalArrangement = Arrangement.spacedBy(10.dp),
                         ) {
-                            item {
+                            searchHeader {
                                 Row(
                                     modifier = Modifier.fillMaxWidth(),
                                     horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -562,7 +582,6 @@ fun FriendsScreen(
             accountId = accountId,
             isBlocked = blacklist.any { it.gid == friend.gid },
             apiClient = apiClient,
-            onMessage = onMessage,
             onLandsLoaded = { updateFriendActions(friend.gid, it) },
             onBlacklistUpdated = { blacklist = it },
             onDismiss = { inspectedFriend = null },
@@ -612,7 +631,6 @@ private fun FriendLandsSheet(
     accountId: String,
     isBlocked: Boolean,
     apiClient: FarmApiClient,
-    onMessage: (String) -> Unit,
     onLandsLoaded: (FriendLandsPayload?) -> Unit,
     onBlacklistUpdated: (List<FriendBlacklistItem>) -> Unit,
     onDismiss: () -> Unit,
@@ -621,10 +639,12 @@ private fun FriendLandsSheet(
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val scope = rememberCoroutineScope()
 
+    val landListState = rememberLazyListState()
     var payload by remember { mutableStateOf<FriendLandsPayload?>(null) }
     var loading by remember { mutableStateOf(true) }
     var busy by remember { mutableStateOf(false) }
     var errorMsg by remember { mutableStateOf("") }
+    var actionMessage by remember { mutableStateOf("") }
     var clockTickMs by remember { mutableLongStateOf(SystemClock.elapsedRealtime()) }
 
     LaunchedEffect(Unit) {
@@ -634,11 +654,11 @@ private fun FriendLandsSheet(
         }
     }
 
-    suspend fun loadLands() {
+    suspend fun loadLands(emptyAttempt: FriendLandsPayload? = null) {
         loading = true
         errorMsg = ""
         try {
-            val snapshot = apiClient.fetchFriendLands(accountId, friend.gid)
+            val snapshot = apiClient.fetchFriendLands(accountId, friend.gid).afterEmptySteal(emptyAttempt)
             payload = snapshot
             onLandsLoaded(snapshot)
         } catch (e: ApiException) {
@@ -657,7 +677,7 @@ private fun FriendLandsSheet(
             try {
                 action()
             } catch (e: ApiException) {
-                onMessage(e.message)
+                actionMessage = e.message
             } finally {
                 busy = false
             }
@@ -665,13 +685,19 @@ private fun FriendLandsSheet(
     }
 
     fun operate(opType: String) = runAction {
-        val message = try {
-            apiClient.operateFriend(accountId, friend.gid, opType)
-        } catch (e: ApiException) {
-            e.message
+        val before = payload
+        actionMessage = when (opType) {
+            "steal" -> "正在偷取…"
+            "farming" -> "正在帮务农…"
+            else -> "正在捣乱…"
         }
-        onMessage(message)
-        loadLands()
+        val result = try {
+            apiClient.operateFriend(accountId, friend.gid, opType).also { actionMessage = it.message }
+        } catch (e: ApiException) {
+            actionMessage = e.message
+            null
+        }
+        loadLands(before.takeIf { opType == "steal" && result?.count == 0 })
     }
 
     LaunchedEffect(accountId, friend.gid) { loadLands() }
@@ -682,15 +708,7 @@ private fun FriendLandsSheet(
         sheetState = sheetState,
         containerColor = apple.background,
     ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .navigationBarsPadding()
-                .heightIn(max = 580.dp)
-                .padding(horizontal = 16.dp)
-                .padding(bottom = 20.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
+        FriendDetailPanel(actionMessage) {
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -713,14 +731,18 @@ private fun FriendLandsSheet(
                     onClick = {
                         runAction {
                             onBlacklistUpdated(apiClient.toggleFriendBlacklist(accountId, friend.gid))
-                            onMessage(if (isBlocked) "已移出黑名单" else "已加入黑名单")
+                            actionMessage = if (isBlocked) "已移出黑名单" else "已加入黑名单"
                         }
                     },
                     enabled = !loading && !busy,
                     contentPadding = PaddingValues(horizontal = 4.dp),
                 ) { Text(if (isBlocked) "解除屏蔽" else "屏蔽") }
-                IconButton(onClick = { scope.launch { loadLands() } }, enabled = !loading && !busy) {
-                    Icon(Icons.Rounded.Refresh, contentDescription = "刷新")
+                IconButton(onClick = { scope.launch { actionMessage = ""; loadLands() } }, enabled = !loading && !busy) {
+                    if ((loading || busy) && payload != null) {
+                        CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+                    } else {
+                        Icon(Icons.Rounded.Refresh, contentDescription = "刷新")
+                    }
                 }
             }
 
@@ -750,11 +772,11 @@ private fun FriendLandsSheet(
                 ) { Text("捣乱") }
             }
 
-            if (loading) {
+            if (loading && payload == null) {
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(220.dp),
+                        .weight(1f),
                     contentAlignment = Alignment.Center,
                 ) {
                     AppleLoadingState()
@@ -768,12 +790,13 @@ private fun FriendLandsSheet(
                 val landColumns = LocalAppAppearance.current.landGridColumns
                 val rows = lands.chunked(landColumns)
                 LazyColumn(
+                    state = landListState,
                     modifier = Modifier
-                        .weight(1f, fill = false)
+                        .weight(1f)
                         .fillMaxWidth(),
                     verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
-                    itemsIndexed(rows) { _, row ->
+                    items(rows, key = { row -> row.first().id }) { row ->
                         EqualHeightRow(spacing = if (landColumns >= 4) 6.dp else 8.dp) {
                             row.forEach { land ->
                                 AppleLandTile(
@@ -791,6 +814,22 @@ private fun FriendLandsSheet(
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun FriendDetailPanel(message: String, content: @Composable ColumnScope.() -> Unit) {
+    val messages = remember { SnackbarHostState() }
+    LaunchedEffect(message) {
+        if (message.isNotBlank()) messages.showSnackbar(message, withDismissAction = true, duration = SnackbarDuration.Long)
+    }
+    Box(Modifier.fillMaxWidth().navigationBarsPadding().height(580.dp)) {
+        Column(
+            modifier = Modifier.fillMaxSize().padding(horizontal = 16.dp).padding(bottom = 20.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+            content = content,
+        )
+        SnackbarHost(hostState = messages, modifier = Modifier.align(Alignment.BottomCenter))
     }
 }
 
@@ -917,7 +956,7 @@ private fun RanchFriendsContent(
                 contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 24.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
-                item {
+                searchHeader {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -1020,7 +1059,6 @@ private fun RanchFriendsContent(
             accountId = accountId,
             friend = friend,
             apiClient = apiClient,
-            onMessage = onMessage,
             onDismiss = {
                 selectedFriend = null
                 scope.launch { loadFriendsList() }
@@ -1057,7 +1095,6 @@ private fun RanchFriendDetailSheet(
     accountId: String,
     friend: RanchFriendSummary,
     apiClient: FarmApiClient,
-    onMessage: (String) -> Unit,
     onDismiss: () -> Unit,
 ) {
     val apple = LocalAppleColors.current
@@ -1066,8 +1103,10 @@ private fun RanchFriendDetailSheet(
 
     var loading by remember(accountId, friend.gid) { mutableStateOf(true) }
     var busy by remember(accountId, friend.gid) { mutableStateOf(false) }
+    val ranchListState = rememberLazyListState()
     var snapshot by remember(accountId, friend.gid) { mutableStateOf<RanchViewSnapshot?>(null) }
     var errorMsg by remember(accountId, friend.gid) { mutableStateOf("") }
+    var actionMessage by remember(accountId, friend.gid) { mutableStateOf("") }
     var pendingOp by remember(accountId, friend.gid) { mutableStateOf<PendingRanchFriendOp?>(null) }
     var showGrassSheet by remember(accountId, friend.gid) { mutableStateOf(false) }
 
@@ -1091,17 +1130,19 @@ private fun RanchFriendDetailSheet(
     fun requestQuote(action: String, input: JSONObject) {
         if (busy || loading || pendingOp != null || snapshot?.friendRanch?.sceneRestored != true) return
         busy = true
+        actionMessage = "正在核对好友牧场…"
         scope.launch {
             try {
                 val quote = apiClient.quoteRanchAction(accountId, action, input)
                 if (quote.skipped) {
-                    onMessage(quote.message.ifBlank { "当前没有可操作项目" })
+                    actionMessage = quote.message.ifBlank { "当前没有可操作项目" }
                     loadDetail()
                 } else {
+                    actionMessage = ""
                     pendingOp = PendingRanchFriendOp(action, input, quote)
                 }
             } catch (e: ApiException) {
-                onMessage(e.message)
+                actionMessage = e.message
                 loadDetail()
             } finally {
                 busy = false
@@ -1130,15 +1171,7 @@ private fun RanchFriendDetailSheet(
         sheetState = sheetState,
         containerColor = apple.background,
     ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .navigationBarsPadding()
-                .heightIn(max = 580.dp)
-                .padding(horizontal = 16.dp)
-                .padding(bottom = 24.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
+        FriendDetailPanel(actionMessage) {
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -1171,7 +1204,7 @@ private fun RanchFriendDetailSheet(
                         maxLines = 1,
                     )
                 }
-                IconButton(onClick = { scope.launch { loadDetail() } }, enabled = !loading && !busy) {
+                IconButton(onClick = { scope.launch { actionMessage = ""; loadDetail() } }, enabled = !loading && !busy) {
                     if (loading && ranch != null) {
                         CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
                     } else {
@@ -1192,7 +1225,7 @@ private fun RanchFriendDetailSheet(
             }
 
             if (loading && ranch == null) {
-                AppleLoadingState(Modifier.fillMaxWidth().height(180.dp))
+                AppleLoadingState(Modifier.fillMaxWidth().weight(1f))
             } else if (errorMsg.isNotBlank()) {
                 AppleGroupedCard(contentPadding = PaddingValues(16.dp)) {
                     Text(errorMsg, style = MaterialTheme.typography.bodyMedium, color = apple.red)
@@ -1231,7 +1264,8 @@ private fun RanchFriendDetailSheet(
                 }
 
                 LazyColumn(
-                    modifier = Modifier.weight(1f, fill = false).fillMaxWidth(),
+                    state = ranchListState,
+                    modifier = Modifier.weight(1f).fillMaxWidth(),
                     verticalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
                     if (d.notice.isNotBlank()) {
@@ -1448,12 +1482,12 @@ private fun RanchFriendDetailSheet(
                         )
                     }.onSuccess { res ->
                         pendingOp = null
-                        onMessage(res.notice.ifBlank { if (res.status == "skipped") "当前没有可操作项目" else "操作成功" })
+                        actionMessage = res.notice.ifBlank { if (res.status == "skipped") "当前没有可操作项目" else "操作成功" }
                         loadDetail()
                     }.onFailure {
                         if (it is CancellationException) throw it
                         pendingOp = null
-                        onMessage(it.message ?: "好友牧场操作失败")
+                        actionMessage = it.message ?: "好友牧场操作失败"
                         loadDetail()
                     }
                     busy = false

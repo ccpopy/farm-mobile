@@ -230,14 +230,28 @@ data class LandsPayload(
 
 data class FriendLandsPayload(
     val lands: List<LandItem>,
-    val stealableCount: Int,
     val dryCount: Int,
     val weedCount: Int,
     val insectCount: Int,
     val canDisrupt: Boolean,
 ) {
+    val stealableCount: Int get() = lands.count { it.status == "stealable" }
     val needsCare: Boolean get() = dryCount > 0 || weedCount > 0 || insectCount > 0
+
+    // 零块回执后的自动刷新可能仍返回刚尝试过的作物；手动刷新重新核对全部地块。
+    fun afterEmptySteal(attempted: FriendLandsPayload?): FriendLandsPayload {
+        if (attempted == null) return this
+        val targets = attempted.lands.filter { it.status == "stealable" }.associateBy { it.id }
+        return copy(lands = lands.map { land ->
+            val old = targets[land.id]
+            if (land.status == "stealable" && old != null && land.plantName == old.plantName && land.currentSeason == old.currentSeason) {
+                land.copy(status = "unstealable")
+            } else land
+        })
+    }
 }
+
+data class FriendOperationResult(val message: String, val count: Int?)
 
 data class BagSystemItem(
     val id: Int,
