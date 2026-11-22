@@ -104,7 +104,8 @@ import com.qqfarm.mobile.ui.theme.ranchDefaultLightBackground
 import com.qqfarm.mobile.ui.theme.onAccent
 import com.qqfarm.mobile.ui.theme.resolveLandCardColors
 import com.qqfarm.mobile.ui.theme.resolveRanchAnimalCardColors
-import com.qqfarm.mobile.ui.theme.swatchSelectionTint
+import com.qqfarm.mobile.ui.components.retainSheetHeight
+import com.qqfarm.mobile.ui.theme.readableOn
 import com.qqfarm.mobile.ui.theme.webLandLightBackground
 import java.util.Locale
 import kotlin.math.PI
@@ -178,7 +179,8 @@ fun CustomAppearanceSheet(
             modifier = Modifier
                 .fillMaxWidth()
                 .navigationBarsPadding()
-                .heightIn(max = 680.dp),
+                .heightIn(max = 680.dp)
+                .retainSheetHeight(),
         ) {
             // Fixed single-line header
             Row(
@@ -386,7 +388,7 @@ fun CustomAppearanceSheet(
                             add(
                                 AccentGridCell.Swatch(
                                     label = "跟随主色",
-                                    color = apple.emerald,
+                                    color = activeCustomAccent?.let { Color(it.toInt()) } ?: AppleEmerald,
                                     selected = config.ranchAccentFollowPrimary,
                                     onClick = { onUpdate(config.copy(ranchAccentFollowPrimary = true)) },
                                 )
@@ -1091,7 +1093,7 @@ private fun PreviewMiniRanchTile(
                     Text(
                         text = "巨",
                         style = MaterialTheme.typography.labelSmall.copy(fontSize = 9.sp, fontWeight = FontWeight.Bold),
-                        color = Color.White,
+                        color = SoilGold.onAccent(),
                         modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp),
                     )
                 }
@@ -1108,7 +1110,7 @@ private fun PreviewMiniRanchTile(
                     Text(
                         text = "生产",
                         style = MaterialTheme.typography.labelSmall.copy(fontSize = 9.sp),
-                        color = Color.White,
+                        color = ranchAccent.onAccent(),
                     )
                 }
             }
@@ -1238,7 +1240,7 @@ private fun AccentSwatchButton(
     onClick: () -> Unit,
 ) {
     val apple = LocalAppleColors.current
-    val selectionTint = color.swatchSelectionTint()
+    val selectionTint = remember(color) { color.onAccent(3f) }
     Column(
         modifier = modifier
             .clip(RoundedCornerShape(10.dp))
@@ -1249,12 +1251,13 @@ private fun AccentSwatchButton(
     ) {
         Box(
             modifier = Modifier
-                .size(34.dp)
-                .clip(CircleShape)
-                .background(color)
+                .size(40.dp)
                 .then(
-                    if (selected) Modifier.border(2.5.dp, selectionTint, CircleShape) else Modifier
-                ),
+                    if (selected) Modifier.border(2.dp, color.readableOn(apple.card, 3f), CircleShape) else Modifier
+                )
+                .padding(3.5.dp)
+                .clip(CircleShape)
+                .background(color),
             contentAlignment = Alignment.Center,
         ) {
             if (selected) {
@@ -1287,7 +1290,7 @@ private fun AccentWheelButton(
     onClick: () -> Unit,
 ) {
     val apple = LocalAppleColors.current
-    val selectionTint = activeColor?.swatchSelectionTint() ?: Color.White
+    val selectionTint = remember(activeColor) { activeColor?.onAccent(3f) ?: Color.White }
     val wheelColors = remember {
         listOf(Color.Red, Color.Yellow, Color.Green, Color.Cyan, Color.Blue, Color.Magenta, Color.Red)
     }
@@ -1301,7 +1304,11 @@ private fun AccentWheelButton(
     ) {
         Box(
             modifier = Modifier
-                .size(34.dp)
+                .size(40.dp)
+                .then(
+                    if (selected && activeColor != null) Modifier.border(2.dp, activeColor.readableOn(apple.card, 3f), CircleShape) else Modifier
+                )
+                .padding(3.5.dp)
                 .clip(CircleShape)
                 .then(
                     if (activeColor != null) {
@@ -1309,9 +1316,6 @@ private fun AccentWheelButton(
                     } else {
                         Modifier.background(Brush.sweepGradient(wheelColors))
                     }
-                )
-                .then(
-                    if (selected) Modifier.border(2.5.dp, selectionTint, CircleShape) else Modifier
                 ),
             contentAlignment = Alignment.Center,
         ) {
@@ -1473,7 +1477,7 @@ private fun AppleColorWheelDialog(
                         )
                         if (value < 0.999f) {
                             drawCircle(
-                                color = Color.Black.copy(alpha = (1f - value).coerceIn(0f, 0.85f)),
+                                color = Color.Black.copy(alpha = 1f - value),
                                 radius = radius,
                                 center = center,
                             )
@@ -1488,13 +1492,13 @@ private fun AppleColorWheelDialog(
                             center = knobCenter,
                         )
                         drawCircle(
-                            color = Color.White,
+                            color = currentColor.onAccent(3f),
                             radius = 9.dp.toPx(),
                             center = knobCenter,
                             style = Stroke(width = 2.5.dp.toPx()),
                         )
                         drawCircle(
-                            color = Color.Black.copy(alpha = 0.28f),
+                            color = currentColor,
                             radius = 10.5.dp.toPx(),
                             center = knobCenter,
                             style = Stroke(width = 1.dp.toPx()),

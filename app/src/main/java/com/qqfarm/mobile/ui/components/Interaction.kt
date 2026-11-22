@@ -27,6 +27,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.composed
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.layout.layout
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.Dp
@@ -128,6 +130,23 @@ fun EqualHeightRow(
         content = content,
     )
 }
+
+/** 同一抽屉内保留已展开的高度，搜索、重试和空态只改变内容；键盘和分屏仍受窗口约束。 */
+@Composable
+internal fun Modifier.retainSheetHeight(): Modifier = then(remember(LocalDensity.current) {
+    var width = -1
+    var expandedHeight = 0
+    Modifier.layout { measurable, constraints ->
+        if (width != constraints.maxWidth) {
+            width = constraints.maxWidth
+            expandedHeight = 0
+        }
+        val minimum = expandedHeight.coerceIn(constraints.minHeight, constraints.maxHeight)
+        val child = measurable.measure(constraints.copy(minHeight = minimum))
+        expandedHeight = maxOf(expandedHeight, child.height)
+        layout(child.width, child.height) { child.placeRelative(0, 0) }
+    }
+})
 
 /** 全应用统一的开关：iOS 式绿色轨道 + 切换触感。 */
 @Composable

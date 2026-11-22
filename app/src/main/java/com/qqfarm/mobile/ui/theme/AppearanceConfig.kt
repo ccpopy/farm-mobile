@@ -253,10 +253,37 @@ fun resolveEffectiveAppearance(
     )
 }
 
-internal fun Color.onAccent(): Color =
-    if (luminance() > 0.179f) Color.Black else Color.White
+// 沿当前色相增减明度，取在实际背景上达到目标对比度的最近色阶。
+internal fun Color.readableOn(surface: Color, minContrast: Float = 4.5f): Color {
+    val surfaceLight = surface.luminance()
+    val lightLimit = (surfaceLight + 0.05f) * minContrast - 0.05f
+    val darkLimit = (surfaceLight + 0.05f) / minContrast - 0.05f
+    fun meetsContrast(color: Color) = color.luminance().let { it >= lightLimit || it <= darkLimit }
+    if (meetsContrast(this)) return this
 
-internal fun Color.swatchSelectionTint(): Color = lerp(onAccent(), this, 0.28f)
+    val end = if (surfaceLight > 0.179f) 0f else 1f
+    var low = 0f
+    var high = 1f
+    var result = if (end == 0f) Color.Black else Color.White
+    repeat(9) {
+        val mix = (low + high) / 2f
+        val tone = copy(
+            red = red + (end - red) * mix,
+            green = green + (end - green) * mix,
+            blue = blue + (end - blue) * mix,
+        )
+        if (meetsContrast(tone)) {
+            result = tone
+            high = mix
+        } else {
+            low = mix
+        }
+    }
+    return result
+}
+
+internal fun Color.onAccent(minContrast: Float = 4.5f): Color =
+    if ((luminance() + 0.05f) * minContrast <= 1.05f) Color.White else readableOn(this, minContrast)
 
 internal fun CustomAppearanceConfig.resolveRanchAccent(primary: Color, dark: Boolean): Color? {
     if (ranchAccentFollowPrimary) return primary

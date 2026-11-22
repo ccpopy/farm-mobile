@@ -1305,7 +1305,7 @@ fun RanchQuoteConfirmSheet(
                     enabled = !busy,
                     shape = RoundedCornerShape(14.dp),
                     colors = if (isDestructive) {
-                        ButtonDefaults.buttonColors(containerColor = apple.red, contentColor = Color.White)
+                        ButtonDefaults.buttonColors(containerColor = apple.red, contentColor = apple.red.onAccent())
                     } else ButtonDefaults.buttonColors(),
                     modifier = Modifier.weight(1f),
                 ) {

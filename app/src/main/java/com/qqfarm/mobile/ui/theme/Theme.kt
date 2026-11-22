@@ -310,10 +310,10 @@ fun FarmBotTheme(
         baseScheme
     }
     val colorScheme = if (customAccent != null) {
-        val primary = if (darkTheme) lerp(customAccent, Color.White, 0.08f) else customAccent
+        val primary = customAccent.readableOn(tonedExtended.card)
         val onPrimary = primary.onAccent()
         val container = if (darkTheme) lerp(tonedExtended.card, primary, 0.24f) else lerp(Color.White, primary, 0.14f)
-        val onContainer = if (darkTheme) lerp(primary, Color.White, 0.42f) else lerp(primary, Color.Black, 0.32f)
+        val onContainer = primary.readableOn(container)
         tonedScheme.copy(
             primary = primary,
             onPrimary = onPrimary,
@@ -330,7 +330,7 @@ fun FarmBotTheme(
         tonedExtended
     }
     val resolvedRanchAccent = if (themeMode == StoredConfig.THEME_CUSTOM) {
-        customAppearance.resolveRanchAccent(extended.emerald, darkTheme)
+        customAppearance.resolveRanchAccent(extended.emerald, darkTheme)?.readableOn(extended.card)
     } else null
     val finalAppearance = appearance.copy(ranchAccent = resolvedRanchAccent)
     val shapes = when (appearance.cornerStyle) {

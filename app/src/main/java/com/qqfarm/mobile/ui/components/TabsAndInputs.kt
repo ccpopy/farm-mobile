@@ -6,6 +6,7 @@ import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.awaitEachGesture
@@ -14,6 +15,7 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -23,6 +25,7 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -56,6 +59,7 @@ import androidx.compose.ui.composed
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.compositeOver
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.PointerEventPass
@@ -68,6 +72,7 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.qqfarm.mobile.ui.theme.readableOn
 import com.qqfarm.mobile.ui.theme.LocalAppleColors
 import kotlinx.coroutines.launch
 import kotlin.math.abs
@@ -179,12 +184,13 @@ fun AppleFilterChip(
 ) {
     val apple = LocalAppleColors.current
     val haptics = rememberAppHaptics()
+    val selectedContainer = accentColor.copy(alpha = 0.14f).compositeOver(apple.card)
     val container by animateColorAsState(
-        targetValue = if (selected) accentColor.copy(alpha = 0.14f) else apple.track,
+        targetValue = if (selected) selectedContainer else apple.track,
         label = "chipContainer",
     )
     val content by animateColorAsState(
-        targetValue = if (selected) accentColor else apple.primaryText,
+        targetValue = if (selected) accentColor.readableOn(selectedContainer) else apple.primaryText,
         label = "chipContent",
     )
     Box(
@@ -210,6 +216,17 @@ fun AppleFilterChip(
                 label()
             }
         }
+    }
+}
+
+/** 列表的搜索与筛选停在顶部，上面的概览和下面的结果均可滚动。 */
+@OptIn(ExperimentalFoundationApi::class)
+internal fun LazyListScope.searchHeader(content: @Composable ColumnScope.() -> Unit) {
+    stickyHeader {
+        Column(
+            modifier = Modifier.fillMaxWidth().background(LocalAppleColors.current.background).padding(vertical = 4.dp),
+            content = content,
+        )
     }
 }
 
