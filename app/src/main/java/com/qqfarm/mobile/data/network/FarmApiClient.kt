@@ -14,6 +14,7 @@ import com.qqfarm.mobile.data.model.DailyGiftsSummary
 import com.qqfarm.mobile.data.model.FriendBlacklistItem
 import com.qqfarm.mobile.data.model.FriendLandsPayload
 import com.qqfarm.mobile.data.model.FriendsPayload
+import com.qqfarm.mobile.data.model.IllustratedBookItem
 import com.qqfarm.mobile.data.model.IllustratedClaimResult
 import com.qqfarm.mobile.data.model.IllustratedSnapshot
 import com.qqfarm.mobile.data.model.InteractRecord
@@ -1188,6 +1189,17 @@ class FarmApiClient {
         val body = JSONObject().put("goodsId", goodsId).put("count", count)
         val json = executeJson("POST", "/api/seeds/purchase", body = body, accountIdOverride = accountId)
         return FeatureJsonParsers.parseIllustratedSeedReceipt(json.optJSONObject("data"), seedId)
+    }
+
+    suspend fun fetchSeedShopItems(accountId: String): List<IllustratedBookItem> {
+        val json = executeJson("GET", "/api/seeds", accountIdOverride = accountId)
+        val seeds = json.optJSONArray("data") ?: json.optJSONObject("data")?.optJSONArray("seeds")
+            ?: throw ApiException("服务端未返回种子商店数据")
+        val items = FeatureJsonParsers.parseSeedShopItems(seeds)
+        if (seeds.length() > 0 && items.isEmpty()) {
+            throw ApiException("种子商店暂不可用，请刷新重试")
+        }
+        return items
     }
 
     suspend fun fetchCollections(accountId: String): CollectionSnapshot {

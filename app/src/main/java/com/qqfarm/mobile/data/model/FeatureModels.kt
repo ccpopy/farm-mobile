@@ -331,6 +331,14 @@ data class RanchFriendPen(
     val shelves: List<RanchFriendShelf> = emptyList(),
 )
 
+data class RanchFriendFeedMachine(
+    val id: String,
+    val count: Int,
+    val capacity: Int,
+) {
+    val remainingCapacity: Int get() = (capacity - count).coerceAtLeast(0)
+}
+
 data class RanchFriendDetail(
     val gid: String,
     val level: Int = 0,
@@ -339,11 +347,16 @@ data class RanchFriendDetail(
     val strokeRemaining: Int = 0,
     val mosquitoRemaining: Int = 0,
     val cleanableHazards: Int = 0,
+    val feedMachine: RanchFriendFeedMachine? = null,
+    val grassAvailable: Long? = null,
     val career: RanchCareer? = null,
     val notice: String = "",
     val sceneRestored: Boolean = true,
     val ranches: List<RanchFriendPen> = emptyList(),
-)
+) {
+    val grassGiftLimit: Int
+        get() = minOf(grassAvailable ?: 0L, (feedMachine?.remainingCapacity ?: 0).toLong()).toInt()
+}
 
 data class RanchViewSnapshot(
     val base: RanchPayload,

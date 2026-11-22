@@ -40,8 +40,8 @@ import androidx.compose.material.icons.rounded.Eco
 import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.Lock
 import androidx.compose.material.icons.rounded.MenuBook
+import androidx.compose.material.icons.rounded.Paid
 import androidx.compose.material.icons.rounded.ShoppingBag
-import androidx.compose.material.icons.rounded.ShoppingCart
 import androidx.compose.material.icons.rounded.Star
 import androidx.compose.material.icons.rounded.Stars
 import androidx.compose.material.icons.rounded.Visibility
@@ -785,8 +785,8 @@ private fun CropOrMutantBookTab(
                 LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     val stateChips = buildList {
                         add("all" to "全部 (${items.size})")
-                        add("owned" to "已收藏 ($unlockedCount)")
-                        add("missing" to "未收藏 (${items.size - unlockedCount})")
+                        add("owned" to "已收集 ($unlockedCount)")
+                        add("missing" to "未收集 (${items.size - unlockedCount})")
                         if (!isMutant) add("buyable" to "可购买 ($buyableCount)")
                     }
                     items(stateChips, key = { it.first }) { (key, label) ->
@@ -1002,22 +1002,140 @@ private fun IllustratedOverviewCard(
 }
 
 @Composable
-private fun IllustratedGridTile(
+internal fun SeedShopGridContent(
+    items: List<IllustratedBookItem>,
+    goldBalance: Long,
+    isConnected: Boolean,
+    onSelectItem: (IllustratedBookItem) -> Unit,
+) {
+    val apple = LocalAppleColors.current
+    val accent = apple.emerald
+    var filterKey by remember { mutableStateOf("all") }
+    var search by remember { mutableStateOf("") }
+
+    val buyableCount = remember(items, isConnected) {
+        items.count { canPurchaseIllustratedSeed(it, isConnected) }
+    }
+    val filteredItems = remember(items, isConnected, filterKey, search) {
+        val kw = search.trim()
+        items.filter { item ->
+            if (kw.isNotEmpty() && !item.name.contains(kw, ignoreCase = true)) return@filter false
+            when (filterKey) {
+                "buyable" -> canPurchaseIllustratedSeed(item, isConnected)
+                else -> true
+            }
+        }
+    }
+
+    LazyVerticalGrid(
+        columns = GridCells.Adaptive(minSize = 84.dp),
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 28.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        item(span = { GridItemSpan(maxLineSpan) }, key = "seed_shop_toolbar") {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Surface(
+                        shape = RoundedCornerShape(10.dp),
+                        color = apple.card,
+                        border = BorderStroke(0.5.dp, apple.separator),
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        ) {
+                            Icon(
+                                Icons.Rounded.Paid,
+                                contentDescription = null,
+                                tint = apple.orange,
+                                modifier = Modifier.size(15.dp),
+                            )
+                            Text(
+                                text = "当前金币 ${formatNumber(goldBalance)}",
+                                style = MaterialTheme.typography.labelMedium.copy(fontFeatureSettings = "tnum"),
+                                color = apple.primaryText,
+                            )
+                        }
+                    }
+                }
+                AppleSearchField(
+                    value = search,
+                    onValueChange = { search = it },
+                    placeholder = "搜索种子名称",
+                )
+                LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    val stateChips = listOf(
+                        "all" to "全部 (${items.size})",
+                        "buyable" to "可购买 ($buyableCount)",
+                    )
+                    items(stateChips, key = { it.first }) { (key, label) ->
+                        AppleFilterChip(
+                            selected = filterKey == key,
+                            onClick = { filterKey = key },
+                            accentColor = accent,
+                            label = { Text(label) },
+                        )
+                    }
+                }
+            }
+        }
+
+        if (filteredItems.isEmpty()) {
+            item(span = { GridItemSpan(maxLineSpan) }, key = "seed_shop_empty") {
+                AppleGroupedCard {
+                    AppleEmptyState(
+                        icon = Icons.Rounded.Eco,
+                        title = if (items.isEmpty()) "暂无商店种子" else "没有符合条件的种子",
+                        subtitle = if (items.isEmpty()) "当前商店没有可展示的种子" else "换个筛选条件或搜索词试试",
+                    )
+                }
+            }
+        } else {
+            items(
+                items = filteredItems,
+                key = { "shop_seed_${it.shopSeed?.goodsId ?: it.seedId}" },
+                contentType = { "book_tile" },
+            ) { entry ->
+                IllustratedGridTile(
+                    item = entry,
+                    isMutant = false,
+                    isConnected = isConnected,
+                    accent = accent,
+                    seedShopMode = true,
+                    onClick = { onSelectItem(entry) },
+                )
+            }
+        }
+    }
+}
+
+@Composable
+internal fun IllustratedGridTile(
     item: IllustratedBookItem,
     isMutant: Boolean,
     isConnected: Boolean,
     accent: Color,
+    seedShopMode: Boolean = false,
     onClick: () -> Unit,
 ) {
     val apple = LocalAppleColors.current
     val buyable = !isMutant && canPurchaseIllustratedSeed(item, isConnected)
-    val metaText = if (isMutant) {
-        if (item.unlocked) "已收藏" else "未收藏"
-    } else {
-        cropMetaText(item, isConnected)
+    val highlighted = if (seedShopMode) buyable else item.unlocked
+    val metaText = when {
+        seedShopMode -> seedShopMetaText(item, isConnected)
+        isMutant -> if (item.unlocked) "已收集" else "未收集"
+        else -> cropMetaText(item, isConnected)
     }
     val metaColor = when {
-        buyable -> apple.emerald
+        seedShopMode && buyable -> apple.orange
+        seedShopMode -> apple.secondaryText.copy(alpha = 0.78f)
         item.unlocked -> apple.secondaryText
         else -> apple.secondaryText.copy(alpha = 0.78f)
     }
@@ -1028,10 +1146,10 @@ private fun IllustratedGridTile(
             .clip(RoundedCornerShape(AppleRadius.tile))
             .clickable(enabled = !isMutant, role = Role.Button, onClick = onClick),
         shape = RoundedCornerShape(AppleRadius.tile),
-        color = if (item.unlocked) apple.card else apple.card.copy(alpha = 0.72f),
+        color = if (highlighted) apple.card else apple.card.copy(alpha = 0.72f),
         border = BorderStroke(
-            width = if (item.isNew) 1.dp else 0.5.dp,
-            color = if (item.isNew) apple.orange else apple.separator,
+            width = if (!seedShopMode && item.isNew) 1.dp else 0.5.dp,
+            color = if (!seedShopMode && item.isNew) apple.orange else apple.separator,
         ),
     ) {
         Column(
@@ -1056,9 +1174,9 @@ private fun IllustratedGridTile(
                     fallbackTint = accent,
                     modifier = Modifier
                         .size(42.dp)
-                        .alpha(if (item.unlocked) 1f else 0.45f),
+                        .alpha(if (highlighted) 1f else 0.45f),
                 )
-                if (item.unlocked) {
+                if (!seedShopMode && item.unlocked) {
                     Surface(
                         shape = CircleShape,
                         color = accent,
@@ -1071,7 +1189,7 @@ private fun IllustratedGridTile(
                             Icon(Icons.Rounded.Check, contentDescription = null, tint = Color.White, modifier = Modifier.size(10.dp))
                         }
                     }
-                } else if (item.isNew) {
+                } else if (!seedShopMode && item.isNew) {
                     Surface(
                         shape = CircleShape,
                         color = apple.orange,
@@ -1091,57 +1209,69 @@ private fun IllustratedGridTile(
             Text(
                 text = item.name,
                 style = MaterialTheme.typography.labelLarge.copy(fontSize = 12.sp, fontWeight = FontWeight.SemiBold),
-                color = if (item.unlocked) apple.primaryText else apple.secondaryText,
+                color = if (highlighted) apple.primaryText else apple.secondaryText,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
                 textAlign = TextAlign.Center,
                 modifier = Modifier.fillMaxWidth(),
             )
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(2.dp),
-            ) {
-                if (buyable) {
-                    Icon(Icons.Rounded.ShoppingCart, contentDescription = null, tint = apple.emerald, modifier = Modifier.size(11.dp))
-                }
-                Text(
-                    text = metaText,
-                    style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
-                    color = metaColor,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            }
+            Text(
+                text = metaText,
+                style = MaterialTheme.typography.labelSmall.copy(
+                    fontSize = 10.sp,
+                    fontFeatureSettings = if (seedShopMode && buyable) "tnum" else null,
+                ),
+                color = metaColor,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
         }
     }
 }
 
-private fun canPurchaseIllustratedSeed(item: IllustratedBookItem, isConnected: Boolean): Boolean {
+internal fun canPurchaseIllustratedSeed(item: IllustratedBookItem, isConnected: Boolean): Boolean {
     val seed = item.shopSeed ?: return false
     return isConnected && seed.goodsId > 0 && !seed.locked && !seed.soldOut &&
-        !seed.unknownMeta && !seed.requiresUnlockCard && seed.remainingPurchaseCount != 0 && seed.price > 0L
+        !seed.unknownMeta && !seed.requiresUnlockCard && (seed.remainingPurchaseCount ?: 1) > 0 && seed.price > 0L
+}
+
+private fun seedShopMetaText(item: IllustratedBookItem, isConnected: Boolean): String {
+    val seed = item.shopSeed
+    if (canPurchaseIllustratedSeed(item, isConnected) && seed != null) {
+        return "${formatCompactCount(seed.price)} 金币"
+    }
+    return when {
+        seed?.unknownMeta == true -> "其他途径"
+        seed?.requiresUnlockCard == true -> "需解锁卡"
+        seed?.locked == true -> if (seed.requiredLevel > 0) "${seed.requiredLevel}级解锁" else "未解锁"
+        seed?.soldOut == true || seed?.remainingPurchaseCount == 0 -> "已达限购"
+        else -> "暂不可购"
+    }
 }
 
 private fun cropMetaText(item: IllustratedBookItem, isConnected: Boolean): String {
-    if (canPurchaseIllustratedSeed(item, isConnected)) return "购买种子"
+    if (canPurchaseIllustratedSeed(item, isConnected)) {
+        return if (item.unlocked) "已收集" else "未收集"
+    }
     val seed = item.shopSeed
     return when {
         seed?.unknownMeta == true -> "其他途径"
         seed?.requiresUnlockCard == true -> "需解锁卡"
         seed?.locked == true -> if (seed.requiredLevel > 0) "${seed.requiredLevel}级解锁" else "未解锁"
-        seed?.soldOut == true -> "已达限购"
-        item.unlocked -> "已收藏"
-        else -> "未收藏"
+        seed?.soldOut == true || seed?.remainingPurchaseCount == 0 -> "已达限购"
+        item.unlocked -> "已收集"
+        else -> "未收集"
     }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun CropItemDetailSheet(
+internal fun CropItemDetailSheet(
     item: IllustratedBookItem,
     goldBalance: Long,
     isConnected: Boolean,
     busy: Boolean,
+    seedShopMode: Boolean = false,
     onPurchase: (Int) -> Unit,
     onDismiss: () -> Unit,
 ) {
@@ -1155,6 +1285,26 @@ private fun CropItemDetailSheet(
     val maxBuy = minOf(affordMax, limitMax)
     var requestedCount by remember(item.seedId) { mutableIntStateOf(1) }
     val count = if (maxBuy > 0) requestedCount.coerceIn(1, maxBuy) else 0
+    val subtitleText = if (seedShopMode) {
+        when {
+            seed == null -> "商店种子"
+            seed.requiresUnlockCard && seed.requiredLevel > 0 -> "Lv.${seed.requiredLevel} 解锁 · 需解锁卡"
+            seed.requiresUnlockCard -> "需使用种子解锁卡"
+            seed.requiredLevel > 0 -> "Lv.${seed.requiredLevel} 解锁"
+            else -> "无等级限制"
+        }
+    } else {
+        if (item.unlocked) "已收集 · 进度 ${item.progress}" else "未收集"
+    }
+    val subtitleColor = if (seedShopMode) {
+        when {
+            seed == null -> apple.secondaryText
+            seed.locked || seed.requiresUnlockCard -> apple.orange
+            else -> apple.emerald
+        }
+    } else {
+        if (item.unlocked) apple.emerald else apple.secondaryText
+    }
 
     ModalBottomSheet(
         onDismissRequest = { if (!busy) onDismiss() },
@@ -1191,9 +1341,9 @@ private fun CropItemDetailSheet(
                 Column(modifier = Modifier.weight(1f)) {
                     Text(item.name, style = MaterialTheme.typography.titleLarge, color = apple.primaryText)
                     Text(
-                        text = if (item.unlocked) "已收藏 · 进度 ${item.progress}" else "未收藏",
+                        text = subtitleText,
                         style = MaterialTheme.typography.bodySmall,
-                        color = if (item.unlocked) apple.emerald else apple.secondaryText,
+                        color = subtitleColor,
                     )
                 }
             }
@@ -1211,11 +1361,11 @@ private fun CropItemDetailSheet(
                     ) {
                         Text(
                             text = when {
-                                buyable -> "每批 ${seed.itemCount} 颗 · 单价 ${formatNumber(unitPrice)} 金币"
+                                buyable -> "每批 ${seed.itemCount} 颗 · 每批 ${formatNumber(unitPrice)} 金币"
                                 seed.unknownMeta -> "该种子需通过活动或其他途径获取"
                                 seed.requiresUnlockCard -> "需使用对应的种子解锁卡后才可购买"
                                 seed.locked -> if (seed.requiredLevel > 0) "需农场达到 ${seed.requiredLevel} 级后解锁购买" else "当前尚未满足商店解锁条件"
-                                seed.soldOut -> "当前商店已达到限购上限"
+                                seed.soldOut || seed.remainingPurchaseCount == 0 -> "当前商店已达到限购上限"
                                 else -> "商店暂不可直接购买"
                             },
                             style = MaterialTheme.typography.bodyMedium,

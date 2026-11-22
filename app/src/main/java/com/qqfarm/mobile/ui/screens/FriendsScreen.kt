@@ -23,13 +23,16 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Block
 import androidx.compose.material.icons.rounded.BugReport
 import androidx.compose.material.icons.rounded.ChevronRight
 import androidx.compose.material.icons.rounded.CleaningServices
+import androidx.compose.material.icons.rounded.Grass
 import androidx.compose.material.icons.rounded.Group
 import androidx.compose.material.icons.rounded.History
 import androidx.compose.material.icons.rounded.Person
@@ -62,9 +65,12 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.qqfarm.mobile.data.model.FriendBlacklistItem
 import com.qqfarm.mobile.data.model.FriendItem
 import com.qqfarm.mobile.data.model.GameSpace
@@ -80,12 +86,15 @@ import com.qqfarm.mobile.ui.components.AppleEmptyState
 import com.qqfarm.mobile.ui.components.AppleLoadingState
 import com.qqfarm.mobile.ui.components.AppleGroupedCard
 import com.qqfarm.mobile.ui.components.AppleHairlineDivider
+import com.qqfarm.mobile.ui.components.AppleProgressBar
+import com.qqfarm.mobile.ui.components.AppleQuantityStepper
 import com.qqfarm.mobile.ui.components.AppleSegmentedControl
 import com.qqfarm.mobile.ui.components.AppleStatusPill
 import com.qqfarm.mobile.ui.components.RanchQuoteConfirmSheet
 import com.qqfarm.mobile.ui.components.RemoteAssetImage
 import com.qqfarm.mobile.ui.components.formatCompactCount
 import com.qqfarm.mobile.ui.components.formatDurationSec
+import com.qqfarm.mobile.ui.components.formatNumber
 import com.qqfarm.mobile.ui.state.SessionUiState
 import com.qqfarm.mobile.ui.theme.LocalAppAppearance
 import com.qqfarm.mobile.ui.theme.LocalAppleColors
@@ -1060,16 +1069,19 @@ private fun RanchFriendDetailSheet(
     var snapshot by remember(accountId, friend.gid) { mutableStateOf<RanchViewSnapshot?>(null) }
     var errorMsg by remember(accountId, friend.gid) { mutableStateOf("") }
     var pendingOp by remember(accountId, friend.gid) { mutableStateOf<PendingRanchFriendOp?>(null) }
+    var showGrassSheet by remember(accountId, friend.gid) { mutableStateOf(false) }
 
     suspend fun loadDetail() {
         loading = true
         errorMsg = ""
         try {
             val loaded = apiClient.fetchRanchView(accountId, "friends", hostGid = friend.gid)
-            if (loaded.friendRanch == null) throw ApiException("未返回好友牧场数据")
+            val detail = loaded.friendRanch ?: throw ApiException("未返回好友牧场数据")
             snapshot = loaded
+            if (detail.feedMachine == null) showGrassSheet = false
         } catch (e: ApiException) {
             snapshot = null
+            showGrassSheet = false
             errorMsg = e.message
         } finally {
             loading = false
@@ -1137,22 +1149,27 @@ private fun RanchFriendDetailSheet(
                     fallbackIcon = Icons.Rounded.Person,
                     contentScale = ContentScale.Crop,
                     modifier = Modifier
-                        .size(46.dp)
+                        .size(42.dp)
                         .clip(CircleShape)
                         .background(apple.track),
                 )
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(friend.name, style = MaterialTheme.typography.titleLarge, color = apple.primaryText)
-                    ranch?.let { d ->
-                        FlowRow(
-                            horizontalArrangement = Arrangement.spacedBy(6.dp),
-                            verticalArrangement = Arrangement.spacedBy(4.dp),
-                        ) {
-                            AppleStatusPill("牧场 Lv.${d.level}", spaceAccent(GameSpace.RANCH), showDot = false)
-                            AppleStatusPill("可抚摸 ${d.strokeRemaining} 次", apple.blue, showDot = false)
-                            AppleStatusPill("可放蚊子 ${d.mosquitoRemaining} 次", apple.indigo, showDot = false)
-                        }
-                    }
+                Column(
+                    modifier = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(2.dp),
+                ) {
+                    Text(
+                        text = friend.name,
+                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                        color = apple.primaryText,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    Text(
+                        text = "GID ${friend.gid}",
+                        style = MaterialTheme.typography.bodySmall.copy(fontFeatureSettings = "tnum"),
+                        color = apple.secondaryText,
+                        maxLines = 1,
+                    )
                 }
                 IconButton(onClick = { scope.launch { loadDetail() } }, enabled = !loading && !busy) {
                     if (loading && ranch != null) {
@@ -1160,6 +1177,17 @@ private fun RanchFriendDetailSheet(
                     } else {
                         Icon(Icons.Rounded.Refresh, contentDescription = "刷新")
                     }
+                }
+            }
+            ranch?.let { d ->
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    RanchFriendMetaChip("牧场 Lv.${d.level}", spaceAccent(GameSpace.RANCH), Modifier.weight(1f))
+                    RanchFriendMetaChip("可抚摸 ${d.strokeRemaining} 次", apple.blue, Modifier.weight(1f))
+                    RanchFriendMetaChip("可放蚊子 ${d.mosquitoRemaining} 次", apple.indigo, Modifier.weight(1f))
                 }
             }
 
@@ -1213,6 +1241,69 @@ private fun RanchFriendDetailSheet(
                             }
                         }
                     }
+                    d.feedMachine?.let { fm ->
+                        item(key = "feed_machine") {
+                            val fillFraction = (fm.count.toFloat() / fm.capacity).coerceAtMost(1f)
+                            AppleGroupedCard(contentPadding = PaddingValues(14.dp)) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically,
+                                ) {
+                                    Row(
+                                        modifier = Modifier.weight(1f),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                    ) {
+                                        Icon(
+                                            Icons.Rounded.Grass,
+                                            contentDescription = null,
+                                            tint = apple.emerald,
+                                            modifier = Modifier.size(18.dp),
+                                        )
+                                        Column {
+                                            Text(
+                                                text = "牧草机 ${formatNumber(fm.count.toLong())} / ${formatNumber(fm.capacity.toLong())}",
+                                                style = MaterialTheme.typography.titleSmall.copy(fontFeatureSettings = "tnum"),
+                                                color = apple.primaryText,
+                                            )
+                                            Text(
+                                                text = d.grassAvailable?.let { "可用牧草 ${formatNumber(it)}" }
+                                                    ?: "可用牧草待确认",
+                                                style = MaterialTheme.typography.labelSmall.copy(fontFeatureSettings = "tnum"),
+                                                color = apple.secondaryText,
+                                            )
+                                        }
+                                    }
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    OutlinedButton(
+                                        onClick = { showGrassSheet = true },
+                                        enabled = actionsEnabled && d.grassGiftLimit > 0,
+                                        shape = RoundedCornerShape(10.dp),
+                                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
+                                        modifier = Modifier.height(32.dp),
+                                    ) {
+                                        Text(
+                                            text = when {
+                                                fm.remainingCapacity == 0 -> "牧草已满"
+                                                d.grassAvailable == null -> "库存待确认"
+                                                d.grassGiftLimit == 0 -> "牧草不足"
+                                                else -> "赠送牧草"
+                                            },
+                                            style = MaterialTheme.typography.labelMedium,
+                                        )
+                                    }
+                                }
+                                Spacer(modifier = Modifier.height(8.dp))
+                                AppleProgressBar(
+                                    progress = { fillFraction },
+                                    modifier = Modifier.fillMaxWidth().height(5.dp),
+                                    color = apple.emerald,
+                                    trackColor = apple.track,
+                                )
+                            }
+                        }
+                    }
                     d.career?.let { career -> item { RanchCareerStatistics(career, embedded = true) } }
                     items(d.ranches, key = { it.id }) { pen ->
                         AppleGroupedCard(contentPadding = PaddingValues(14.dp)) {
@@ -1221,21 +1312,21 @@ private fun RanchFriendDetailSheet(
                                 horizontalArrangement = Arrangement.SpaceBetween,
                                 verticalAlignment = Alignment.CenterVertically,
                             ) {
-                                Column(modifier = Modifier.weight(1f)) {
+                                Row(
+                                    modifier = Modifier.weight(1f),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                ) {
                                     Text(pen.name, style = MaterialTheme.typography.titleSmall, color = apple.primaryText)
-                                    FlowRow(
-                                        horizontalArrangement = Arrangement.spacedBy(6.dp),
-                                        verticalArrangement = Arrangement.spacedBy(4.dp),
-                                    ) {
-                                        AppleStatusPill(
-                                            "蚊子 ${pen.mosquitoes}/${pen.mosquitoLimit}",
-                                            if (pen.mosquitoes > 0) apple.indigo else apple.secondaryText,
-                                            showDot = false,
-                                        )
-                                        val stealable = pen.shelves.count { it.canSteal }
-                                        if (stealable > 0) AppleStatusPill("可偷取 $stealable", apple.green, showDot = false)
-                                    }
+                                    AppleStatusPill(
+                                        "蚊子 ${pen.mosquitoes}/${pen.mosquitoLimit}",
+                                        if (pen.mosquitoes > 0) apple.indigo else apple.secondaryText,
+                                        showDot = false,
+                                    )
+                                    val stealable = pen.shelves.count { it.canSteal }
+                                    if (stealable > 0) AppleStatusPill("可偷 $stealable", apple.green, showDot = false)
                                 }
+                                Spacer(modifier = Modifier.width(8.dp))
                                 OutlinedButton(
                                     onClick = {
                                         requestQuote(
@@ -1246,10 +1337,11 @@ private fun RanchFriendDetailSheet(
                                     enabled = actionsEnabled && pen.mosquitoRoom > 0 && d.mosquitoRemaining > 0,
                                     shape = RoundedCornerShape(10.dp),
                                     contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
+                                    modifier = Modifier.height(32.dp),
                                 ) {
                                     Icon(Icons.Rounded.BugReport, contentDescription = null, modifier = Modifier.size(15.dp))
                                     Spacer(modifier = Modifier.width(4.dp))
-                                    Text("放蚊子", style = MaterialTheme.typography.labelMedium)
+                                    Text("放蚊子", style = MaterialTheme.typography.labelMedium, maxLines = 1)
                                 }
                             }
 
@@ -1368,5 +1460,179 @@ private fun RanchFriendDetailSheet(
                 }
             },
         )
+    }
+
+    val feedMachine = ranch?.feedMachine
+    val grassAvailable = ranch?.grassAvailable
+    if (showGrassSheet && ranch != null && feedMachine != null && grassAvailable != null && ranch.grassGiftLimit > 0) {
+        RanchFriendGrassSheet(
+            friendName = friend.name,
+            grassAvailable = grassAvailable,
+            grassRoom = feedMachine.remainingCapacity,
+            maxCount = ranch.grassGiftLimit,
+            enabled = actionsEnabled,
+            onDismiss = { showGrassSheet = false },
+            onSubmit = { count ->
+                showGrassSheet = false
+                requestQuote(
+                    "addGrass",
+                    JSONObject()
+                        .put("hostGid", friend.gid)
+                        .put("facilityId", feedMachine.id)
+                        .put("count", count),
+                )
+            },
+        )
+    }
+}
+
+@Composable
+private fun RanchFriendMetaChip(
+    text: String,
+    color: Color,
+    modifier: Modifier = Modifier,
+) {
+    Surface(
+        modifier = modifier,
+        shape = RoundedCornerShape(10.dp),
+        color = color.copy(alpha = 0.13f),
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 6.dp, vertical = 6.dp),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(
+                text = text,
+                style = MaterialTheme.typography.labelSmall.copy(
+                    fontSize = 11.5.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    fontFeatureSettings = "tnum",
+                ),
+                color = color,
+                maxLines = 1,
+                softWrap = false,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
+@Composable
+private fun RanchFriendGrassSheet(
+    friendName: String,
+    grassAvailable: Long,
+    grassRoom: Int,
+    maxCount: Int,
+    enabled: Boolean,
+    onDismiss: () -> Unit,
+    onSubmit: (Int) -> Unit,
+) {
+    val apple = LocalAppleColors.current
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    var requestedCount by remember(friendName, maxCount) { mutableIntStateOf(1) }
+    val count = requestedCount.coerceIn(1, maxCount.coerceAtLeast(1))
+    val quickCounts = remember(maxCount, grassRoom) {
+        buildList {
+            if (maxCount > 10) add(10 to "10 份")
+            if (maxCount > 100) add(100 to "100 份")
+            val label = if (maxCount == grassRoom) "放满" else "最大"
+            add(maxCount to "$label ($maxCount)")
+        }
+    }
+
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = sheetState,
+        containerColor = apple.card,
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .navigationBarsPadding()
+                .heightIn(max = 560.dp)
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 20.dp, vertical = 8.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp),
+        ) {
+            Text(
+                text = "向 $friendName 赠送牧草",
+                style = MaterialTheme.typography.titleLarge,
+                color = apple.primaryText,
+            )
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                RemoteAssetImage(
+                    url = "/game-config/seed_images_named/seed_images/7001.png",
+                    contentDescription = "牧草",
+                    fallbackIcon = Icons.Rounded.Grass,
+                    modifier = Modifier
+                        .size(44.dp)
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(apple.elevated)
+                        .padding(4.dp),
+                )
+                Column(modifier = Modifier.weight(1f)) {
+                    Text("牧草", style = MaterialTheme.typography.titleSmall, color = apple.primaryText)
+                    Text(
+                        text = "可用牧草 ${formatNumber(grassAvailable)} · 还可放入 ${formatNumber(grassRoom.toLong())}",
+                        style = MaterialTheme.typography.bodySmall.copy(fontFeatureSettings = "tnum"),
+                        color = apple.secondaryText,
+                    )
+                }
+            }
+
+            if (quickCounts.isNotEmpty()) {
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    quickCounts.forEach { (preset, label) ->
+                        AppleFilterChip(
+                            selected = count == preset,
+                            onClick = { requestedCount = preset },
+                            label = { Text(label) },
+                        )
+                    }
+                }
+            }
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text("选择数量", style = MaterialTheme.typography.titleSmall, color = apple.primaryText)
+                AppleQuantityStepper(
+                    value = count,
+                    min = 1,
+                    max = maxCount,
+                    onChange = { requestedCount = it },
+                    enabled = enabled,
+                )
+            }
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                OutlinedButton(
+                    onClick = onDismiss,
+                    shape = RoundedCornerShape(14.dp),
+                    modifier = Modifier.weight(1f),
+                ) { Text("取消") }
+                Button(
+                    onClick = { onSubmit(count) },
+                    enabled = enabled && count > 0,
+                    shape = RoundedCornerShape(14.dp),
+                    modifier = Modifier.weight(1f),
+                ) { Text("下一步") }
+            }
+            Spacer(modifier = Modifier.height(12.dp))
+        }
     }
 }

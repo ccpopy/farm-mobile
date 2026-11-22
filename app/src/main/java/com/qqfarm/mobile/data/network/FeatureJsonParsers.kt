@@ -58,6 +58,7 @@ import com.qqfarm.mobile.data.model.RanchBookData
 import com.qqfarm.mobile.data.model.RanchBookGiantLevel
 import com.qqfarm.mobile.data.model.RanchBookMutationRule
 import com.qqfarm.mobile.data.model.RanchFriendDetail
+import com.qqfarm.mobile.data.model.RanchFriendFeedMachine
 import com.qqfarm.mobile.data.model.RanchFriendPen
 import com.qqfarm.mobile.data.model.RanchFriendShelf
 import com.qqfarm.mobile.data.model.RanchFriendSummary
@@ -577,6 +578,15 @@ object FeatureJsonParsers {
                 }
             }
             val stealableShelves = ranches.sumOf { pen -> pen.shelves.count { it.canSteal } }
+            val feedMachine = frObj.optJSONObject("feedMachine")?.let { machine ->
+                val id = machine.optStringClean("id")
+                val count = machine.optStringClean("count").toIntOrNull()
+                val capacity = machine.optStringClean("capacity").toIntOrNull()
+                if ((id.toULongOrNull() ?: 0uL) > 0uL && count != null && count >= 0 && capacity != null && capacity > 0) {
+                    RanchFriendFeedMachine(id, count, capacity)
+                } else null
+            }
+            val grassAvailable = frObj.optStringClean("grassAvailable").toLongOrNull()?.coerceAtLeast(0L)
             RanchFriendDetail(
                 gid = frObj.optStringClean("gid"),
                 level = frObj.optIntFlex("level"),
@@ -585,6 +595,8 @@ object FeatureJsonParsers {
                 strokeRemaining = frObj.optIntFlex("strokeRemaining"),
                 mosquitoRemaining = frObj.optIntFlex("mosquitoRemaining"),
                 cleanableHazards = frObj.optIntFlex("cleanableHazards"),
+                feedMachine = feedMachine,
+                grassAvailable = grassAvailable,
                 career = JsonParsers.parseRanchCareer(frObj.optJSONObject("career")),
                 notice = frObj.optStringClean("notice"),
                 sceneRestored = sceneRestored,
@@ -1558,6 +1570,43 @@ object FeatureJsonParsers {
         }
         if (received <= 0L) throw ApiException("种子购买结果未确认，请刷新背包后核对")
         return received
+    }
+
+    fun parseSeedShopItems(arr: JSONArray?): List<IllustratedBookItem> {
+        if (arr == null) return emptyList()
+        return buildList(arr.length()) {
+            for (i in 0 until arr.length()) {
+                val s = arr.optJSONObject(i) ?: continue
+                val seedId = s.optIntFlex("seedId", s.optIntFlex("id"))
+                val goodsId = s.optIntFlex("goodsId")
+                val name = s.optStringClean("name")
+                if (seedId <= 0 || goodsId <= 0 || name.isBlank() || s.optBoolFlex("unknownMeta")) continue
+                val remaining = if (s.has("remainingPurchaseCount") && !s.isNull("remainingPurchaseCount")) {
+                    s.optIntFlex("remainingPurchaseCount")
+                } else null
+                val shopSeed = IllustratedShopSeed(
+                    seedId = seedId,
+                    goodsId = goodsId,
+                    name = name,
+                    price = s.optLongFlex("price"),
+                    requiredLevel = s.optIntFlex("requiredLevel", s.optIntFlex("level")),
+                    locked = s.optBoolFlex("locked"),
+                    soldOut = s.optBoolFlex("soldOut"),
+                    itemCount = s.optIntFlex("itemCount", 1).coerceAtLeast(1),
+                    remainingPurchaseCount = remaining,
+                    requiresUnlockCard = s.optBoolFlex("requiresUnlockCard"),
+                )
+                add(
+                    IllustratedBookItem(
+                        seedId = seedId,
+                        name = name,
+                        image = s.optStringClean("image").ifBlank { "/game-config/seed_images_named/seed_images/$seedId.png" },
+                        unlocked = !shopSeed.locked,
+                        shopSeed = shopSeed,
+                    )
+                )
+            }
+        }
     }
 
     fun parseIllustratedClaimResult(obj: JSONObject): IllustratedClaimResult {

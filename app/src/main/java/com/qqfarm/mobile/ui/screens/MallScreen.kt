@@ -26,6 +26,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.CardGiftcard
+import androidx.compose.material.icons.rounded.Eco
 import androidx.compose.material.icons.rounded.HourglassEmpty
 import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.Pets
@@ -64,6 +65,7 @@ import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.qqfarm.mobile.data.model.CommerceItem
+import com.qqfarm.mobile.data.model.IllustratedBookItem
 import com.qqfarm.mobile.data.model.RanchQuote
 import com.qqfarm.mobile.data.model.GameSpace
 import com.qqfarm.mobile.data.model.MallCatalog
@@ -112,6 +114,7 @@ fun MallScreen(
     onSelectShopTab: (Int) -> Unit,
     busy: State<Boolean>,
     onBusyChange: (Boolean) -> Unit,
+    onRefreshOverview: () -> Unit = {},
     onMessage: (String) -> Unit,
 ) {
     DisposableEffect(Unit) {
@@ -132,10 +135,11 @@ fun MallScreen(
         FarmMallContent(
             session = session,
             apiClient = apiClient,
-            selectedTab = selectedShopTab.coerceIn(0, 4),
+            selectedTab = selectedShopTab.coerceIn(0, 5),
             onSelectTab = onSelectShopTab,
             busyState = busy,
             onBusyChange = onBusyChange,
+            onRefreshOverview = onRefreshOverview,
             onMessage = onMessage,
         )
     }
@@ -150,6 +154,7 @@ private fun FarmMallContent(
     onSelectTab: (Int) -> Unit,
     busyState: State<Boolean>,
     onBusyChange: (Boolean) -> Unit,
+    onRefreshOverview: () -> Unit = {},
     onMessage: (String) -> Unit,
 ) {
     val apple = LocalAppleColors.current
@@ -161,12 +166,14 @@ private fun FarmMallContent(
     var refreshing by remember(accountId, selectedTab, isConnected) { mutableStateOf(false) }
     var catalog by remember(accountId, selectedTab, isConnected) { mutableStateOf<MallCatalog?>(null) }
     var mystery by remember(accountId, selectedTab, isConnected) { mutableStateOf<MysteryShopState?>(null) }
+    var seedItems by remember(accountId, selectedTab, isConnected) { mutableStateOf<List<IllustratedBookItem>?>(null) }
     var loadError by remember(accountId, selectedTab, isConnected) { mutableStateOf("") }
 
     var filterIdx by remember { mutableIntStateOf(0) }
     var search by remember { mutableStateOf("") }
     var selectedGoods by remember(selectedTab, isConnected) { mutableStateOf<MallGoods?>(null) }
     var selectedMystery by remember(selectedTab, isConnected) { mutableStateOf<MysteryShopState?>(null) }
+    var selectedSeedItem by remember(accountId, selectedTab, isConnected) { mutableStateOf<IllustratedBookItem?>(null) }
 
     var clockTickMs by remember { mutableLongStateOf(SystemClock.elapsedRealtime()) }
     LaunchedEffect(Unit) {
@@ -177,13 +184,14 @@ private fun FarmMallContent(
     }
 
     val slotTypeForTab = when (selectedTab) {
-        1 -> 5
-        2 -> 0
-        3 -> 4
+        2 -> 5
+        3 -> 0
+        4 -> 4
         else -> 1
     }
-    val isPropsShop = selectedTab == 2
-    val isMysteryTab = selectedTab == 4
+    val isSeedShopTab = selectedTab == 1
+    val isPropsShop = selectedTab == 3
+    val isMysteryTab = selectedTab == 5
 
     suspend fun loadCurrentShop() {
         if (!isConnected || refreshing) return
@@ -191,14 +199,23 @@ private fun FarmMallContent(
         loadError = ""
         selectedGoods = null
         selectedMystery = null
+        selectedSeedItem = null
         try {
-            if (isMysteryTab) {
-                mystery = apiClient.fetchMysteryShop(accountId)
-            } else {
-                catalog = apiClient.fetchMallCatalog(accountId, slotTypeForTab, isPropsShop)
+            when {
+                isMysteryTab -> mystery = apiClient.fetchMysteryShop(accountId)
+                isSeedShopTab -> {
+                    seedItems = apiClient.fetchSeedShopItems(accountId).sortedWith(
+                        compareBy<IllustratedBookItem>(
+                            { it.shopSeed?.requiredLevel ?: Int.MAX_VALUE },
+                            { it.seedId },
+                        )
+                    )
+                }
+                else -> catalog = apiClient.fetchMallCatalog(accountId, slotTypeForTab, isPropsShop)
             }
         } catch (e: ApiException) {
             loadError = e.message
+            if (isSeedShopTab) seedItems = null
             if (catalog != null || mystery != null) onMessage(e.message)
         } finally {
             refreshing = false
@@ -212,7 +229,7 @@ private fun FarmMallContent(
 
     Column(modifier = Modifier.fillMaxSize()) {
         AppleScrollablePills(
-            options = listOf("游戏商城", "限时商店", "道具商店", "SVIP", "神秘商人"),
+            options = listOf("游戏商城", "种子商店", "限时商店", "道具商店", "SVIP", "神秘商人"),
             selectedIndex = selectedTab,
             onSelect = { idx ->
                 if (!purchasing) onSelectTab(idx)
@@ -222,7 +239,7 @@ private fun FarmMallContent(
             modifier = Modifier
                 .fillMaxWidth()
                 .weight(1f)
-                .swipeToSwitchTabs(selectedTab, 5, !purchasing) { idx -> onSelectTab(idx) },
+                .swipeToSwitchTabs(selectedTab, 6, !purchasing) { idx -> onSelectTab(idx) },
         ) {
 
             if (!isConnected) {
@@ -237,8 +254,8 @@ private fun FarmMallContent(
                 }
             } else {
                 PullToRefreshBox(
-                isRefreshing = refreshing && (catalog != null || mystery != null),
-                onRefresh = { scope.launch { loadCurrentShop() } },
+                isRefreshing = refreshing && (catalog != null || mystery != null || seedItems != null),
+                onRefresh = { if (!purchasing) scope.launch { loadCurrentShop() } },
                 modifier = Modifier.fillMaxSize(),
             ) {
                 if (isMysteryTab) {
@@ -402,6 +419,34 @@ private fun FarmMallContent(
                             }
                         }
                     }
+                } else if (isSeedShopTab) {
+                    val seeds = seedItems
+                    if (seeds == null) {
+                        if (loadError.isBlank()) {
+                            AppleLoadingState()
+                            return@PullToRefreshBox
+                        }
+                        LazyColumn(modifier = Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp)) {
+                            item {
+                                AppleGroupedCard {
+                                    AppleEmptyState(
+                                        icon = Icons.Rounded.Eco,
+                                        title = "种子商店读取失败",
+                                        subtitle = loadError,
+                                        actionLabel = "重新读取",
+                                        onAction = { scope.launch { loadCurrentShop() } },
+                                    )
+                                }
+                            }
+                        }
+                        return@PullToRefreshBox
+                    }
+                    SeedShopGridContent(
+                        items = seeds,
+                        goldBalance = session.status?.gold ?: 0L,
+                        isConnected = isConnected,
+                        onSelectItem = { if (!refreshing && !purchasing) selectedSeedItem = it },
+                    )
                 } else {
                     val cat = catalog
                     if (cat == null) {
@@ -781,6 +826,41 @@ private fun FarmMallContent(
                 Spacer(modifier = Modifier.height(12.dp))
             }
         }
+    }
+
+    selectedSeedItem?.let { item ->
+        val seed = item.shopSeed
+        CropItemDetailSheet(
+            item = item,
+            goldBalance = session.status?.gold ?: 0L,
+            isConnected = isConnected,
+            busy = purchasing,
+            seedShopMode = true,
+            onDismiss = { if (!purchasing) selectedSeedItem = null },
+            onPurchase = { count ->
+                if (purchasing || refreshing || !isConnected || seed == null) return@CropItemDetailSheet
+                onBusyChange(true)
+                scope.launch {
+                    try {
+                        runCatching {
+                            apiClient.purchaseIllustratedSeed(accountId, seed.goodsId, seed.seedId, count)
+                        }.onSuccess { received ->
+                            selectedSeedItem = null
+                            onRefreshOverview()
+                            onMessage("已购入 ${item.name} ×${formatNumber(received)} 颗")
+                            loadCurrentShop()
+                        }.onFailure { err ->
+                            if (err is CancellationException) throw err
+                            selectedSeedItem = null
+                            onMessage(err.message ?: "种子购买失败：${item.name}")
+                            loadCurrentShop()
+                        }
+                    } finally {
+                        onBusyChange(false)
+                    }
+                }
+            },
+        )
     }
 }
 

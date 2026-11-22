@@ -32,6 +32,7 @@ fun DiscoverScreen(
     mallTab: Int,
     onSelectMallTab: (Int) -> Unit,
     onFullScreenOverlayChange: (Boolean) -> Unit,
+    onRefreshOverview: () -> Unit = {},
     onMessage: (String) -> Unit,
 ) {
     val apple = LocalAppleColors.current
@@ -98,6 +99,7 @@ fun DiscoverScreen(
                     onSelectShopTab = onSelectMallTab,
                     busy = mallBusy,
                     onBusyChange = { mallBusy.value = it },
+                    onRefreshOverview = onRefreshOverview,
                     onMessage = onMessage,
                 )
                 2 -> SolarCalendarScreen(

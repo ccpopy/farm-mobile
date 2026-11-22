@@ -386,6 +386,7 @@ fun FarmNavHost(viewModel: AppSessionViewModel) {
                                 mallTab = mallSubTab,
                                 onSelectMallTab = { mallSubTab = it },
                                 onFullScreenOverlayChange = { hideMainChrome = it },
+                                onRefreshOverview = { viewModel.refreshOverview() },
                                 onMessage = { msg -> viewModel.emitMessage(msg) },
                             )
 
