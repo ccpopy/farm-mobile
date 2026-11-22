@@ -122,8 +122,8 @@ private val LightColorScheme = lightColorScheme(
 )
 
 private val DarkColorScheme = darkColorScheme(
-    primary = AppleEmeraldDark,
-    onPrimary = Color(0xFF00391A),
+    primary = AppleEmerald,
+    onPrimary = Color.White,
     primaryContainer = Color(0xFF123D24),
     onPrimaryContainer = Color(0xFFA7F3C1),
     secondary = AppleBlueDark,
@@ -310,7 +310,7 @@ fun FarmBotTheme(
         baseScheme
     }
     val colorScheme = if (customAccent != null) {
-        val primary = if (darkTheme) lerp(customAccent, Color.White, 0.16f) else customAccent
+        val primary = if (darkTheme) lerp(customAccent, Color.White, 0.08f) else customAccent
         val onPrimary = primary.onAccent()
         val container = if (darkTheme) lerp(tonedExtended.card, primary, 0.24f) else lerp(Color.White, primary, 0.14f)
         val onContainer = if (darkTheme) lerp(primary, Color.White, 0.42f) else lerp(primary, Color.Black, 0.32f)

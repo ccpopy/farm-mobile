@@ -62,10 +62,14 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
+import androidx.compose.ui.input.nestedscroll.NestedScrollSource
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Velocity
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.qqfarm.mobile.data.prefs.StoredConfig
@@ -100,6 +104,7 @@ import com.qqfarm.mobile.ui.theme.ranchDefaultLightBackground
 import com.qqfarm.mobile.ui.theme.onAccent
 import com.qqfarm.mobile.ui.theme.resolveLandCardColors
 import com.qqfarm.mobile.ui.theme.resolveRanchAnimalCardColors
+import com.qqfarm.mobile.ui.theme.swatchSelectionTint
 import com.qqfarm.mobile.ui.theme.webLandLightBackground
 import java.util.Locale
 import kotlin.math.PI
@@ -148,6 +153,16 @@ fun CustomAppearanceSheet(
     val apple = LocalAppleColors.current
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val isCustom = themeMode == StoredConfig.THEME_CUSTOM
+    val scrollBoundary = remember {
+        // 滚到内容顶部后，吸收剩余下滑距离，避免它继续拖动抽屉。
+        object : NestedScrollConnection {
+            override fun onPostScroll(consumed: Offset, available: Offset, source: NestedScrollSource): Offset =
+                Offset(0f, available.y.coerceAtLeast(0f))
+
+            override suspend fun onPostFling(consumed: Velocity, available: Velocity): Velocity =
+                Velocity(0f, available.y.coerceAtLeast(0f))
+        }
+    }
 
     var editingAccentWheel by remember { mutableStateOf(false) }
     var editingRanchAccentWheel by remember { mutableStateOf(false) }
@@ -224,6 +239,7 @@ fun CustomAppearanceSheet(
             Column(
                 modifier = Modifier
                     .weight(1f, fill = false)
+                    .nestedScroll(scrollBoundary)
                     .verticalScroll(rememberScrollState())
                     .padding(horizontal = 16.dp, vertical = 8.dp),
                 verticalArrangement = Arrangement.spacedBy(14.dp),
@@ -893,7 +909,7 @@ fun CustomAppearanceSheet(
 private fun AppearanceLivePreviewCard(themeMode: String) {
     val apple = LocalAppleColors.current
     val appearance = LocalAppAppearance.current
-    val farmAccent = apple.emerald
+    val farmAccent = MaterialTheme.colorScheme.primary
     val ranchAccent = appearance.ranchAccent ?: apple.orange
     val modeSummary = when (themeMode) {
         StoredConfig.THEME_LIGHT -> "浅色"
@@ -1222,6 +1238,7 @@ private fun AccentSwatchButton(
     onClick: () -> Unit,
 ) {
     val apple = LocalAppleColors.current
+    val selectionTint = color.swatchSelectionTint()
     Column(
         modifier = modifier
             .clip(RoundedCornerShape(10.dp))
@@ -1236,7 +1253,7 @@ private fun AccentSwatchButton(
                 .clip(CircleShape)
                 .background(color)
                 .then(
-                    if (selected) Modifier.border(2.5.dp, apple.primaryText, CircleShape) else Modifier
+                    if (selected) Modifier.border(2.5.dp, selectionTint, CircleShape) else Modifier
                 ),
             contentAlignment = Alignment.Center,
         ) {
@@ -1244,7 +1261,7 @@ private fun AccentSwatchButton(
                 Icon(
                     imageVector = Icons.Rounded.Check,
                     contentDescription = "已选中",
-                    tint = color.onAccent(),
+                    tint = selectionTint,
                     modifier = Modifier.size(18.dp),
                 )
             }
@@ -1270,6 +1287,7 @@ private fun AccentWheelButton(
     onClick: () -> Unit,
 ) {
     val apple = LocalAppleColors.current
+    val selectionTint = activeColor?.swatchSelectionTint() ?: Color.White
     val wheelColors = remember {
         listOf(Color.Red, Color.Yellow, Color.Green, Color.Cyan, Color.Blue, Color.Magenta, Color.Red)
     }
@@ -1293,14 +1311,14 @@ private fun AccentWheelButton(
                     }
                 )
                 .then(
-                    if (selected) Modifier.border(2.5.dp, apple.primaryText, CircleShape) else Modifier
+                    if (selected) Modifier.border(2.5.dp, selectionTint, CircleShape) else Modifier
                 ),
             contentAlignment = Alignment.Center,
         ) {
             Icon(
                 imageVector = if (selected) Icons.Rounded.Check else Icons.Rounded.ColorLens,
-                contentDescription = "颜色环选色",
-                tint = activeColor?.onAccent() ?: Color.White,
+                contentDescription = if (selected) "已选中" else "颜色环选色",
+                tint = selectionTint,
                 modifier = Modifier.size(18.dp),
             )
         }

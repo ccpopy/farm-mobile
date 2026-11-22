@@ -256,6 +256,8 @@ fun resolveEffectiveAppearance(
 internal fun Color.onAccent(): Color =
     if (luminance() > 0.179f) Color.Black else Color.White
 
+internal fun Color.swatchSelectionTint(): Color = lerp(onAccent(), this, 0.28f)
+
 internal fun CustomAppearanceConfig.resolveRanchAccent(primary: Color, dark: Boolean): Color? {
     if (ranchAccentFollowPrimary) return primary
     val custom = ranchAccentColorArgb?.let { Color(it.toInt()) } ?: return null

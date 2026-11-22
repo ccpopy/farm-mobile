@@ -20,8 +20,8 @@ val AppleDarkLabel = Color(0xFFFFFFFF)
 val AppleDarkSecondaryLabel = Color(0xFF98989F)
 
 // Botanical Emerald & Apple Semantic Tints
-val AppleEmerald = Color(0xFF1B8A5A)
-val AppleEmeraldDark = Color(0xFF30D158)
+val AppleEmerald = Color(0xFF1B8356)
+val AppleEmeraldDark = Color(0xFF24A068)
 val AppleBlue = Color(0xFF007AFF)
 val AppleBlueDark = Color(0xFF0A84FF)
 val AppleGreen = Color(0xFF34C759)

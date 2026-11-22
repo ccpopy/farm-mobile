@@ -866,7 +866,7 @@ fun AppleSpaceSwitcher(
         ) {
             GameSpace.entries.forEach { entry ->
                 val selected = entry == space
-                val accent = spaceAccent(entry)
+                val accent = if (entry == GameSpace.FARM) MaterialTheme.colorScheme.primary else spaceAccent(entry)
                 val container by animateColorAsState(
                     targetValue = if (selected) accent else Color.Transparent,
                     label = "spaceContainer",
