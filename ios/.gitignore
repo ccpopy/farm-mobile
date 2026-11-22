@@ -1,0 +1,22 @@
+# Xcode
+DerivedData/
+build/
+*.xcuserstate
+xcuserdata/
+*.moved-aside
+*.xccheckout
+*.xcscmblueprint
+.DS_Store
+
+# Swift Package Manager
+.build/
+.swiftpm/
+
+# Local secrets
+*.xcconfig.local
+
+# Push relay
+server/push-relay/node_modules/
+server/push-relay/data/
+server/push-relay/certs/
+server/push-relay/.env
