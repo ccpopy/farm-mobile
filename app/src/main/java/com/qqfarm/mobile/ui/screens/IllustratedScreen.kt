@@ -1457,17 +1457,17 @@ private fun IllustratedRewardsSheet(
     val apple = LocalAppleColors.current
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val isMutant = book.type == 2
-    val listState = rememberLazyListState()
-    val buffByLevel = remember(book.buffs) { book.buffs.groupBy { it.level } }
-
-    LaunchedEffect(book.levels) {
-        val targetIdx = book.levels.indexOfFirst { it.canClaim && !it.claimed }
-            .takeIf { it >= 0 }
-            ?: book.levels.indexOfFirst { !it.claimed }
-        if (targetIdx > 0) {
-            listState.scrollToItem(targetIdx)
-        }
+    val initialIndex = remember(book) {
+        val claimable = book.levels.indexOfFirst { it.canClaim && !it.claimed }
+        when {
+            claimable >= 0 -> claimable
+            !isMutant -> book.levels.indexOfFirst { !it.claimed }
+            book.levels.isNotEmpty() -> book.levels.indexOfLast { it.level <= book.level }
+            else -> book.buffs.indexOfLast { it.level <= book.level }
+        }.coerceAtLeast(0)
     }
+    val listState = rememberLazyListState(initialFirstVisibleItemIndex = initialIndex)
+    val buffByLevel = remember(book.buffs) { book.buffs.groupBy { it.level } }
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -1514,7 +1514,7 @@ private fun IllustratedRewardsSheet(
                                     Text(buff.formattedEffect, style = MaterialTheme.typography.bodySmall, color = apple.orange)
                                 }
                                 AppleStatusPill(
-                                    text = if (reached) "已生效" else "未达成",
+                                    text = if (reached) "已达成" else "未达成",
                                     color = if (reached) apple.green else apple.secondaryText,
                                     showDot = false,
                                 )
@@ -1525,6 +1525,7 @@ private fun IllustratedRewardsSheet(
                     items(book.levels, key = { "lv_${it.level}" }) { lv ->
                         IllustratedLevelRow(
                             level = lv,
+                            reached = isMutant && lv.level <= book.level,
                             buffs = buffByLevel[lv.level].orEmpty(),
                         )
                     }
@@ -1555,12 +1556,14 @@ private fun IllustratedRewardsSheet(
 @Composable
 private fun IllustratedLevelRow(
     level: IllustratedLevel,
+    reached: Boolean,
     buffs: List<com.qqfarm.mobile.data.model.IllustratedBuff>,
 ) {
     val apple = LocalAppleColors.current
     val (statusLabel, statusColor) = when {
         level.claimed -> "已领取" to apple.green
         level.canClaim -> "可领取" to apple.orange
+        reached -> "已达成" to apple.green
         else -> "未达成" to apple.secondaryText
     }
     Surface(
