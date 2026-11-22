@@ -1,0 +1,388 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 56;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		C10000000000000000000001 /* FarmMobileApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000001 /* FarmMobileApp.swift */; };
+		C10000000000000000000002 /* Theme.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000002 /* Theme.swift */; };
+		C10000000000000000000003 /* JSONValue.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000003 /* JSONValue.swift */; };
+		C10000000000000000000004 /* Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000004 /* Models.swift */; };
+		C10000000000000000000005 /* APIClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000005 /* APIClient.swift */; };
+		C10000000000000000000006 /* Persistence.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000006 /* Persistence.swift */; };
+		C10000000000000000000007 /* SocketClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000007 /* SocketClient.swift */; };
+		C10000000000000000000008 /* Notifications.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000008 /* Notifications.swift */; };
+		C10000000000000000000009 /* AppStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000009 /* AppStore.swift */; };
+		C10000000000000000000010 /* Components.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000010 /* Components.swift */; };
+		C10000000000000000000011 /* AccountSheets.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000011 /* AccountSheets.swift */; };
+		C10000000000000000000012 /* ServerSetupView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000012 /* ServerSetupView.swift */; };
+		C10000000000000000000013 /* RootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000013 /* RootView.swift */; };
+		C10000000000000000000014 /* OverviewView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000014 /* OverviewView.swift */; };
+		C10000000000000000000015 /* FarmWorkspaceView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000015 /* FarmWorkspaceView.swift */; };
+		C10000000000000000000016 /* RanchWorkspaceView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000016 /* RanchWorkspaceView.swift */; };
+		C10000000000000000000017 /* FriendsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000017 /* FriendsView.swift */; };
+		C10000000000000000000018 /* DiscoverView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000018 /* DiscoverView.swift */; };
+		C10000000000000000000019 /* MallView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000019 /* MallView.swift */; };
+		C10000000000000000000020 /* SolarCalendarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000020 /* SolarCalendarView.swift */; };
+		C10000000000000000000021 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000021 /* SettingsView.swift */; };
+		C10000000000000000000022 /* AutomationView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000022 /* AutomationView.swift */; };
+		C10000000000000000000023 /* IllustratedView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000023 /* IllustratedView.swift */; };
+		C20000000000000000000001 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = B20000000000000000000003 /* Assets.xcassets */; };
+		C20000000000000000000002 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = B20000000000000000000004 /* PrivacyInfo.xcprivacy */; };
+		C10000000000000000000024 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000024 /* AppDelegate.swift */; };
+		C10000000000000000000025 /* PushRelayClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000025 /* PushRelayClient.swift */; };
+		C10000000000000000000026 /* BackgroundRefresh.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000026 /* BackgroundRefresh.swift */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXFileReference section */
+		B10000000000000000000001 /* FarmMobileApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FarmMobileApp.swift; sourceTree = "<group>"; };
+		B10000000000000000000002 /* Theme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Theme.swift; sourceTree = "<group>"; };
+		B10000000000000000000003 /* JSONValue.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JSONValue.swift; sourceTree = "<group>"; };
+		B10000000000000000000004 /* Models.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Models.swift; sourceTree = "<group>"; };
+		B10000000000000000000005 /* APIClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APIClient.swift; sourceTree = "<group>"; };
+		B10000000000000000000006 /* Persistence.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Persistence.swift; sourceTree = "<group>"; };
+		B10000000000000000000007 /* SocketClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SocketClient.swift; sourceTree = "<group>"; };
+		B10000000000000000000008 /* Notifications.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Notifications.swift; sourceTree = "<group>"; };
+		B10000000000000000000009 /* AppStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppStore.swift; sourceTree = "<group>"; };
+		B10000000000000000000010 /* Components.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Components.swift; sourceTree = "<group>"; };
+		B10000000000000000000011 /* AccountSheets.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccountSheets.swift; sourceTree = "<group>"; };
+		B10000000000000000000012 /* ServerSetupView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ServerSetupView.swift; sourceTree = "<group>"; };
+		B10000000000000000000013 /* RootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RootView.swift; sourceTree = "<group>"; };
+		B10000000000000000000014 /* OverviewView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OverviewView.swift; sourceTree = "<group>"; };
+		B10000000000000000000015 /* FarmWorkspaceView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FarmWorkspaceView.swift; sourceTree = "<group>"; };
+		B10000000000000000000016 /* RanchWorkspaceView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RanchWorkspaceView.swift; sourceTree = "<group>"; };
+		B10000000000000000000017 /* FriendsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FriendsView.swift; sourceTree = "<group>"; };
+		B10000000000000000000018 /* DiscoverView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DiscoverView.swift; sourceTree = "<group>"; };
+		B10000000000000000000019 /* MallView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MallView.swift; sourceTree = "<group>"; };
+		B10000000000000000000020 /* SolarCalendarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SolarCalendarView.swift; sourceTree = "<group>"; };
+		B10000000000000000000021 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
+		B10000000000000000000022 /* AutomationView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AutomationView.swift; sourceTree = "<group>"; };
+		B10000000000000000000023 /* IllustratedView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IllustratedView.swift; sourceTree = "<group>"; };
+		B20000000000000000000001 /* FarmMobile.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = FarmMobile.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		B20000000000000000000002 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		B20000000000000000000003 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		B20000000000000000000004 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
+		B10000000000000000000024 /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
+		B10000000000000000000025 /* PushRelayClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PushRelayClient.swift; sourceTree = "<group>"; };
+		B10000000000000000000026 /* BackgroundRefresh.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackgroundRefresh.swift; sourceTree = "<group>"; };
+		B20000000000000000000005 /* FarmMobile.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = FarmMobile.entitlements; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		D10000000000000000000003 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		A10000000000000000000001 = {
+			isa = PBXGroup;
+			children = (
+				A10000000000000000000003 /* FarmMobile */,
+				A10000000000000000000002 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		A10000000000000000000002 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				B20000000000000000000001 /* FarmMobile.app */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		A10000000000000000000003 /* FarmMobile */ = {
+			isa = PBXGroup;
+			children = (
+				B10000000000000000000001 /* FarmMobileApp.swift */,
+				B10000000000000000000002 /* Theme.swift */,
+				A10000000000000000000004 /* Core */,
+				A10000000000000000000005 /* Views */,
+				B20000000000000000000003 /* Assets.xcassets */,
+				B20000000000000000000004 /* PrivacyInfo.xcprivacy */,
+				B20000000000000000000005 /* FarmMobile.entitlements */,
+				B20000000000000000000002 /* Info.plist */,
+			);
+			path = FarmMobile;
+			sourceTree = "<group>";
+		};
+		A10000000000000000000004 /* Core */ = {
+			isa = PBXGroup;
+			children = (
+				B10000000000000000000003 /* JSONValue.swift */,
+				B10000000000000000000004 /* Models.swift */,
+				B10000000000000000000005 /* APIClient.swift */,
+				B10000000000000000000006 /* Persistence.swift */,
+				B10000000000000000000007 /* SocketClient.swift */,
+				B10000000000000000000008 /* Notifications.swift */,
+				B10000000000000000000009 /* AppStore.swift */,
+				B10000000000000000000024 /* AppDelegate.swift */,
+				B10000000000000000000025 /* PushRelayClient.swift */,
+				B10000000000000000000026 /* BackgroundRefresh.swift */,
+			);
+			path = Core;
+			sourceTree = "<group>";
+		};
+		A10000000000000000000005 /* Views */ = {
+			isa = PBXGroup;
+			children = (
+				B10000000000000000000010 /* Components.swift */,
+				B10000000000000000000011 /* AccountSheets.swift */,
+				B10000000000000000000012 /* ServerSetupView.swift */,
+				B10000000000000000000013 /* RootView.swift */,
+				B10000000000000000000014 /* OverviewView.swift */,
+				B10000000000000000000015 /* FarmWorkspaceView.swift */,
+				B10000000000000000000016 /* RanchWorkspaceView.swift */,
+				B10000000000000000000017 /* FriendsView.swift */,
+				B10000000000000000000018 /* DiscoverView.swift */,
+				B10000000000000000000019 /* MallView.swift */,
+				B10000000000000000000020 /* SolarCalendarView.swift */,
+				B10000000000000000000021 /* SettingsView.swift */,
+				B10000000000000000000022 /* AutomationView.swift */,
+				B10000000000000000000023 /* IllustratedView.swift */,
+			);
+			path = Views;
+			sourceTree = "<group>";
+		};
+
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		E10000000000000000000001 /* FarmMobile */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = F20000000000000000000002 /* Build configuration list for PBXNativeTarget "FarmMobile" */;
+			buildPhases = (
+				D10000000000000000000001 /* Sources */,
+				D10000000000000000000003 /* Frameworks */,
+				D10000000000000000000002 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = FarmMobile;
+			productName = FarmMobile;
+			productReference = B20000000000000000000001 /* FarmMobile.app */;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		F10000000000000000000001 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = 1;
+				LastSwiftUpdateCheck = 1600;
+				LastUpgradeCheck = 1600;
+				TargetAttributes = {
+					E10000000000000000000001 = {
+						CreatedOnToolsVersion = 16.0;
+					};
+				};
+			};
+			buildConfigurationList = F20000000000000000000001 /* Build configuration list for PBXProject "FarmMobile" */;
+			compatibilityVersion = "Xcode 14.0";
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				en,
+				Base,
+				"zh-Hans",
+			);
+			mainGroup = A10000000000000000000001;
+			productRefGroup = A10000000000000000000002 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				E10000000000000000000001 /* FarmMobile */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		D10000000000000000000002 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				C20000000000000000000001 /* Assets.xcassets in Resources */,
+				C20000000000000000000002 /* PrivacyInfo.xcprivacy in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		D10000000000000000000001 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				C10000000000000000000001 /* FarmMobileApp.swift in Sources */,
+				C10000000000000000000002 /* Theme.swift in Sources */,
+				C10000000000000000000003 /* JSONValue.swift in Sources */,
+				C10000000000000000000004 /* Models.swift in Sources */,
+				C10000000000000000000005 /* APIClient.swift in Sources */,
+				C10000000000000000000006 /* Persistence.swift in Sources */,
+				C10000000000000000000007 /* SocketClient.swift in Sources */,
+				C10000000000000000000008 /* Notifications.swift in Sources */,
+				C10000000000000000000009 /* AppStore.swift in Sources */,
+				C10000000000000000000010 /* Components.swift in Sources */,
+				C10000000000000000000011 /* AccountSheets.swift in Sources */,
+				C10000000000000000000012 /* ServerSetupView.swift in Sources */,
+				C10000000000000000000013 /* RootView.swift in Sources */,
+				C10000000000000000000014 /* OverviewView.swift in Sources */,
+				C10000000000000000000015 /* FarmWorkspaceView.swift in Sources */,
+				C10000000000000000000016 /* RanchWorkspaceView.swift in Sources */,
+				C10000000000000000000017 /* FriendsView.swift in Sources */,
+				C10000000000000000000018 /* DiscoverView.swift in Sources */,
+				C10000000000000000000019 /* MallView.swift in Sources */,
+				C10000000000000000000020 /* SolarCalendarView.swift in Sources */,
+				C10000000000000000000021 /* SettingsView.swift in Sources */,
+				C10000000000000000000022 /* AutomationView.swift in Sources */,
+				C10000000000000000000023 /* IllustratedView.swift in Sources */,
+				C10000000000000000000024 /* AppDelegate.swift in Sources */,
+				C10000000000000000000025 /* PushRelayClient.swift in Sources */,
+				C10000000000000000000026 /* BackgroundRefresh.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin XCBuildConfiguration section */
+		F30000000000000000000001 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				COPY_PHASE_STRIP = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_NO_COMMON_BLOCKS = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
+				MTL_FAST_MATH = YES;
+				SDKROOT = iphoneos;
+				SWIFT_VERSION = 5.0;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_TESTABILITY = YES;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"DEBUG=1",
+					"$(inherited)",
+				);
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				ONLY_ACTIVE_ARCH = YES;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+			};
+			name = Debug;
+		};
+		F30000000000000000000002 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				COPY_PHASE_STRIP = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_NO_COMMON_BLOCKS = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
+				MTL_FAST_MATH = YES;
+				SDKROOT = iphoneos;
+				SWIFT_VERSION = 5.0;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				VALIDATE_PRODUCT = YES;
+			};
+			name = Release;
+		};
+		F30000000000000000000003 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = FarmMobile/FarmMobile.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 17;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = FarmMobile/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 0.2.0;
+				PRODUCT_BUNDLE_IDENTIFIER = io.github.ccpopy.farmmobile;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_STRICT_CONCURRENCY = minimal;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		F30000000000000000000004 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = FarmMobile/FarmMobile.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 17;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = FarmMobile/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 0.2.0;
+				PRODUCT_BUNDLE_IDENTIFIER = io.github.ccpopy.farmmobile;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_STRICT_CONCURRENCY = minimal;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		F20000000000000000000001 /* Build configuration list for PBXProject "FarmMobile" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				F30000000000000000000001 /* Debug */,
+				F30000000000000000000002 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		F20000000000000000000002 /* Build configuration list for PBXNativeTarget "FarmMobile" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				F30000000000000000000003 /* Debug */,
+				F30000000000000000000004 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = F10000000000000000000001 /* Project object */;
+}
