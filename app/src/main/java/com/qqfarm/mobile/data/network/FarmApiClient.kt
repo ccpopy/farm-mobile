@@ -626,14 +626,21 @@ class FarmApiClient {
     }
 
     suspend fun operateFriend(accountId: String, friendGid: Long, opType: String): FriendOperationResult {
-        val json = executeJson(
-            "POST",
-            "/api/friend/$friendGid/op",
-            body = JSONObject().put("opType", opType),
-            accountIdOverride = accountId,
-            client = longPollClient,
-        )
-        return JsonParsers.parseFriendOperation(json)
+        return try {
+            val json = executeJson(
+                "POST",
+                "/api/friend/$friendGid/op",
+                body = JSONObject().put("opType", opType),
+                accountIdOverride = accountId,
+                client = longPollClient,
+            )
+            JsonParsers.parseFriendOperation(json)
+        } catch (e: ApiException) {
+            val fruitAlreadyPicked = e.errorCode == "1001040" || e.message.contains("果实被人摘走") ||
+                Regex("""\bcode=1001040\b""").containsMatchIn(e.message)
+            if (opType != "steal" || !fruitAlreadyPicked) throw e
+            FriendOperationResult("果实已被摘走", count = null, fruitAlreadyPicked = true)
+        }
     }
 
     suspend fun fetchInteractRecords(accountId: String): List<InteractRecord> {

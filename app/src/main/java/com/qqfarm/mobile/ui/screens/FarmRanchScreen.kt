@@ -680,6 +680,7 @@ fun AppleLandTile(
         land.status == "harvestable" -> "可收获" to apple.green
         land.status == "stealable" -> "可偷取" to apple.orange
         land.status == "unstealable" -> "不可偷取" to apple.secondaryText
+        land.status == "steal_unconfirmed" -> "待确认" to apple.secondaryText
         land.status == "harvested" -> "已成熟" to apple.secondaryText
         land.status == "dead" -> "已枯萎" to apple.red
         remainSec > 0L -> formatDurationSec(remainSec) to apple.blue

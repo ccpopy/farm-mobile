@@ -81,6 +81,7 @@ import com.qqfarm.mobile.data.model.FriendItem
 import com.qqfarm.mobile.data.model.GameSpace
 import com.qqfarm.mobile.data.model.InteractRecord
 import com.qqfarm.mobile.data.model.FriendLandsPayload
+import com.qqfarm.mobile.data.model.RejectedFriendHarvests
 import com.qqfarm.mobile.data.model.RanchAnimal
 import com.qqfarm.mobile.data.model.RanchFriendSummary
 import com.qqfarm.mobile.data.model.RanchQuote
@@ -144,6 +145,7 @@ fun FriendsScreen(
     val loadedTabs = remember(accountId, isConnected) { mutableStateMapOf<Int, Boolean>() }
     var busyOp by remember { mutableStateOf(false) }
     var friendListReady by remember(accountId, isConnected) { mutableStateOf(false) }
+    val rejectedHarvests = remember(accountId, isConnected) { RejectedFriendHarvests() }
     var friendActionStates by remember(accountId, isConnected) { mutableStateOf<Map<Long, Boolean>>(emptyMap()) }
 
     var friends by remember(accountId, isConnected) { mutableStateOf<List<FriendItem>>(emptyList()) }
@@ -165,7 +167,7 @@ fun FriendsScreen(
                     friendListReady = false
                     friendActionStates = emptyMap()
                     val res = apiClient.fetchFriends(accountId, forceSync = forceSync)
-                    friends = res.friends
+                    friends = res.friends.map(rejectedHarvests::checkSummary)
                     friendListReady = res.state == "ready"
                     loadedTabs[0] = true
                     try {
@@ -206,7 +208,7 @@ fun FriendsScreen(
         scope.launch {
             try {
                 val before = try {
-                    apiClient.fetchFriendLands(accountId, friend.gid)
+                    rejectedHarvests.checkLands(friend.gid, apiClient.fetchFriendLands(accountId, friend.gid))
                 } catch (e: ApiException) {
                     updateFriendActions(friend.gid, null)
                     onMessage(e.message)
@@ -223,9 +225,13 @@ fun FriendsScreen(
                     onMessage(e.message)
                     null
                 }
+                if (result?.fruitAlreadyPicked == true) {
+                    updateFriendActions(friend.gid, rejectedHarvests.record(friend.gid, before))
+                }
                 val emptyAttempt = before.takeIf { opType == "steal" && result?.count == 0 }
                 try {
-                    val refreshed = apiClient.fetchFriendLands(accountId, friend.gid).afterEmptySteal(emptyAttempt)
+                    val fresh = apiClient.fetchFriendLands(accountId, friend.gid)
+                    val refreshed = rejectedHarvests.checkLands(friend.gid, fresh).afterEmptySteal(emptyAttempt)
                     updateFriendActions(friend.gid, refreshed)
                 } catch (e: ApiException) {
                     updateFriendActions(friend.gid, null)
@@ -582,6 +588,7 @@ fun FriendsScreen(
             accountId = accountId,
             isBlocked = blacklist.any { it.gid == friend.gid },
             apiClient = apiClient,
+            rejectedHarvests = rejectedHarvests,
             onLandsLoaded = { updateFriendActions(friend.gid, it) },
             onBlacklistUpdated = { blacklist = it },
             onDismiss = { inspectedFriend = null },
@@ -631,6 +638,7 @@ private fun FriendLandsSheet(
     accountId: String,
     isBlocked: Boolean,
     apiClient: FarmApiClient,
+    rejectedHarvests: RejectedFriendHarvests,
     onLandsLoaded: (FriendLandsPayload?) -> Unit,
     onBlacklistUpdated: (List<FriendBlacklistItem>) -> Unit,
     onDismiss: () -> Unit,
@@ -658,7 +666,8 @@ private fun FriendLandsSheet(
         loading = true
         errorMsg = ""
         try {
-            val snapshot = apiClient.fetchFriendLands(accountId, friend.gid).afterEmptySteal(emptyAttempt)
+            val fresh = apiClient.fetchFriendLands(accountId, friend.gid)
+            val snapshot = rejectedHarvests.checkLands(friend.gid, fresh).afterEmptySteal(emptyAttempt)
             payload = snapshot
             onLandsLoaded(snapshot)
         } catch (e: ApiException) {
@@ -696,6 +705,11 @@ private fun FriendLandsSheet(
         } catch (e: ApiException) {
             actionMessage = e.message
             null
+        }
+        if (result?.fruitAlreadyPicked == true && before != null) {
+            val checked = rejectedHarvests.record(friend.gid, before)
+            payload = checked
+            onLandsLoaded(checked)
         }
         loadLands(before.takeIf { opType == "steal" && result?.count == 0 })
     }

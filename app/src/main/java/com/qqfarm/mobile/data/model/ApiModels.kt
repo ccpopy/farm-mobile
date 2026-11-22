@@ -251,7 +251,38 @@ data class FriendLandsPayload(
     }
 }
 
-data class FriendOperationResult(val message: String, val count: Int?)
+data class FriendOperationResult(val message: String, val count: Int?, val fruitAlreadyPicked: Boolean = false)
+
+class RejectedFriendHarvests {
+    private val batches = mutableMapOf<Long, Map<Int, Pair<String, Int>>>()
+
+    private fun targets(snapshot: FriendLandsPayload) = snapshot.lands
+        .filter { it.status == "stealable" }
+        .associate { it.id to (it.plantName to it.currentSeason) }
+
+    fun record(gid: Long, attempted: FriendLandsPayload): FriendLandsPayload {
+        batches[gid] = targets(attempted)
+        return checkLands(gid, attempted)
+    }
+
+    fun checkLands(gid: Long, snapshot: FriendLandsPayload): FriendLandsPayload {
+        val rejected = batches[gid] ?: return snapshot
+        if (targets(snapshot) != rejected) {
+            batches.remove(gid)
+            return snapshot
+        }
+        // 批量拒绝没有返回地块 ID，同一批次只能标为待确认。
+        return snapshot.copy(lands = snapshot.lands.map { land ->
+            if (land.status == "stealable") land.copy(status = "steal_unconfirmed") else land
+        })
+    }
+
+    fun checkSummary(friend: FriendItem): FriendItem {
+        val rejected = batches[friend.gid] ?: return friend
+        if (friend.stealNum == 0) batches.remove(friend.gid)
+        return if (friend.stealNum == rejected.size) friend.copy(stealNum = 0) else friend
+    }
+}
 
 data class BagSystemItem(
     val id: Int,
