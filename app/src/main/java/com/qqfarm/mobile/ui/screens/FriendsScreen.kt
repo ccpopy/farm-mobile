@@ -87,7 +87,9 @@ import com.qqfarm.mobile.ui.components.RemoteAssetImage
 import com.qqfarm.mobile.ui.components.formatCompactCount
 import com.qqfarm.mobile.ui.components.formatDurationSec
 import com.qqfarm.mobile.ui.state.SessionUiState
+import com.qqfarm.mobile.ui.theme.LocalAppAppearance
 import com.qqfarm.mobile.ui.theme.LocalAppleColors
+import com.qqfarm.mobile.ui.components.spaceAccent
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -126,6 +128,8 @@ fun FriendsScreen(
     var loadError by remember(accountId, isConnected, subTab) { mutableStateOf("") }
     val loadedTabs = remember(accountId, isConnected) { mutableStateMapOf<Int, Boolean>() }
     var busyOp by remember { mutableStateOf(false) }
+    var friendListReady by remember(accountId, isConnected) { mutableStateOf(false) }
+    var friendActionStates by remember(accountId, isConnected) { mutableStateOf<Map<Long, Boolean>>(emptyMap()) }
 
     var friends by remember(accountId, isConnected) { mutableStateOf<List<FriendItem>>(emptyList()) }
     var records by remember(accountId, isConnected) { mutableStateOf<List<InteractRecord>>(emptyList()) }
@@ -136,15 +140,18 @@ fun FriendsScreen(
     var inspectedFriend by remember(accountId, isConnected) { mutableStateOf<FriendItem?>(null) }
 
     suspend fun loadTab(forceSync: Boolean = false) {
-        if (!isConnected || refreshing) return
+        if (!isConnected || refreshing || busyOp) return
         val tab = subTab
         refreshing = true
         loadError = ""
         try {
             when (tab) {
                 0 -> {
+                    friendListReady = false
+                    friendActionStates = emptyMap()
                     val res = apiClient.fetchFriends(accountId, forceSync = forceSync)
                     friends = res.friends
+                    friendListReady = res.state == "ready"
                     loadedTabs[0] = true
                     try {
                         blacklist = apiClient.fetchFriendBlacklist(accountId)
@@ -165,8 +172,44 @@ fun FriendsScreen(
         }
     }
 
+    fun updateFriendActions(gid: Long, snapshot: FriendLandsPayload?) {
+        friendActionStates = friendActionStates + (gid to (snapshot != null))
+        if (snapshot == null) return
+        friends = friends.map { friend ->
+            if (friend.gid != gid) friend else friend.copy(
+                stealNum = snapshot.stealableCount,
+                dryNum = snapshot.dryCount,
+                weedNum = snapshot.weedCount,
+                insectNum = snapshot.insectCount,
+            )
+        }
+    }
+
+    fun operateFromList(friend: FriendItem, opType: String) {
+        if (busyOp || refreshing) return
+        busyOp = true
+        scope.launch {
+            try {
+                val message = try {
+                    apiClient.operateFriend(accountId, friend.gid, opType)
+                } catch (e: ApiException) {
+                    e.message
+                }
+                onMessage(message)
+                try {
+                    updateFriendActions(friend.gid, apiClient.fetchFriendLands(accountId, friend.gid))
+                } catch (e: ApiException) {
+                    updateFriendActions(friend.gid, null)
+                    onMessage("好友状态刷新失败：${e.message}")
+                }
+            } finally {
+                busyOp = false
+            }
+        }
+    }
+
     LaunchedEffect(accountId, isConnected, subTab) {
-        if (isConnected) loadTab(false)
+        if (isConnected) loadTab(forceSync = subTab == 0)
     }
 
     Column(
@@ -230,11 +273,12 @@ fun FriendsScreen(
                 when (subTab) {
                     0 -> {
                         val blockedGids = remember(blacklist) { blacklist.map { it.gid }.toSet() }
-                        val filteredFriends = remember(friends, searchKeyword, onlyActionable) {
+                        val filteredFriends = remember(friends, searchKeyword, onlyActionable, friendListReady, friendActionStates) {
                             val kw = searchKeyword.trim().lowercase()
                             friends.filter { f ->
                                 val matchesKw = kw.isEmpty() || f.name.lowercase().contains(kw) || f.gid.toString().contains(kw)
-                                val matchesAction = !onlyActionable || f.stealNum > 0 || f.needsCareCount > 0
+                                val statusKnown = friendActionStates[f.gid] ?: friendListReady
+                                val matchesAction = !onlyActionable || (statusKnown && (f.stealNum > 0 || f.needsCareCount > 0))
                                 matchesKw && matchesAction
                             }
                         }
@@ -258,7 +302,7 @@ fun FriendsScreen(
                                     )
                                     IconButton(
                                         onClick = { scope.launch { loadTab(forceSync = true) } },
-                                        enabled = !refreshing,
+                                        enabled = !refreshing && !busyOp,
                                     ) {
                                         Icon(Icons.Rounded.Refresh, contentDescription = "强制同步好友")
                                     }
@@ -294,11 +338,14 @@ fun FriendsScreen(
                             } else {
                                 itemsIndexed(filteredFriends, key = { _, f -> f.gid }) { _, friend ->
                                     val isBlocked = blockedGids.contains(friend.gid)
+                                    val statusKnown = !refreshing && (friendActionStates[friend.gid] ?: friendListReady)
+                                    val canSteal = statusKnown && friend.stealNum > 0
+                                    val canHelp = statusKnown && friend.needsCareCount > 0
                                     AppleGroupedCard(contentPadding = PaddingValues(14.dp)) {
                                         Row(
                                             modifier = Modifier
                                                 .fillMaxWidth()
-                                                .clickable { inspectedFriend = friend },
+                                                .clickable(enabled = !busyOp && !refreshing) { inspectedFriend = friend },
                                             verticalAlignment = Alignment.CenterVertically,
                                         ) {
                                             RemoteAssetImage(
@@ -341,11 +388,11 @@ fun FriendsScreen(
                                                     horizontalArrangement = Arrangement.spacedBy(6.dp),
                                                     verticalArrangement = Arrangement.spacedBy(4.dp),
                                                 ) {
-                                                    if (friend.stealNum > 0) AppleStatusPill("可偷 ${friend.stealNum}", apple.orange, showDot = false)
-                                                    if (friend.dryNum > 0) AppleStatusPill("缺水 ${friend.dryNum}", apple.cyan, showDot = false)
-                                                    if (friend.weedNum > 0) AppleStatusPill("杂草 ${friend.weedNum}", apple.green, showDot = false)
-                                                    if (friend.insectNum > 0) AppleStatusPill("虫害 ${friend.insectNum}", apple.red, showDot = false)
-                                                    if (friend.stealNum == 0 && friend.needsCareCount == 0) {
+                                                    if (canSteal) AppleStatusPill("可偷 ${friend.stealNum}", apple.orange, showDot = false)
+                                                    if (statusKnown && friend.dryNum > 0) AppleStatusPill("缺水 ${friend.dryNum}", apple.cyan, showDot = false)
+                                                    if (statusKnown && friend.weedNum > 0) AppleStatusPill("杂草 ${friend.weedNum}", apple.green, showDot = false)
+                                                    if (statusKnown && friend.insectNum > 0) AppleStatusPill("虫害 ${friend.insectNum}", apple.red, showDot = false)
+                                                    if (!canSteal && !canHelp) {
                                                         Text(
                                                             text = "GID ${friend.gid}",
                                                             style = MaterialTheme.typography.bodySmall,
@@ -361,34 +408,13 @@ fun FriendsScreen(
                                             modifier = Modifier.fillMaxWidth(),
                                             horizontalArrangement = Arrangement.spacedBy(8.dp),
                                         ) {
-                                            FriendActionChip("偷菜", friend.stealNum > 0, !busyOp && !refreshing && friend.stealNum > 0, Modifier.weight(1f)) {
-                                                busyOp = true
-                                                scope.launch {
-                                                    runCatching { apiClient.operateFriend(accountId, friend.gid, "steal") }
-                                                        .onSuccess { msg -> onMessage(msg); loadTab(false) }
-                                                        .onFailure { onMessage(it.message ?: "操作失败") }
-                                                    busyOp = false
-                                                }
+                                            FriendActionChip("偷菜", canSteal, !busyOp && canSteal, Modifier.weight(1f)) {
+                                                operateFromList(friend, "steal")
                                             }
-                                            FriendActionChip("帮务农", friend.needsCareCount > 0, !busyOp && !refreshing && friend.needsCareCount > 0, Modifier.weight(1f)) {
-                                                busyOp = true
-                                                scope.launch {
-                                                    runCatching { apiClient.operateFriend(accountId, friend.gid, "farming") }
-                                                        .onSuccess { msg -> onMessage(msg); loadTab(false) }
-                                                        .onFailure { onMessage(it.message ?: "操作失败") }
-                                                    busyOp = false
-                                                }
+                                            FriendActionChip("帮务农", canHelp, !busyOp && canHelp, Modifier.weight(1f)) {
+                                                operateFromList(friend, "farming")
                                             }
-                                            FriendActionChip("捣乱", false, !busyOp, Modifier.weight(1f)) {
-                                                busyOp = true
-                                                scope.launch {
-                                                    runCatching { apiClient.operateFriend(accountId, friend.gid, "bad") }
-                                                        .onSuccess { msg -> onMessage(msg) }
-                                                        .onFailure { onMessage(it.message ?: "操作失败") }
-                                                    busyOp = false
-                                                }
-                                            }
-                                            FriendActionChip("查看农田", false, !busyOp, Modifier.weight(1f)) {
+                                            FriendActionChip("查看农田", false, !busyOp && !refreshing, Modifier.weight(1f)) {
                                                 inspectedFriend = friend
                                             }
                                         }
@@ -528,16 +554,7 @@ fun FriendsScreen(
             isBlocked = blacklist.any { it.gid == friend.gid },
             apiClient = apiClient,
             onMessage = onMessage,
-            onLandsLoaded = { snapshot ->
-                friends = friends.map { current ->
-                    if (current.gid != friend.gid) current else current.copy(
-                        stealNum = snapshot.stealableCount,
-                        dryNum = snapshot.dryCount,
-                        weedNum = snapshot.weedCount,
-                        insectNum = snapshot.insectCount,
-                    )
-                }
-            },
+            onLandsLoaded = { updateFriendActions(friend.gid, it) },
             onBlacklistUpdated = { blacklist = it },
             onDismiss = { inspectedFriend = null },
         )
@@ -587,7 +604,7 @@ private fun FriendLandsSheet(
     isBlocked: Boolean,
     apiClient: FarmApiClient,
     onMessage: (String) -> Unit,
-    onLandsLoaded: (FriendLandsPayload) -> Unit,
+    onLandsLoaded: (FriendLandsPayload?) -> Unit,
     onBlacklistUpdated: (List<FriendBlacklistItem>) -> Unit,
     onDismiss: () -> Unit,
 ) {
@@ -616,6 +633,8 @@ private fun FriendLandsSheet(
             payload = snapshot
             onLandsLoaded(snapshot)
         } catch (e: ApiException) {
+            payload = null
+            onLandsLoaded(null)
             errorMsg = e.message
         } finally {
             loading = false
@@ -634,6 +653,16 @@ private fun FriendLandsSheet(
                 busy = false
             }
         }
+    }
+
+    fun operate(opType: String) = runAction {
+        val message = try {
+            apiClient.operateFriend(accountId, friend.gid, opType)
+        } catch (e: ApiException) {
+            e.message
+        }
+        onMessage(message)
+        loadLands()
     }
 
     LaunchedEffect(accountId, friend.gid) { loadLands() }
@@ -668,9 +697,19 @@ private fun FriendLandsSheet(
                         .background(apple.track),
                 )
                 Column(modifier = Modifier.weight(1f)) {
-                    Text(friend.name, style = MaterialTheme.typography.titleLarge, color = apple.primaryText)
+                    Text(friend.name, style = MaterialTheme.typography.titleLarge, color = apple.primaryText, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     Text("GID ${friend.gid} · Lv.${friend.level}", style = MaterialTheme.typography.bodySmall, color = apple.secondaryText)
                 }
+                TextButton(
+                    onClick = {
+                        runAction {
+                            onBlacklistUpdated(apiClient.toggleFriendBlacklist(accountId, friend.gid))
+                            onMessage(if (isBlocked) "已移出黑名单" else "已加入黑名单")
+                        }
+                    },
+                    enabled = !loading && !busy,
+                    contentPadding = PaddingValues(horizontal = 4.dp),
+                ) { Text(if (isBlocked) "解除屏蔽" else "屏蔽") }
                 IconButton(onClick = { scope.launch { loadLands() } }, enabled = !loading && !busy) {
                     Icon(Icons.Rounded.Refresh, contentDescription = "刷新")
                 }
@@ -681,40 +720,25 @@ private fun FriendLandsSheet(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 Button(
-                    onClick = {
-                        runAction {
-                            onMessage(apiClient.operateFriend(accountId, friend.gid, "steal"))
-                            loadLands()
-                        }
-                    },
+                    onClick = { operate("steal") },
                     enabled = actionsEnabled && (payload?.stealableCount ?: 0) > 0,
                     shape = RoundedCornerShape(12.dp),
                     modifier = Modifier.weight(1f),
                 ) { Text("一键偷菜") }
 
                 OutlinedButton(
-                    onClick = {
-                        runAction {
-                            onMessage(apiClient.operateFriend(accountId, friend.gid, "farming"))
-                            loadLands()
-                        }
-                    },
+                    onClick = { operate("farming") },
                     enabled = actionsEnabled && payload?.needsCare == true,
                     shape = RoundedCornerShape(12.dp),
                     modifier = Modifier.weight(1f),
                 ) { Text("帮务农") }
 
                 OutlinedButton(
-                    onClick = {
-                        runAction {
-                            onBlacklistUpdated(apiClient.toggleFriendBlacklist(accountId, friend.gid))
-                            onMessage(if (isBlocked) "已移出黑名单" else "已加入黑名单")
-                        }
-                    },
-                    enabled = !loading && !busy,
+                    onClick = { operate("bad") },
+                    enabled = actionsEnabled && payload?.canDisrupt == true,
                     shape = RoundedCornerShape(12.dp),
                     modifier = Modifier.weight(1f),
-                ) { Text(if (isBlocked) "解除屏蔽" else "屏蔽") }
+                ) { Text("捣乱") }
             }
 
             if (loading) {
@@ -732,7 +756,8 @@ private fun FriendLandsSheet(
                 }
             } else {
                 val lands = payload?.lands.orEmpty()
-                val rows = lands.chunked(3)
+                val landColumns = LocalAppAppearance.current.landGridColumns
+                val rows = lands.chunked(landColumns)
                 LazyColumn(
                     modifier = Modifier
                         .weight(1f, fill = false)
@@ -740,15 +765,16 @@ private fun FriendLandsSheet(
                     verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
                     itemsIndexed(rows) { _, row ->
-                        EqualHeightRow(spacing = 8.dp) {
+                        EqualHeightRow(spacing = if (landColumns >= 4) 6.dp else 8.dp) {
                             row.forEach { land ->
                                 AppleLandTile(
                                     land = land,
                                     clockTickMs = clockTickMs,
+                                    compact = landColumns >= 4,
                                     modifier = Modifier.weight(1f),
                                 )
                             }
-                            repeat(3 - row.size) {
+                            repeat(landColumns - row.size) {
                                 Spacer(modifier = Modifier.weight(1f))
                             }
                         }
@@ -1051,7 +1077,7 @@ private fun RanchFriendDetailSheet(
     }
 
     fun requestQuote(action: String, input: JSONObject) {
-        if (busy || loading || errorMsg.isNotBlank()) return
+        if (busy || loading || pendingOp != null || snapshot?.friendRanch?.sceneRestored != true) return
         busy = true
         scope.launch {
             try {
@@ -1064,6 +1090,7 @@ private fun RanchFriendDetailSheet(
                 }
             } catch (e: ApiException) {
                 onMessage(e.message)
+                loadDetail()
             } finally {
                 busy = false
             }
@@ -1085,7 +1112,7 @@ private fun RanchFriendDetailSheet(
             }
         }
     }
-    val actionsEnabled = !busy && !loading && errorMsg.isBlank()
+    val actionsEnabled = !busy && !loading && pendingOp == null && ranch?.sceneRestored == true
     ModalBottomSheet(
         onDismissRequest = { if (!busy) onDismiss() },
         sheetState = sheetState,
@@ -1121,7 +1148,7 @@ private fun RanchFriendDetailSheet(
                             horizontalArrangement = Arrangement.spacedBy(6.dp),
                             verticalArrangement = Arrangement.spacedBy(4.dp),
                         ) {
-                            AppleStatusPill("牧场 Lv.${d.level}", apple.orange, showDot = false)
+                            AppleStatusPill("牧场 Lv.${d.level}", spaceAccent(GameSpace.RANCH), showDot = false)
                             AppleStatusPill("可抚摸 ${d.strokeRemaining} 次", apple.blue, showDot = false)
                             AppleStatusPill("可放蚊子 ${d.mosquitoRemaining} 次", apple.indigo, showDot = false)
                         }
@@ -1251,7 +1278,7 @@ private fun RanchFriendDetailSheet(
                                             )
                                             RanchFriendAnimalTimes(animal, nowMs)
                                         }
-                                        if (animal.canStroke) {
+                                        if (animal.canStroke && !animal.stroked && d.strokeRemaining > 0) {
                                             Button(
                                                 onClick = {
                                                     requestQuote(

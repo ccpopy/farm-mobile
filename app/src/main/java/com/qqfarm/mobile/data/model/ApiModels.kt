@@ -234,6 +234,7 @@ data class FriendLandsPayload(
     val dryCount: Int,
     val weedCount: Int,
     val insectCount: Int,
+    val canDisrupt: Boolean,
 ) {
     val needsCare: Boolean get() = dryCount > 0 || weedCount > 0 || insectCount > 0
 }
@@ -311,6 +312,7 @@ data class RanchAnimal(
     val canHarvest: Boolean = false,
     val canProduce: Boolean = false,
     val canFeed: Boolean = false,
+    val limitedCanUsed: Boolean = false,
     val canRelease: Boolean = false,
     val grassBlocked: Boolean = false,
     val produceCount: Int = 0,
@@ -358,7 +360,13 @@ data class RanchPayload(
     val dailyBenefitClaimed: Boolean = false,
     val hourglassSeconds: Long? = null,
     val career: RanchCareer? = null,
-)
+) {
+    fun canFeed(animals: List<RanchAnimal>, organic: Boolean): Boolean {
+        val bucketId = if (organic) 7004 else 7003
+        return buckets.any { it.id == bucketId && it.seconds > 0 } &&
+            animals.any { it.canFeed && (organic || !it.limitedCanUsed) }
+    }
+}
 
 data class PetDog(
     val id: Int,
@@ -488,6 +496,8 @@ data class AccountSettingsModel(
     val ranchShedAnimal: Int = 0,
     val ranchGrassThresholdPercent: Int = 20,
     val ranchCheckMinutes: Int = 5,
+    val ranchFeedNormalStage: String? = null,
+    val ranchFeedOrganicStage: String? = null,
     val automationBooleans: Map<String, Boolean> = emptyMap(),
     val rawIntervalsJson: String = "{}",
     val rawAutomationJson: String = "{}",

@@ -49,7 +49,6 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
@@ -72,7 +71,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -99,6 +97,7 @@ import com.qqfarm.mobile.ui.components.AppleLoadingState
 import com.qqfarm.mobile.ui.components.AppleFilterChip
 import com.qqfarm.mobile.ui.components.AppleGroupedCard
 import com.qqfarm.mobile.ui.components.AppleHairlineDivider
+import com.qqfarm.mobile.ui.components.AppleProgressBar
 import com.qqfarm.mobile.ui.components.AppleQuantityStepper
 import com.qqfarm.mobile.ui.components.AppleRadius
 import com.qqfarm.mobile.ui.components.AppleSearchField
@@ -929,15 +928,13 @@ private fun IllustratedOverviewCard(
         }
 
         Spacer(modifier = Modifier.height(10.dp))
-        LinearProgressIndicator(
+        AppleProgressBar(
             progress = { fraction },
             modifier = Modifier
                 .fillMaxWidth()
-                .height(6.dp)
-                .clip(CircleShape),
+                .height(6.dp),
             color = accent,
             trackColor = apple.track,
-            strokeCap = StrokeCap.Round,
         )
         Spacer(modifier = Modifier.height(6.dp))
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
@@ -1688,15 +1685,13 @@ private fun CollectionOverviewCard(
         }
 
         Spacer(modifier = Modifier.height(10.dp))
-        LinearProgressIndicator(
+        AppleProgressBar(
             progress = { fraction },
             modifier = Modifier
                 .fillMaxWidth()
-                .height(6.dp)
-                .clip(CircleShape),
+                .height(6.dp),
             color = apple.blue,
             trackColor = apple.track,
-            strokeCap = StrokeCap.Round,
         )
         Spacer(modifier = Modifier.height(6.dp))
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {

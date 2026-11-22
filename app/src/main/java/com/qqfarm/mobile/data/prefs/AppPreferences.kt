@@ -11,6 +11,7 @@ import androidx.datastore.preferences.core.stringSetPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import com.qqfarm.mobile.data.model.ActivityNotifyType
 import com.qqfarm.mobile.data.network.DEFAULT_UPDATE_ACCELERATOR
+import com.qqfarm.mobile.ui.theme.CustomAppearanceConfig
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 import org.json.JSONArray
@@ -65,6 +66,7 @@ data class StoredConfig(
     val currentAccountId: String = "",
     val themeMode: String = THEME_SYSTEM,
     val dynamicColor: Boolean = false,
+    val customAppearance: CustomAppearanceConfig = CustomAppearanceConfig(),
     val offlineAlertsEnabled: Boolean = false,
     val activityPushEnabled: Boolean = false,
     val notifyCollapseEnabled: Boolean = true,
@@ -88,6 +90,7 @@ data class StoredConfig(
         const val THEME_SYSTEM = "system"
         const val THEME_LIGHT = "light"
         const val THEME_DARK = "dark"
+        const val THEME_CUSTOM = "custom"
     }
 }
 
@@ -101,6 +104,7 @@ class AppPreferences(private val context: Context) {
         val CURRENT_ACCOUNT_ID = stringPreferencesKey("current_account_id")
         val THEME_MODE = stringPreferencesKey("theme_mode")
         val DYNAMIC_COLOR = booleanPreferencesKey("dynamic_color")
+        val CUSTOM_APPEARANCE_JSON = stringPreferencesKey("custom_appearance_json")
         val OFFLINE_ALERTS_ENABLED = booleanPreferencesKey("offline_alerts_enabled")
         val ACTIVITY_PUSH_ENABLED = booleanPreferencesKey("activity_push_enabled")
         val NOTIFY_COLLAPSE_ENABLED = booleanPreferencesKey("notify_collapse_enabled")
@@ -203,6 +207,7 @@ class AppPreferences(private val context: Context) {
             currentAccountId = prefs[Keys.CURRENT_ACCOUNT_ID].orEmpty(),
             themeMode = prefs[Keys.THEME_MODE] ?: StoredConfig.THEME_SYSTEM,
             dynamicColor = prefs[Keys.DYNAMIC_COLOR] ?: false,
+            customAppearance = CustomAppearanceConfig.fromJsonString(prefs[Keys.CUSTOM_APPEARANCE_JSON].orEmpty()),
             offlineAlertsEnabled = prefs[Keys.OFFLINE_ALERTS_ENABLED] ?: false,
             activityPushEnabled = prefs[Keys.ACTIVITY_PUSH_ENABLED] ?: false,
             notifyCollapseEnabled = prefs[Keys.NOTIFY_COLLAPSE_ENABLED] ?: true,
@@ -329,6 +334,12 @@ class AppPreferences(private val context: Context) {
     suspend fun updateDynamicColor(enabled: Boolean) {
         context.dataStore.edit { prefs ->
             prefs[Keys.DYNAMIC_COLOR] = enabled
+        }
+    }
+
+    suspend fun updateCustomAppearance(appearance: CustomAppearanceConfig) {
+        context.dataStore.edit { prefs ->
+            prefs[Keys.CUSTOM_APPEARANCE_JSON] = appearance.toJsonString()
         }
     }
 

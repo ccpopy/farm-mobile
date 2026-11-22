@@ -42,7 +42,6 @@ import androidx.compose.material.icons.rounded.Warehouse
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
@@ -66,10 +65,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.qqfarm.mobile.data.model.GameSpace
 import com.qqfarm.mobile.data.model.RanchAnimal
 import com.qqfarm.mobile.data.model.RanchBagItem
 import com.qqfarm.mobile.data.model.RanchBookAnimal
@@ -84,6 +83,7 @@ import com.qqfarm.mobile.ui.components.AppleLoadingState
 import com.qqfarm.mobile.ui.components.AppleGroupedCard
 import com.qqfarm.mobile.ui.components.AppleHairlineDivider
 import com.qqfarm.mobile.ui.components.AppleIconBadge
+import com.qqfarm.mobile.ui.components.AppleProgressBar
 import com.qqfarm.mobile.ui.components.AppleQuantityStepper
 import com.qqfarm.mobile.ui.components.AppleScrollablePills
 import com.qqfarm.mobile.ui.components.AppleSectionHeader
@@ -94,9 +94,14 @@ import com.qqfarm.mobile.ui.components.RemoteAssetImage
 import com.qqfarm.mobile.ui.components.formatBucketHours
 import com.qqfarm.mobile.ui.components.formatCompactCount
 import com.qqfarm.mobile.ui.components.formatDurationSec
+import com.qqfarm.mobile.ui.components.spaceAccent
 import com.qqfarm.mobile.ui.state.SessionUiState
+import com.qqfarm.mobile.ui.theme.CardSurfaceStyle
+import com.qqfarm.mobile.ui.theme.LocalAppAppearance
 import com.qqfarm.mobile.ui.theme.LocalAppleColors
+import com.qqfarm.mobile.ui.theme.onAccent
 import com.qqfarm.mobile.ui.theme.SoilGold
+import com.qqfarm.mobile.ui.theme.resolveRanchAnimalCardColors
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -155,16 +160,16 @@ fun RanchWorkspaceScreen(
         subTab = initialSubTab.coerceIn(0, 3)
     }
 
-    var refreshing by remember(subTab, isConnected) { mutableStateOf(false) }
-    var actionBusy by remember { mutableStateOf(false) }
-    var snapshot by remember(subTab, isConnected) { mutableStateOf<RanchViewSnapshot?>(null) }
-    var loadError by remember(subTab, isConnected) { mutableStateOf("") }
+    var refreshing by remember(accountId, subTab, isConnected) { mutableStateOf(false) }
+    var actionBusy by remember(accountId, isConnected) { mutableStateOf(false) }
+    var snapshot by remember(accountId, subTab, isConnected) { mutableStateOf<RanchViewSnapshot?>(null) }
+    var loadError by remember(accountId, subTab, isConnected) { mutableStateOf("") }
 
     var batchLockOpen by remember(accountId, subTab, isConnected) { mutableStateOf(false) }
-    var pendingRequest by remember(subTab, isConnected) { mutableStateOf<PendingRanchRequest?>(null) }
-    var showFeedSheet by remember(isConnected) { mutableStateOf(false) }
-    var feedTargetAnimal by remember(isConnected) { mutableStateOf<RanchAnimal?>(null) }
-    var amountPrompt by remember(isConnected) { mutableStateOf<AmountPromptConfig?>(null) }
+    var pendingRequest by remember(accountId, subTab, isConnected) { mutableStateOf<PendingRanchRequest?>(null) }
+    var showFeedSheet by remember(accountId, isConnected) { mutableStateOf(false) }
+    var feedTargetAnimal by remember(accountId, isConnected) { mutableStateOf<RanchAnimal?>(null) }
+    var amountPrompt by remember(accountId, isConnected) { mutableStateOf<AmountPromptConfig?>(null) }
 
     var clockTickMs by remember { mutableLongStateOf(SystemClock.elapsedRealtime()) }
     LaunchedEffect(Unit) {
@@ -210,7 +215,11 @@ fun RanchWorkspaceScreen(
                         pendingRequest = PendingRanchRequest(action, input, quote)
                     }
                 }
-                .onFailure { onMessage(it.message ?: "读取操作条件失败") }
+                .onFailure {
+                    if (it is CancellationException) throw it
+                    onMessage(it.message ?: "读取操作条件失败")
+                    loadCurrentView()
+                }
             actionBusy = false
         }
     }
@@ -224,14 +233,13 @@ fun RanchWorkspaceScreen(
                     onMessage(msg)
                     loadCurrentView()
                 }
-                .onFailure { onMessage(it.message ?: "牧场操作失败") }
+                .onFailure {
+                    if (it is CancellationException) throw it
+                    onMessage(it.message ?: "牧场操作失败")
+                    loadCurrentView()
+                }
             actionBusy = false
         }
-    }
-
-    LaunchedEffect(accountId) {
-        snapshot = null
-        loadError = ""
     }
 
     LaunchedEffect(accountId, isConnected, subTab) {
@@ -252,7 +260,7 @@ fun RanchWorkspaceScreen(
                     onSubTabChanged(idx)
                 }
             },
-            accentColor = apple.orange,
+            accentColor = spaceAccent(GameSpace.RANCH),
         )
         Box(
             modifier = Modifier
@@ -315,7 +323,7 @@ fun RanchWorkspaceScreen(
                         0 -> RanchAnimalsTab(
                             snapshot = current,
                             clockTickMs = clockTickMs,
-                            busy = actionBusy,
+                            busy = actionBusy || refreshing,
                             onDirectAction = { act, params -> triggerDirectAction(act, params) },
                             onOpenFeed = { animal ->
                                 feedTargetAnimal = animal
@@ -332,7 +340,7 @@ fun RanchWorkspaceScreen(
                         1 -> RanchFacilitiesTab(
                             snapshot = current,
                             clockTickMs = clockTickMs,
-                            busy = actionBusy,
+                            busy = actionBusy || refreshing,
                             onAddGrass = { fac ->
                                 val grassOwned = current?.base?.grass ?: 0L
                                 val room = (fac.capacity - fac.feedCount).coerceAtLeast(1)
@@ -367,7 +375,7 @@ fun RanchWorkspaceScreen(
                         )
                         2 -> RanchBagTab(
                             snapshot = current,
-                            busy = actionBusy,
+                            busy = actionBusy || refreshing,
                             onBatchLock = { batchLockOpen = true },
                             onSellAllProducts = {
                                 triggerQuoteAction("sell", JSONObject().put("all", true))
@@ -513,8 +521,17 @@ fun RanchWorkspaceScreen(
     }
 
     if (showFeedSheet) {
+        val ranch = snapshot?.base
+        val allAnimals = ranch?.pens.orEmpty().flatMap { it.animals }
+        val target = feedTargetAnimal
+        val targets = if (target == null) allAnimals else {
+            allAnimals.filter { it.ranchId == target.ranchId && it.id == target.id }
+        }
         RanchWorkspaceFeedSheet(
-            targetAnimal = feedTargetAnimal,
+            targetAnimal = target,
+            canFeedNormal = ranch?.canFeed(targets, organic = false) == true,
+            canFeedOrganic = ranch?.canFeed(targets, organic = true) == true,
+            busy = actionBusy || refreshing,
             onFeed = { bucketType, produceAfterFeed ->
                 val animal = feedTargetAnimal
                 showFeedSheet = false
@@ -567,11 +584,14 @@ private fun RanchAnimalsTab(
     onOpenRanchMall: () -> Unit,
 ) {
     val apple = LocalAppleColors.current
+    val ranchAccent = spaceAccent(GameSpace.RANCH)
+    val animalColumns = LocalAppAppearance.current.ranchAnimalColumns
     val payload = snapshot.base
 
     val allAnimals = payload.pens.flatMap { it.animals }
     val harvestCount = allAnimals.count { it.canHarvest } + payload.shelvesCollectableCount
     val produceCount = allAnimals.count { it.canProduce }
+    val canFeed = payload.canFeed(allAnimals, organic = false) || payload.canFeed(allAnimals, organic = true)
     val totalCapacity = payload.facilities.filter { it.hasRanch }.sumOf { it.ranchCapacity }
         .takeIf { it > 0 } ?: payload.pens.sumOf { it.capacity }
 
@@ -586,7 +606,7 @@ private fun RanchAnimalsTab(
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                     verticalArrangement = Arrangement.spacedBy(6.dp),
                 ) {
-                    AppleStatusPill("饲养 ${allAnimals.size}/$totalCapacity", apple.orange, showDot = false)
+                    AppleStatusPill("饲养 ${allAnimals.size}/$totalCapacity", ranchAccent, showDot = false)
                     AppleStatusPill("牧草 ${formatCompactCount(payload.grass)}", apple.green, showDot = false)
                     payload.buckets.forEach { bucket ->
                         AppleStatusPill("${bucket.name} ${formatBucketHours(bucket.seconds)}", apple.blue, showDot = false)
@@ -609,7 +629,7 @@ private fun RanchAnimalsTab(
                     }
                 }
                 item {
-                    RanchPillBtn("一键喂养", false, !busy && allAnimals.isNotEmpty()) {
+                    RanchPillBtn("一键喂养", false, !busy && canFeed) {
                         onOpenFeed(null)
                     }
                 }
@@ -645,12 +665,18 @@ private fun RanchAnimalsTab(
                         }
                     }
                 } else {
-                    val rows = pen.animals.chunked(2)
+                    val isShed = pen.moduleType == 7
+                    val rows = pen.animals.chunked(animalColumns)
                     items(rows) { rowAnimals ->
-                        EqualHeightRow {
+                        EqualHeightRow(spacing = if (animalColumns >= 3) 6.dp else 10.dp) {
                             rowAnimals.forEach { animal ->
                                 RanchWorkspaceAnimalTile(
                                     animal = animal,
+                                    isShed = isShed,
+                                    compact = animalColumns >= 3,
+                                    ranchAccent = ranchAccent,
+                                    feedEnabled = payload.canFeed(listOf(animal), organic = false) ||
+                                        payload.canFeed(listOf(animal), organic = true),
                                     serverNowMs = payload.serverNowMs,
                                     fetchedAtElapsedMs = payload.fetchedAtElapsedMs,
                                     clockTickMs = clockTickMs,
@@ -666,7 +692,9 @@ private fun RanchAnimalsTab(
                                     onRelease = { onReleaseAnimal(animal) },
                                 )
                             }
-                            if (rowAnimals.size == 1) Spacer(modifier = Modifier.weight(1f))
+                            repeat(animalColumns - rowAnimals.size) {
+                                Spacer(modifier = Modifier.weight(1f))
+                            }
                         }
                     }
                 }
@@ -678,6 +706,10 @@ private fun RanchAnimalsTab(
 @Composable
 private fun RanchWorkspaceAnimalTile(
     animal: RanchAnimal,
+    isShed: Boolean,
+    compact: Boolean,
+    ranchAccent: Color,
+    feedEnabled: Boolean,
     serverNowMs: Long,
     fetchedAtElapsedMs: Long,
     clockTickMs: Long,
@@ -689,32 +721,51 @@ private fun RanchWorkspaceAnimalTile(
     onRelease: () -> Unit,
 ) {
     val apple = LocalAppleColors.current
+    val appearance = LocalAppAppearance.current
     val deadline = if (animal.deliveringUntilMs > 0L) animal.deliveringUntilMs else animal.nextAtMs
     val estServerNow = serverNowMs + (clockTickMs - fetchedAtElapsedMs).coerceAtLeast(0L)
     val remainSec = if (deadline > 0L) ((deadline - estServerNow) / 1000L).coerceAtLeast(0L) else 0L
     var menuOpen by remember { mutableStateOf(false) }
 
-    val highlight = when {
-        animal.isGiant -> SoilGold
-        animal.canHarvest -> apple.green
-        else -> null
+    val cardColors = resolveRanchAnimalCardColors(
+        isShed = isShed,
+        isGiant = animal.isGiant,
+        canHarvest = animal.canHarvest,
+        canProduce = animal.canProduce,
+        grassBlocked = animal.grassBlocked,
+        isDark = apple.isDark,
+        apple = apple,
+        appearance = appearance,
+    )
+    val tileBorder = if (
+        !cardColors.highlightBorder &&
+        appearance.cardSurfaceStyle == CardSurfaceStyle.FLAT &&
+        cardColors.background == apple.card
+    ) {
+        null
+    } else {
+        BorderStroke(
+            width = if (cardColors.highlightBorder) 1.2.dp else 0.7.dp,
+            color = cardColors.border,
+        )
     }
 
     // 卡片每个区域都是固定高度：巨大动物、可生产轮次、可放生与否都不会改变卡片高度，
     // 同一行再由 EqualHeightRow + fillMaxHeight 兜底对齐。
     Surface(
         modifier = modifier.fillMaxHeight(),
-        shape = RoundedCornerShape(12.dp),
-        color = apple.card,
-        border = BorderStroke(
-            width = if (highlight != null) 1.2.dp else 0.5.dp,
-            color = highlight ?: apple.separator,
-        ),
+        shape = RoundedCornerShape(appearance.tileRadius),
+        color = cardColors.background,
+        border = tileBorder,
+        shadowElevation = if (appearance.cardSurfaceStyle == CardSurfaceStyle.ELEVATED && !apple.isDark) 2.dp else 0.dp,
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 12.dp, vertical = 10.dp),
+                .padding(
+                    horizontal = if (compact) 7.dp else 12.dp,
+                    vertical = if (compact) 8.dp else 10.dp,
+                ),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             Row(
@@ -766,14 +817,14 @@ private fun RanchWorkspaceAnimalTile(
             }
 
             Box(
-                modifier = Modifier.size(56.dp),
+                modifier = Modifier.size(if (compact) 46.dp else 56.dp),
                 contentAlignment = Alignment.Center,
             ) {
                 RemoteAssetImage(
                     url = animal.image,
                     contentDescription = animal.name,
                     fallbackIcon = Icons.Rounded.Pets,
-                    modifier = Modifier.size(52.dp),
+                    modifier = Modifier.size(if (compact) 42.dp else 52.dp),
                 )
                 if (animal.isGiant) {
                     Surface(
@@ -782,7 +833,7 @@ private fun RanchWorkspaceAnimalTile(
                             .offset(x = 6.dp, y = 2.dp),
                         shape = CircleShape,
                         color = SoilGold,
-                        border = BorderStroke(1.5.dp, apple.card),
+                        border = BorderStroke(1.5.dp, cardColors.background),
                     ) {
                         Text(
                             text = "巨",
@@ -794,10 +845,14 @@ private fun RanchWorkspaceAnimalTile(
                 }
             }
 
-            Spacer(modifier = Modifier.height(6.dp))
+            Spacer(modifier = Modifier.height(if (compact) 4.dp else 6.dp))
             Text(
                 text = animal.name,
-                style = MaterialTheme.typography.titleSmall,
+                style = if (compact) {
+                    MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold)
+                } else {
+                    MaterialTheme.typography.titleSmall
+                },
                 color = apple.primaryText,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
@@ -811,7 +866,7 @@ private fun RanchWorkspaceAnimalTile(
                     remainSec > 0L -> formatDurationSec(remainSec)
                     else -> animal.stageName.ifBlank { "成长中" }
                 },
-                style = MaterialTheme.typography.labelMedium.copy(
+                style = (if (compact) MaterialTheme.typography.labelSmall else MaterialTheme.typography.labelMedium).copy(
                     fontWeight = FontWeight.SemiBold,
                     fontFeatureSettings = "tnum",
                 ),
@@ -822,6 +877,7 @@ private fun RanchWorkspaceAnimalTile(
                     else -> apple.secondaryText
                 },
                 maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
             )
 
             Row(
@@ -843,15 +899,15 @@ private fun RanchWorkspaceAnimalTile(
                 }
                 if (animal.maxProduceCount > 0) {
                     Row(
-                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                        horizontalArrangement = Arrangement.spacedBy(if (compact) 3.dp else 4.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         for (i in 1..animal.maxProduceCount.coerceAtMost(8)) {
                             Box(
                                 modifier = Modifier
-                                    .size(6.dp)
+                                    .size(if (compact) 5.dp else 6.dp)
                                     .clip(CircleShape)
-                                    .background(if (i <= animal.produceCount) apple.orange else apple.track),
+                                    .background(if (i <= animal.produceCount) ranchAccent else apple.track),
                             )
                         }
                     }
@@ -863,45 +919,53 @@ private fun RanchWorkspaceAnimalTile(
 
             val buttonModifier = Modifier
                 .fillMaxWidth()
-                .height(32.dp)
+                .height(if (compact) 28.dp else 32.dp)
+            val btnShape = RoundedCornerShape(appearance.controlRadius)
+            val btnPadding = PaddingValues(horizontal = if (compact) 4.dp else 8.dp, vertical = 0.dp)
+            val btnTextStyle = if (compact) MaterialTheme.typography.labelSmall else MaterialTheme.typography.labelLarge
             when {
                 animal.canHarvest -> Button(
                     onClick = onHarvest,
                     enabled = !busy,
-                    shape = RoundedCornerShape(10.dp),
+                    shape = btnShape,
                     colors = ButtonDefaults.buttonColors(containerColor = apple.green, contentColor = Color.White),
-                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
+                    contentPadding = btnPadding,
                     modifier = buttonModifier,
-                ) { Text("收获", style = MaterialTheme.typography.labelLarge) }
+                ) { Text("收获", style = btnTextStyle, maxLines = 1) }
 
                 animal.canProduce -> Button(
                     onClick = onProduce,
                     enabled = !busy,
-                    shape = RoundedCornerShape(10.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = apple.orange, contentColor = Color.White),
-                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
+                    shape = btnShape,
+                    colors = ButtonDefaults.buttonColors(containerColor = ranchAccent, contentColor = ranchAccent.onAccent()),
+                    contentPadding = btnPadding,
                     modifier = buttonModifier,
-                ) { Text("生产", style = MaterialTheme.typography.labelLarge) }
+                ) { Text("生产", style = btnTextStyle, maxLines = 1) }
 
                 animal.canFeed -> FilledTonalButton(
                     onClick = onFeed,
-                    enabled = !busy,
-                    shape = RoundedCornerShape(10.dp),
+                    enabled = !busy && feedEnabled,
+                    shape = btnShape,
                     colors = ButtonDefaults.filledTonalButtonColors(
-                        containerColor = apple.orange.copy(alpha = 0.14f),
-                        contentColor = apple.orange,
+                        containerColor = ranchAccent.copy(alpha = 0.14f),
+                        contentColor = ranchAccent,
                     ),
-                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
+                    contentPadding = btnPadding,
                     modifier = buttonModifier,
-                ) { Text("喂养", style = MaterialTheme.typography.labelLarge) }
+                ) { Text("喂养", style = btnTextStyle, maxLines = 1) }
 
                 else -> Surface(
-                    shape = RoundedCornerShape(10.dp),
+                    shape = btnShape,
                     color = apple.elevated,
                     modifier = buttonModifier,
                 ) {
                     Box(contentAlignment = Alignment.Center) {
-                        Text("成长中", style = MaterialTheme.typography.labelMedium, color = apple.secondaryText)
+                        Text(
+                            text = "成长中",
+                            style = if (compact) MaterialTheme.typography.labelSmall else MaterialTheme.typography.labelMedium,
+                            color = apple.secondaryText,
+                            maxLines = 1,
+                        )
                     }
                 }
             }
@@ -1018,15 +1082,13 @@ private fun RanchFacilitiesTab(
                     )
                 }
                 Spacer(modifier = Modifier.height(6.dp))
-                LinearProgressIndicator(
+                AppleProgressBar(
                     progress = { fraction },
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(6.dp)
-                        .clip(CircleShape),
+                        .height(6.dp),
                     color = apple.orange,
                     trackColor = apple.track,
-                    strokeCap = StrokeCap.Round,
                 )
 
                 if (fac.hasFeed) {
@@ -1718,15 +1780,13 @@ private fun RanchBookTab(
                 }
                 val currentProg = if (isGiant) book.giantScore else book.normalProgress.toLong()
                 val fraction = if (nextTarget > 0L) (currentProg.toFloat() / nextTarget.toFloat()).coerceIn(0f, 1f) else 1f
-                LinearProgressIndicator(
+                AppleProgressBar(
                     progress = { fraction },
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(6.dp)
-                        .clip(CircleShape),
+                        .height(6.dp),
                     color = if (isGiant) apple.orange else apple.emerald,
                     trackColor = apple.track,
-                    strokeCap = StrokeCap.Round,
                 )
 
                 if (claimable) {
@@ -1894,7 +1954,7 @@ private fun RanchPillBtn(
         label = label,
         primary = primary,
         enabled = enabled,
-        accentColor = LocalAppleColors.current.orange,
+        accentColor = spaceAccent(GameSpace.RANCH),
         onClick = onClick,
     )
 }
@@ -1903,12 +1963,15 @@ private fun RanchPillBtn(
 @Composable
 private fun RanchWorkspaceFeedSheet(
     targetAnimal: RanchAnimal?,
+    canFeedNormal: Boolean,
+    canFeedOrganic: Boolean,
+    busy: Boolean,
     onFeed: (Int, Boolean) -> Unit,
     onDismiss: () -> Unit,
 ) {
     val apple = LocalAppleColors.current
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-    var bucketIndex by remember { mutableIntStateOf(0) }
+    var bucketIndex by remember { mutableIntStateOf(if (!canFeedNormal && canFeedOrganic) 1 else 0) }
     var produceAfterFeed by remember { mutableStateOf(true) }
 
     ModalBottomSheet(
@@ -1948,12 +2011,14 @@ private fun RanchWorkspaceFeedSheet(
                     )
                 }
             }
+            val canFeedSelected = if (bucketIndex == 1) canFeedOrganic else canFeedNormal
             Button(
                 onClick = { onFeed(if (bucketIndex == 1) 1 else 2, produceAfterFeed) },
+                enabled = !busy && canFeedSelected,
                 shape = RoundedCornerShape(14.dp),
                 modifier = Modifier.fillMaxWidth().height(50.dp),
             ) {
-                Text("确认喂养")
+                Text(if (canFeedSelected) "确认喂养" else "当前无法喂养")
             }
         }
     }

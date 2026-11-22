@@ -353,22 +353,33 @@ object JsonParsers {
 
     fun parseFriendLandsPayload(obj: JSONObject): FriendLandsPayload {
         val actions = obj.optJSONObject("summary")
-        val ids = actions?.optJSONArray("stealable") ?: JSONArray()
-        val stealable = buildSet {
-            for (i in 0 until ids.length()) {
-                val id = ids.optInt(i)
-                if (id > 0) add(id)
-            }
-        }
+        fun ids(key: String) = FeatureJsonParsers.parseIntList(actions?.optJSONArray(key)).filter { it > 0 }.toSet()
+        val stealable = ids("stealable")
+        val dry = ids("needWater")
+        val weed = ids("needWeed")
+        val insect = ids("needBug")
+        val disrupt = ids("canPutWeed") + ids("canPutBug")
         val lands = parseLandsPayload(obj).lands.map { land ->
-            if (land.status == "stealable" && land.id !in stealable) land.copy(status = "unstealable") else land
+            val eligible = land.unlocked && !land.occupiedByMaster
+            val status = when {
+                eligible && land.id in stealable -> "stealable"
+                land.status == "stealable" || land.status == "harvested" -> "unstealable"
+                else -> land.status
+            }
+            land.copy(
+                status = status,
+                needWater = eligible && land.id in dry,
+                needWeed = eligible && land.id in weed,
+                needBug = eligible && land.id in insect,
+            )
         }
         return FriendLandsPayload(
             lands = lands,
-            stealableCount = stealable.size,
-            dryCount = actions?.optJSONArray("needWater")?.length() ?: 0,
-            weedCount = actions?.optJSONArray("needWeed")?.length() ?: 0,
-            insectCount = actions?.optJSONArray("needBug")?.length() ?: 0,
+            stealableCount = lands.count { it.status == "stealable" },
+            dryCount = lands.count { it.needWater },
+            weedCount = lands.count { it.needWeed },
+            insectCount = lands.count { it.needBug },
+            canDisrupt = lands.any { it.unlocked && !it.occupiedByMaster && it.id in disrupt },
         )
     }
 
@@ -636,6 +647,7 @@ object JsonParsers {
             canHarvest = animal.optBoolFlex("canHarvest"),
             canProduce = animal.optBoolFlex("canProduce"),
             canFeed = animal.optBoolFlex("canFeed"),
+            limitedCanUsed = animal.optBoolFlex("limitedCanUsed"),
             canRelease = animal.optBoolFlex("canRelease"),
             grassBlocked = animal.optBoolFlex("grassBlocked"),
             produceCount = animal.optIntFlex("produceCount"),
@@ -895,10 +907,17 @@ object JsonParsers {
             ranchShedAnimal = automation.optIntFlex("ranch_shed_animal", 0),
             ranchGrassThresholdPercent = automation.optIntFlex("ranch_grass_threshold_percent", 20).coerceIn(1, 100),
             ranchCheckMinutes = automation.optIntFlex("ranch_check_minutes", 5).coerceIn(1, 60),
+            ranchFeedNormalStage = readRanchCanStage(automation.optStringClean("ranch_feed_normal_stage")),
+            ranchFeedOrganicStage = readRanchCanStage(automation.optStringClean("ranch_feed_organic_stage")),
             automationBooleans = boolMap,
             rawIntervalsJson = intervals.toString(),
             rawAutomationJson = automation.toString(),
         )
+    }
+
+    private fun readRanchCanStage(raw: String): String? = when (raw) {
+        "any", "longest", "to_production", "near_harvest" -> raw
+        else -> null
     }
 
     fun parseLoginConfig(obj: JSONObject): LoginConfigModel = LoginConfigModel(

@@ -45,7 +45,6 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
@@ -70,7 +69,6 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -84,6 +82,7 @@ import com.qqfarm.mobile.data.network.FarmApiClient
 import com.qqfarm.mobile.data.network.ApiException
 import com.qqfarm.mobile.ui.components.AppleEmptyState
 import com.qqfarm.mobile.ui.components.AppleLoadingState
+import com.qqfarm.mobile.ui.components.AppleProgressBar
 import com.qqfarm.mobile.ui.components.AppleSwitch
 import com.qqfarm.mobile.ui.components.AppleGroupedCard
 import com.qqfarm.mobile.ui.components.AppleQuantityStepper
@@ -95,13 +94,11 @@ import com.qqfarm.mobile.ui.components.RemoteAssetImage
 import com.qqfarm.mobile.ui.components.formatDurationSec
 import com.qqfarm.mobile.ui.components.formatNumber
 import com.qqfarm.mobile.ui.state.SessionUiState
+import com.qqfarm.mobile.ui.theme.CardSurfaceStyle
+import com.qqfarm.mobile.ui.theme.LandColorPreset
+import com.qqfarm.mobile.ui.theme.LocalAppAppearance
 import com.qqfarm.mobile.ui.theme.LocalAppleColors
-import com.qqfarm.mobile.ui.theme.SoilBlack
-import com.qqfarm.mobile.ui.theme.SoilBlueCrystal
-import com.qqfarm.mobile.ui.theme.SoilGold
-import com.qqfarm.mobile.ui.theme.SoilNormal
-import com.qqfarm.mobile.ui.theme.SoilPurpleGold
-import com.qqfarm.mobile.ui.theme.SoilRed
+import com.qqfarm.mobile.ui.theme.resolveLandCardColors
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -286,7 +283,7 @@ fun FarmRanchScreen(
                         0 -> FarmContent(
                             payload = landsPayload,
                             clockTickMs = clockTickMs,
-                            busy = actionBusy || refreshing,
+                            busy = actionBusy || refreshing || loadError.isNotBlank(),
                             onOperate = { operateFarm(it) },
                             onFertilizeAll = { fertType ->
                                 if (actionBusy) return@FarmContent
@@ -313,7 +310,7 @@ fun FarmRanchScreen(
 
                         2 -> PetsContent(
                             snapshot = petSnapshot,
-                            busy = actionBusy || refreshing,
+                            busy = actionBusy || refreshing || loadError.isNotBlank(),
                             onClaimGifts = {
                                 if (actionBusy) return@PetsContent
                                 actionBusy = true
@@ -385,7 +382,7 @@ fun FarmRanchScreen(
             ripeCount = ripeCount,
             hasFarmSocialCleanup = hasFarmSocialCleanup,
             clockTickMs = clockTickMs,
-            busy = actionBusy || refreshing,
+            busy = actionBusy || refreshing || loadError.isNotBlank(),
             onHarvestAll = {
                 selectedLandId = null
                 operateFarm("harvest")
@@ -515,6 +512,7 @@ private fun FarmContent(
     onLandClick: (LandItem) -> Unit,
 ) {
     val apple = LocalAppleColors.current
+    val landColumns = LocalAppAppearance.current.landGridColumns
     val lands = payload?.lands.orEmpty()
     val summary = payload?.summary
     val socialNames = payload?.cleanableSocialEventNames.orEmpty()
@@ -524,6 +522,13 @@ private fun FarmContent(
     val hasCleanupTarget = lands.any {
         !it.occupiedByMaster && (it.status == "growing" || it.status == "harvestable" || it.status == "dead")
     }
+    val fertilizable = lands.filter { land ->
+        val elapsedSec = if (land.fetchedAtElapsedMs > 0L) {
+            ((clockTickMs - land.fetchedAtElapsedMs) / 1000L).coerceAtLeast(0L)
+        } else 0L
+        land.unlocked && !land.occupiedByMaster && land.status == "growing" && land.matureInSec > elapsedSec
+    }
+    val canFertilizeOrganic = fertilizable.any { (it.leftInorcFertTimes ?: 1) > 0 }
 
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
@@ -595,10 +600,10 @@ private fun FarmContent(
                     ActionPillButton("种植", false, !busy && summary != null && (summary.empty > 0 || summary.dead > 0)) { onOperate("plant") }
                 }
                 item {
-                    ActionPillButton("施普通肥", false, !busy) { onFertilizeAll("normal") }
+                    ActionPillButton("施普通肥", false, !busy && fertilizable.isNotEmpty()) { onFertilizeAll("normal") }
                 }
                 item {
-                    ActionPillButton("施有机肥", false, !busy) { onFertilizeAll("organic") }
+                    ActionPillButton("施有机肥", false, !busy && canFertilizeOrganic) { onFertilizeAll("organic") }
                 }
                 item {
                     ActionPillButton("解锁 / 升级", false, !busy && lands.any { it.couldUnlock || it.couldUpgrade }) {
@@ -619,18 +624,19 @@ private fun FarmContent(
                 }
             }
         } else {
-            val rows = lands.chunked(3)
+            val rows = lands.chunked(landColumns)
             items(rows) { rowLands ->
-                EqualHeightRow(spacing = 10.dp) {
+                EqualHeightRow(spacing = if (landColumns >= 4) 6.dp else 10.dp) {
                     rowLands.forEach { land ->
                         AppleLandTile(
                             land = land,
                             clockTickMs = clockTickMs,
                             modifier = Modifier.weight(1f),
+                            compact = landColumns >= 4,
                             onClick = { onLandClick(land) },
                         )
                     }
-                    repeat(3 - rowLands.size) {
+                    repeat(landColumns - rowLands.size) {
                         Spacer(modifier = Modifier.weight(1f))
                     }
                 }
@@ -644,10 +650,12 @@ fun AppleLandTile(
     land: LandItem,
     clockTickMs: Long,
     modifier: Modifier = Modifier,
+    compact: Boolean = LocalAppAppearance.current.landGridColumns >= 4,
     onClick: (() -> Unit)? = null,
 ) {
     val apple = LocalAppleColors.current
-    val soilColor = soilColorForLevel(land.level)
+    val appearance = LocalAppAppearance.current
+    val landColors = resolveLandCardColors(land.level, apple.isDark, apple, appearance)
     val soilLabel = soilLabelForLevel(land.level)
     val isLocked = !land.unlocked || land.status == "locked"
     val isEmpty = !isLocked && (land.status == "empty" || land.plantName.isBlank())
@@ -678,23 +686,44 @@ fun AppleLandTile(
         else -> (land.phaseName.ifBlank { "生长中" }) to apple.blue
     }
 
+    val highlight = land.status == "harvestable" || land.status == "stealable"
+    val tileBorder = if (
+        !highlight &&
+        appearance.cardSurfaceStyle == CardSurfaceStyle.FLAT &&
+        appearance.landPreset == LandColorPreset.PURE
+    ) {
+        null
+    } else {
+        BorderStroke(
+            width = if (highlight) {
+                1.2.dp
+            } else if (appearance.landPreset == LandColorPreset.PURE) {
+                0.5.dp
+            } else {
+                0.8.dp
+            },
+            color = if (land.status == "harvestable") apple.green else if (land.status == "stealable") apple.orange else landColors.border,
+        )
+    }
+
     Surface(
         modifier = modifier
             .fillMaxHeight()
             .alpha(if (isLocked || land.occupiedByMaster) 0.65f else 1f)
-            .clip(RoundedCornerShape(12.dp))
+            .clip(RoundedCornerShape(appearance.tileRadius))
             .then(if (onClick != null) Modifier.pressable(onClick = onClick) else Modifier),
-        shape = RoundedCornerShape(12.dp),
-        color = apple.card,
-        border = BorderStroke(
-            width = if (land.status == "harvestable" || land.status == "stealable") 1.2.dp else 0.5.dp,
-            color = if (land.status == "harvestable") apple.green else if (land.status == "stealable") apple.orange else apple.separator,
-        ),
+        shape = RoundedCornerShape(appearance.tileRadius),
+        color = landColors.background,
+        border = tileBorder,
+        shadowElevation = if (appearance.cardSurfaceStyle == CardSurfaceStyle.ELEVATED && !apple.isDark) 2.dp else 0.dp,
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 8.dp, vertical = 8.dp),
+                .padding(
+                    horizontal = if (compact) 5.dp else 8.dp,
+                    vertical = if (compact) 6.dp else 8.dp,
+                ),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             Row(
@@ -704,43 +733,51 @@ fun AppleLandTile(
             ) {
                 Text(
                     text = "#${land.id}",
-                    style = MaterialTheme.typography.labelSmall.copy(fontFeatureSettings = "tnum"),
+                    style = MaterialTheme.typography.labelSmall.copy(
+                        fontSize = if (compact) 10.sp else 11.sp,
+                        fontFeatureSettings = "tnum",
+                    ),
                     color = apple.secondaryText,
+                    maxLines = 1,
                 )
                 Surface(
                     shape = CircleShape,
-                    color = soilColor.copy(alpha = 0.16f),
+                    color = landColors.badgeBackground,
                 ) {
                     Text(
                         text = soilLabel,
-                        style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
-                        color = soilColor,
-                        modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.dp),
+                        style = MaterialTheme.typography.labelSmall.copy(fontSize = if (compact) 9.sp else 10.sp),
+                        color = landColors.badgeText,
+                        modifier = Modifier.padding(
+                            horizontal = if (compact) 4.dp else 5.dp,
+                            vertical = 1.dp,
+                        ),
+                        maxLines = 1,
                     )
                 }
             }
 
-            Spacer(modifier = Modifier.height(6.dp))
+            Spacer(modifier = Modifier.height(if (compact) 4.dp else 6.dp))
 
             Box(
-                modifier = Modifier.size(40.dp),
+                modifier = Modifier.size(if (compact) 32.dp else 40.dp),
                 contentAlignment = Alignment.Center,
             ) {
                 if (isLocked) {
-                    Icon(Icons.Rounded.Lock, contentDescription = null, tint = apple.secondaryText, modifier = Modifier.size(22.dp))
+                    Icon(Icons.Rounded.Lock, contentDescription = null, tint = apple.secondaryText, modifier = Modifier.size(if (compact) 18.dp else 22.dp))
                 } else if (isEmpty) {
-                    Icon(Icons.Rounded.Eco, contentDescription = null, tint = apple.secondaryText.copy(alpha = 0.45f), modifier = Modifier.size(22.dp))
+                    Icon(Icons.Rounded.Eco, contentDescription = null, tint = apple.secondaryText.copy(alpha = 0.45f), modifier = Modifier.size(if (compact) 18.dp else 22.dp))
                 } else {
                     RemoteAssetImage(
                         url = land.seedImage,
                         contentDescription = land.plantName,
                         fallbackIcon = Icons.Rounded.Eco,
-                        modifier = Modifier.size(38.dp),
+                        modifier = Modifier.size(if (compact) 30.dp else 38.dp),
                     )
                 }
             }
 
-            Spacer(modifier = Modifier.height(4.dp))
+            Spacer(modifier = Modifier.height(if (compact) 3.dp else 4.dp))
 
             Text(
                 text = when {
@@ -748,7 +785,10 @@ fun AppleLandTile(
                     isEmpty -> "空闲土地"
                     else -> land.plantName
                 },
-                style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold),
+                style = MaterialTheme.typography.labelMedium.copy(
+                    fontSize = if (compact) 11.sp else 12.sp,
+                    fontWeight = FontWeight.SemiBold,
+                ),
                 color = apple.primaryText,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
@@ -759,37 +799,42 @@ fun AppleLandTile(
             Text(
                 text = stateLabel,
                 style = MaterialTheme.typography.labelSmall.copy(
+                    fontSize = if (compact) 10.sp else 11.sp,
                     fontWeight = FontWeight.Medium,
                     fontFeatureSettings = "tnum",
                 ),
                 color = stateColor,
                 maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
             )
 
-            Spacer(modifier = Modifier.height(5.dp))
+            Spacer(modifier = Modifier.height(if (compact) 4.dp else 5.dp))
 
-            LinearProgressIndicator(
+            AppleProgressBar(
                 progress = { growFraction },
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(4.dp)
-                    .clip(CircleShape),
+                    .height(4.dp),
                 color = stateColor,
-                trackColor = apple.track,
-                strokeCap = StrokeCap.Round,
+                trackColor = if (appearance.landPreset == LandColorPreset.PURE) {
+                    apple.track
+                } else {
+                    landColors.badgeText.copy(alpha = 0.14f)
+                },
             )
 
-            Spacer(modifier = Modifier.height(4.dp))
+            Spacer(modifier = Modifier.height(if (compact) 3.dp else 4.dp))
 
             Row(
-                modifier = Modifier.height(14.dp),
-                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                modifier = Modifier.height(if (compact) 12.dp else 14.dp),
+                horizontalArrangement = Arrangement.spacedBy(if (compact) 3.dp else 4.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                if (land.needWater) Icon(Icons.Rounded.WaterDrop, contentDescription = "缺水", tint = apple.cyan, modifier = Modifier.size(12.dp))
-                if (land.needWeed) Icon(Icons.Rounded.Grass, contentDescription = "杂草", tint = apple.green, modifier = Modifier.size(12.dp))
-                if (land.needBug) Icon(Icons.Rounded.BugReport, contentDescription = "虫害", tint = apple.orange, modifier = Modifier.size(12.dp))
-                if (land.mutantNames.isNotEmpty()) Icon(Icons.Rounded.Star, contentDescription = "变异", tint = apple.indigo, modifier = Modifier.size(12.dp))
+                val iconSz = if (compact) 10.dp else 12.dp
+                if (land.needWater) Icon(Icons.Rounded.WaterDrop, contentDescription = "缺水", tint = apple.cyan, modifier = Modifier.size(iconSz))
+                if (land.needWeed) Icon(Icons.Rounded.Grass, contentDescription = "杂草", tint = apple.green, modifier = Modifier.size(iconSz))
+                if (land.needBug) Icon(Icons.Rounded.BugReport, contentDescription = "虫害", tint = apple.orange, modifier = Modifier.size(iconSz))
+                if (land.mutantNames.isNotEmpty()) Icon(Icons.Rounded.Star, contentDescription = "变异", tint = apple.indigo, modifier = Modifier.size(iconSz))
             }
         }
     }
@@ -871,43 +916,80 @@ private fun LandDetailSheet(
                 .padding(bottom = 24.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-            ) {
-                RemoteAssetImage(
-                    url = land.seedImage,
-                    contentDescription = land.plantName,
-                    fallbackIcon = Icons.Rounded.Eco,
-                    modifier = Modifier
-                        .size(48.dp)
-                        .clip(RoundedCornerShape(12.dp))
-                        .background(apple.card)
-                        .padding(6.dp),
-                )
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = "#${land.id} · ${land.plantName.ifBlank { if (isLocked) "未解锁" else "空闲土地" }}",
-                        style = MaterialTheme.typography.titleLarge,
-                        color = apple.primaryText,
+            val appearance = LocalAppAppearance.current
+            val landColors = resolveLandCardColors(land.level, apple.isDark, apple, appearance)
+            val tintHeader = appearance.landDetailTinted && appearance.landPreset != LandColorPreset.PURE
+            val phaseSummary = when {
+                isLocked -> "未解锁"
+                isFollower -> "与 #${land.masterLandId} 合种"
+                isEmpty -> "空地待种植"
+                isDead -> "作物已枯萎"
+                isRipe -> "已成熟待收获"
+                else -> land.phaseName.ifBlank { "生长中" }
+            }
+            val seasonSuffix = if (land.totalSeason > 1) {
+                " (${land.currentSeason}/${land.totalSeason}季)"
+            } else ""
+            val headerRow: @Composable (Modifier) -> Unit = { rowMod ->
+                Row(
+                    modifier = rowMod,
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    RemoteAssetImage(
+                        url = land.seedImage,
+                        contentDescription = land.plantName,
+                        fallbackIcon = Icons.Rounded.Eco,
+                        modifier = Modifier
+                            .size(48.dp)
+                            .clip(RoundedCornerShape(appearance.tileRadius))
+                            .background(if (tintHeader) apple.card.copy(alpha = 0.72f) else apple.card)
+                            .padding(6.dp),
                     )
-                    val phaseSummary = when {
-                        isLocked -> "未解锁"
-                        isFollower -> "与 #${land.masterLandId} 合种"
-                        isEmpty -> "空地待种植"
-                        isDead -> "作物已枯萎"
-                        isRipe -> "已成熟待收获"
-                        else -> land.phaseName.ifBlank { "生长中" }
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "#${land.id} · ${land.plantName.ifBlank { if (isLocked) "未解锁" else "空闲土地" }}",
+                            style = MaterialTheme.typography.titleLarge,
+                            color = apple.primaryText,
+                        )
+                        Spacer(modifier = Modifier.height(3.dp))
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        ) {
+                            Surface(
+                                shape = CircleShape,
+                                color = landColors.badgeBackground,
+                            ) {
+                                Text(
+                                    text = soilLabelForLevel(land.level),
+                                    style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
+                                    color = landColors.badgeText,
+                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                                )
+                            }
+                            Text(
+                                text = "$phaseSummary$seasonSuffix",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = apple.secondaryText,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        }
                     }
-                    val seasonSuffix = if (land.totalSeason > 1) {
-                        " (${land.currentSeason}/${land.totalSeason}季)"
-                    } else ""
-                    Text(
-                        text = "${soilLabelForLevel(land.level)} · $phaseSummary$seasonSuffix",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = apple.secondaryText,
-                    )
                 }
+            }
+            if (tintHeader) {
+                Surface(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(appearance.cardRadius),
+                    color = landColors.background,
+                    border = BorderStroke(0.8.dp, landColors.border),
+                ) {
+                    headerRow(Modifier.padding(14.dp))
+                }
+            } else {
+                headerRow(Modifier.fillMaxWidth())
             }
 
             if (isFollower) {
@@ -1171,7 +1253,7 @@ private fun LandDetailSheet(
                             ) {
                                 Button(
                                     onClick = { onFertilize("normal") },
-                                    enabled = !busy,
+                                    enabled = !busy && remainSec > 0L,
                                     shape = RoundedCornerShape(14.dp),
                                     modifier = Modifier.weight(1f),
                                 ) {
@@ -1179,7 +1261,7 @@ private fun LandDetailSheet(
                                 }
                                 Button(
                                     onClick = { onFertilize("organic") },
-                                    enabled = !busy && !organicExhausted,
+                                    enabled = !busy && remainSec > 0L && !organicExhausted,
                                     shape = RoundedCornerShape(14.dp),
                                     modifier = Modifier.weight(1f),
                                 ) {
@@ -1444,7 +1526,7 @@ private fun BagItemActionSheet(
                 Text("化肥容器剩余空间不足", style = MaterialTheme.typography.bodySmall, color = apple.secondaryText)
             }
 
-            if (item.sellable && !item.locked) {
+            if (item.sellable && !item.locked && item.count > 0L) {
                 Button(
                     onClick = onSellAll,
                     enabled = !busy,
@@ -1544,12 +1626,11 @@ private fun PetsContent(
                     }
                 }
                 Spacer(modifier = Modifier.height(12.dp))
-                LinearProgressIndicator(
+                AppleProgressBar(
                     progress = { protectFraction },
-                    modifier = Modifier.fillMaxWidth().height(7.dp).clip(CircleShape),
+                    modifier = Modifier.fillMaxWidth().height(7.dp),
                     color = apple.blue,
                     trackColor = apple.track,
-                    strokeCap = StrokeCap.Round,
                 )
             }
         }
@@ -1725,15 +1806,6 @@ private fun ActionPillButton(
         accentColor = LocalAppleColors.current.emerald,
         onClick = onClick,
     )
-}
-
-private fun soilColorForLevel(level: Int): Color = when (level) {
-    2 -> SoilRed
-    3 -> SoilBlack
-    4 -> SoilGold
-    5 -> SoilPurpleGold
-    6 -> SoilBlueCrystal
-    else -> SoilNormal
 }
 
 private fun soilLabelForLevel(level: Int): String = when (level) {

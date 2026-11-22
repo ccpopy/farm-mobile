@@ -24,6 +24,7 @@ class MainActivity : ComponentActivity() {
             FarmBotTheme(
                 themeMode = sessionState.config.themeMode,
                 dynamicColor = sessionState.config.dynamicColor,
+                customAppearance = sessionState.config.customAppearance,
                 imageLoader = sessionViewModel.container.imageLoader,
                 assetResolver = { raw -> sessionViewModel.apiClient.resolveAssetUrl(raw) },
             ) {

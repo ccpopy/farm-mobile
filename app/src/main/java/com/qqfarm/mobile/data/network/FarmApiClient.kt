@@ -629,7 +629,11 @@ class FarmApiClient {
             accountIdOverride = accountId,
         )
         val data = json.optJSONObject("data") ?: JSONObject()
-        return data.optStringClean("message").ifBlank { "操作已执行" }
+        val message = data.optStringClean("message")
+        if (!data.optBoolFlex("ok", true)) {
+            throw ApiException(message.ifBlank { "好友农场操作失败" })
+        }
+        return message.ifBlank { "操作已执行" }
     }
 
     suspend fun fetchInteractRecords(accountId: String): List<InteractRecord> {
@@ -722,6 +726,11 @@ class FarmApiClient {
         for ((k, v) in model.automationBooleans) {
             automation.put(k, v)
         }
+        fun putCanStageChange(key: String, before: String?, after: String?) {
+            if (after == null || before == after) automation.remove(key) else automation.put(key, after)
+        }
+        putCanStageChange("ranch_feed_normal_stage", baseline.ranchFeedNormalStage, model.ranchFeedNormalStage)
+        putCanStageChange("ranch_feed_organic_stage", baseline.ranchFeedOrganicStage, model.ranchFeedOrganicStage)
 
         val quiet = JSONObject()
             .put("enabled", model.quietHoursEnabled)

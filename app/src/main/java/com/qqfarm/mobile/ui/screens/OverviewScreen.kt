@@ -62,7 +62,6 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Surface
@@ -83,7 +82,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -106,6 +104,7 @@ import com.qqfarm.mobile.ui.components.AppleGroupedCard
 import com.qqfarm.mobile.ui.components.AppleHairlineDivider
 import com.qqfarm.mobile.ui.components.AppleIconBadge
 import com.qqfarm.mobile.ui.components.AppleMetricTile
+import com.qqfarm.mobile.ui.components.AppleProgressBar
 import com.qqfarm.mobile.ui.components.AppleQuickEntryRow
 import com.qqfarm.mobile.ui.components.AppleRadius
 import com.qqfarm.mobile.ui.components.AppleSectionHeader
@@ -117,6 +116,7 @@ import com.qqfarm.mobile.ui.components.formatBucketHours
 import com.qqfarm.mobile.ui.components.formatCompactCount
 import com.qqfarm.mobile.ui.components.formatDurationSec
 import com.qqfarm.mobile.ui.components.formatNumber
+import com.qqfarm.mobile.ui.components.spaceAccent
 import com.qqfarm.mobile.ui.state.SessionUiState
 import com.qqfarm.mobile.ui.theme.LocalAppleColors
 import kotlinx.coroutines.delay
@@ -450,15 +450,13 @@ fun OverviewScreen(
                             )
                         }
                         Spacer(modifier = Modifier.height(6.dp))
-                        LinearProgressIndicator(
+                        AppleProgressBar(
                             progress = { progress?.fraction ?: 0f },
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .height(7.dp)
-                                .clip(CircleShape),
+                                .height(7.dp),
                             color = MaterialTheme.colorScheme.primary,
                             trackColor = apple.track,
-                            strokeCap = StrokeCap.Round,
                         )
 
                         Spacer(modifier = Modifier.height(10.dp))
@@ -1366,6 +1364,7 @@ private fun RanchOverviewContent(
         return
     }
 
+    val ranchAccent = spaceAccent(GameSpace.RANCH)
     val allAnimals = ranch?.pens?.flatMap { it.animals } ?: emptyList()
     val totalCapacity = ranch?.facilities?.filter { it.hasRanch }?.sumOf { it.ranchCapacity }
         ?: ranch?.pens?.sumOf { it.capacity }
@@ -1441,7 +1440,7 @@ private fun RanchOverviewContent(
                             )
                             Surface(
                                 shape = CircleShape,
-                                color = apple.orange.copy(alpha = 0.15f),
+                                color = ranchAccent.copy(alpha = 0.15f),
                             ) {
                                 Text(
                                     text = "牧场 Lv.${ranch?.level ?: 0}",
@@ -1449,7 +1448,7 @@ private fun RanchOverviewContent(
                                         fontWeight = FontWeight.Bold,
                                         fontFeatureSettings = "tnum",
                                     ),
-                                    color = apple.orange,
+                                    color = ranchAccent,
                                     modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
                                 )
                             }
@@ -1460,7 +1459,7 @@ private fun RanchOverviewContent(
                             verticalArrangement = Arrangement.spacedBy(4.dp),
                         ) {
                             AppleStatusPill("在线", apple.green)
-                            AppleStatusPill("饲养 ${allAnimals.size} / $totalCapacity", apple.orange, showDot = false)
+                            AppleStatusPill("饲养 ${allAnimals.size} / $totalCapacity", ranchAccent, showDot = false)
                             if (account != null) {
                                 AppleStatusPill(account.platformLabel, if (account.platform == "wx") apple.green else apple.blue, showDot = false)
                             }
@@ -1484,15 +1483,13 @@ private fun RanchOverviewContent(
                     )
                 }
                 Spacer(modifier = Modifier.height(6.dp))
-                LinearProgressIndicator(
+                AppleProgressBar(
                     progress = { expFraction },
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(7.dp)
-                        .clip(CircleShape),
-                    color = apple.orange,
+                        .height(7.dp),
+                    color = ranchAccent,
                     trackColor = apple.track,
-                    strokeCap = StrokeCap.Round,
                 )
                 if (ranch != null && needed > 0L) {
                     Spacer(modifier = Modifier.height(8.dp))
@@ -1735,15 +1732,13 @@ private fun RanchOverviewContent(
                                             color = if (f.upgradeState != 0 || f.canActivate) apple.orange else apple.secondaryText,
                                         )
                                     }
-                                    LinearProgressIndicator(
+                                    AppleProgressBar(
                                         progress = { fraction },
                                         modifier = Modifier
                                             .fillMaxWidth()
-                                            .height(5.dp)
-                                            .clip(CircleShape),
-                                        color = apple.orange,
+                                            .height(5.dp),
+                                        color = ranchAccent,
                                         trackColor = apple.track,
-                                        strokeCap = StrokeCap.Round,
                                     )
                                 }
                             }

@@ -1,6 +1,9 @@
 package com.qqfarm.mobile.ui.screens
 
 import android.Manifest
+import android.content.Context
+import android.content.Intent
+import android.net.Uri
 import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -37,6 +40,7 @@ import androidx.compose.material.icons.rounded.Person
 import androidx.compose.material.icons.rounded.Pets
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.Speed
+import androidx.compose.material.icons.rounded.Star
 import androidx.compose.material.icons.rounded.DeleteSweep
 import androidx.compose.material.icons.rounded.SystemUpdateAlt
 import androidx.compose.material.icons.rounded.Tune
@@ -74,6 +78,8 @@ import com.qqfarm.mobile.data.model.RUN_LOG_RETENTION_DAYS
 import com.qqfarm.mobile.data.model.ActivityNotifyGroup
 import com.qqfarm.mobile.data.model.ActivityNotifyType
 import com.qqfarm.mobile.data.network.ActivityNotificationManager
+import com.qqfarm.mobile.data.network.PROJECT_GITHUB_URL
+import com.qqfarm.mobile.data.network.PROJECT_REPOSITORY
 import com.qqfarm.mobile.data.prefs.StoredConfig
 import com.qqfarm.mobile.ui.components.AppleAlertDialog
 import com.qqfarm.mobile.ui.components.AppleFilterChip
@@ -86,7 +92,9 @@ import com.qqfarm.mobile.ui.components.AppleSwitchRow
 import com.qqfarm.mobile.ui.components.ServerSwitcherSheet
 import com.qqfarm.mobile.ui.state.AppUpdateViewModel
 import com.qqfarm.mobile.ui.state.SessionUiState
+import com.qqfarm.mobile.ui.theme.CustomAppearanceConfig
 import com.qqfarm.mobile.ui.theme.LocalAppleColors
+import com.qqfarm.mobile.ui.theme.SoilGold
 
 @Composable
 fun SettingsScreen(
@@ -102,6 +110,7 @@ fun SettingsScreen(
     onDisconnect: () -> Unit,
     onUpdateThemeMode: (String) -> Unit,
     onUpdateDynamicColor: (Boolean) -> Unit,
+    onUpdateCustomAppearance: (CustomAppearanceConfig) -> Unit,
     onToggleOfflineAlerts: (Boolean) -> Unit,
     onToggleActivityPush: (Boolean) -> Unit,
     onToggleNotifyCollapse: (Boolean) -> Unit,
@@ -125,6 +134,7 @@ fun SettingsScreen(
     var showServerSheet by remember { mutableStateOf(false) }
     var showGithubTokenEditor by rememberSaveable { mutableStateOf(false) }
     var showLogCleanup by remember(session.config.currentAccountId) { mutableStateOf(false) }
+    var showCustomAppearanceSheet by remember { mutableStateOf(false) }
 
     var notificationsGranted by remember {
         mutableStateOf(ActivityNotificationManager.areNotificationsEnabled(context))
@@ -339,30 +349,49 @@ fun SettingsScreen(
         item {
             AppleSectionHeader(title = "外观与通用")
             Spacer(modifier = Modifier.height(4.dp))
-            AppleGroupedCard(contentPadding = PaddingValues(14.dp)) {
-                Text(
-                    text = "主题外观",
-                    style = MaterialTheme.typography.titleSmall,
-                    color = apple.primaryText,
-                )
-                Spacer(modifier = Modifier.height(10.dp))
-                val themeIndex = when (session.config.themeMode) {
-                    StoredConfig.THEME_LIGHT -> 1
-                    StoredConfig.THEME_DARK -> 2
-                    else -> 0
+            AppleGroupedCard {
+                Column(modifier = Modifier.padding(14.dp)) {
+                    Text(
+                        text = "主题外观",
+                        style = MaterialTheme.typography.titleSmall,
+                        color = apple.primaryText,
+                    )
+                    Spacer(modifier = Modifier.height(10.dp))
+                    val themeIndex = when (session.config.themeMode) {
+                        StoredConfig.THEME_LIGHT -> 1
+                        StoredConfig.THEME_DARK -> 2
+                        StoredConfig.THEME_CUSTOM -> 3
+                        else -> 0
+                    }
+                    AppleSegmentedControl(
+                        options = listOf("跟随系统", "浅色", "深色", "自定义"),
+                        selectedIndex = themeIndex,
+                        onSelect = { idx ->
+                            when (idx) {
+                                1 -> onUpdateThemeMode(StoredConfig.THEME_LIGHT)
+                                2 -> onUpdateThemeMode(StoredConfig.THEME_DARK)
+                                3 -> {
+                                    onUpdateThemeMode(StoredConfig.THEME_CUSTOM)
+                                    showCustomAppearanceSheet = true
+                                }
+                                else -> onUpdateThemeMode(StoredConfig.THEME_SYSTEM)
+                            }
+                        },
+                    )
                 }
-                AppleSegmentedControl(
-                    options = listOf("跟随系统", "浅色", "深色"),
-                    selectedIndex = themeIndex,
-                    onSelect = { idx ->
-                        val mode = when (idx) {
-                            1 -> StoredConfig.THEME_LIGHT
-                            2 -> StoredConfig.THEME_DARK
-                            else -> StoredConfig.THEME_SYSTEM
-                        }
-                        onUpdateThemeMode(mode)
-                    },
-                )
+                if (session.config.themeMode == StoredConfig.THEME_CUSTOM) {
+                    val custom = session.config.customAppearance
+                    AppleHairlineDivider(startIndent = 16.dp)
+                    AppleSettingRow(
+                        icon = Icons.Rounded.Tune,
+                        iconTint = apple.emerald,
+                        title = "自定义外观参数",
+                        subtitle = "土地:${custom.landPreset.label} · 牧场:${custom.ranchAnimalPreset.label} · ${custom.progressBarStyle.label}",
+                        trailingText = "调整",
+                        showChevron = true,
+                        onClick = { showCustomAppearanceSheet = true },
+                    )
+                }
             }
 
             Spacer(modifier = Modifier.height(10.dp))
@@ -372,7 +401,7 @@ fun SettingsScreen(
                         icon = Icons.Rounded.Palette,
                         iconTint = apple.indigo,
                         title = "动态壁纸取色 (Material You)",
-                        subtitle = "开启后主按钮随系统壁纸色调变化；关闭则保持默认农牧配色",
+                        subtitle = "开启后主按钮随系统壁纸色调变化；自定义强调色生效时优先使用自定义色",
                         checked = session.config.dynamicColor,
                         onCheckedChange = onUpdateDynamicColor,
                     )
@@ -413,6 +442,16 @@ fun SettingsScreen(
                     trailingText = "保留 $RUN_LOG_RETENTION_DAYS 天",
                     showChevron = true,
                     onClick = { showLogCleanup = true },
+                )
+                AppleHairlineDivider()
+                AppleSettingRow(
+                    icon = Icons.Rounded.Star,
+                    iconTint = SoilGold,
+                    title = "点个 Star 支持",
+                    subtitle = PROJECT_REPOSITORY,
+                    trailingText = "GitHub",
+                    showChevron = true,
+                    onClick = { openGithubRepository(context, PROJECT_GITHUB_URL, onMessage) },
                 )
             }
         }
@@ -461,6 +500,14 @@ fun SettingsScreen(
         )
     }
     AppUpdateDialogs(updateModel, session.config)
+    if (showCustomAppearanceSheet) {
+        CustomAppearanceSheet(
+            config = session.config.customAppearance,
+            onUpdate = onUpdateCustomAppearance,
+            onReset = { onUpdateCustomAppearance(CustomAppearanceConfig()) },
+            onDismiss = { showCustomAppearanceSheet = false },
+        )
+    }
 
     if (showNotifySheet) {
         NotificationSettingsSheet(
@@ -742,5 +789,33 @@ private fun NotificationSettingsSheet(
                 }
             }
         }
+    }
+}
+
+private fun openGithubRepository(
+    context: Context,
+    repoUrl: String,
+    onError: (String) -> Unit,
+) {
+    val uri = Uri.parse(repoUrl)
+    val launchedGithubApp = runCatching {
+        context.startActivity(
+            Intent(Intent.ACTION_VIEW, uri).apply {
+                setPackage("com.github.android")
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+        )
+    }.isSuccess
+    if (launchedGithubApp) return
+
+    val launchedBrowser = runCatching {
+        context.startActivity(
+            Intent(Intent.ACTION_VIEW, uri).apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+        )
+    }.isSuccess
+    if (!launchedBrowser) {
+        onError("未找到可打开链接的应用，仓库地址：$repoUrl")
     }
 }

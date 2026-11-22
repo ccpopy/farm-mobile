@@ -535,6 +535,8 @@ object FeatureJsonParsers {
 
         val frObj = obj.optJSONObject("friendRanch")
         val friendRanch = if (frObj != null) {
+            val sceneRestored = frObj.optBoolFlex("sceneRestored", true)
+            val canSteal = sceneRestored && frObj.optBoolFlex("canSteal") && frObj.optIntFlex("stealableShelves") > 0
             val ranchesArr = frObj.optJSONArray("ranches") ?: JSONArray()
             val ranches = buildList(ranchesArr.length()) {
                 for (i in 0 until ranchesArr.length()) {
@@ -555,7 +557,7 @@ object FeatureJsonParsers {
                                 RanchFriendShelf(
                                     penId = penId,
                                     slot = sh.optIntFlex("slot"),
-                                    canSteal = sh.optBoolFlex("canSteal"),
+                                    canSteal = canSteal && sh.optBoolFlex("canSteal"),
                                     products = parseCommerceItems(sh.optJSONArray("products")),
                                 )
                             )
@@ -574,16 +576,18 @@ object FeatureJsonParsers {
                     )
                 }
             }
+            val stealableShelves = ranches.sumOf { pen -> pen.shelves.count { it.canSteal } }
             RanchFriendDetail(
                 gid = frObj.optStringClean("gid"),
                 level = frObj.optIntFlex("level"),
-                canSteal = frObj.optBoolFlex("canSteal"),
-                stealableShelves = frObj.optIntFlex("stealableShelves"),
+                canSteal = stealableShelves > 0,
+                stealableShelves = stealableShelves,
                 strokeRemaining = frObj.optIntFlex("strokeRemaining"),
                 mosquitoRemaining = frObj.optIntFlex("mosquitoRemaining"),
                 cleanableHazards = frObj.optIntFlex("cleanableHazards"),
                 career = JsonParsers.parseRanchCareer(frObj.optJSONObject("career")),
                 notice = frObj.optStringClean("notice"),
+                sceneRestored = sceneRestored,
                 ranches = ranches,
             )
         } else null

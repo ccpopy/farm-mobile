@@ -575,6 +575,10 @@ class AppSessionViewModel(application: Application) : AndroidViewModel(applicati
         viewModelScope.launch { prefs.updateDynamicColor(enabled) }
     }
 
+    fun updateCustomAppearance(appearance: com.qqfarm.mobile.ui.theme.CustomAppearanceConfig) {
+        viewModelScope.launch { prefs.updateCustomAppearance(appearance) }
+    }
+
     fun setOfflineAlertsEnabled(enabled: Boolean) {
         viewModelScope.launch {
             prefs.updateOfflineAlertsEnabled(enabled)

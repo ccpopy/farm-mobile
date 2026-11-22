@@ -47,7 +47,6 @@ import androidx.compose.material3.Checkbox
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
@@ -71,7 +70,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
@@ -100,6 +98,7 @@ import com.qqfarm.mobile.ui.components.AppleEmptyState
 import com.qqfarm.mobile.ui.components.AppleLoadingState
 import com.qqfarm.mobile.ui.components.AppleGroupedCard
 import com.qqfarm.mobile.ui.components.AppleHairlineDivider
+import com.qqfarm.mobile.ui.components.AppleProgressBar
 import com.qqfarm.mobile.ui.components.AppleQuantityStepper
 import com.qqfarm.mobile.ui.components.AppleScrollablePills
 import com.qqfarm.mobile.ui.components.AppleSectionHeader
@@ -1577,15 +1576,13 @@ private fun MilkTeaShopTab(
                                     color = apple.primaryText,
                                 )
                             }
-                            LinearProgressIndicator(
+                            AppleProgressBar(
                                 progress = { frac },
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .height(7.dp)
-                                    .clip(RoundedCornerShape(4.dp)),
+                                    .height(7.dp),
                                 color = apple.orange,
                                 trackColor = apple.track,
-                                strokeCap = StrokeCap.Round,
                             )
                         }
                     }
@@ -2740,12 +2737,11 @@ private fun ShareRewardDetailContent(
                         }
                         if (nextTier != null) {
                             val frac = (current.score.toFloat() / nextTier.threshold.coerceAtLeast(1L).toFloat()).coerceIn(0f, 1f)
-                            LinearProgressIndicator(
+                            AppleProgressBar(
                                 progress = { frac },
-                                modifier = Modifier.fillMaxWidth().height(7.dp).clip(RoundedCornerShape(4.dp)),
+                                modifier = Modifier.fillMaxWidth().height(7.dp),
                                 color = apple.orange,
                                 trackColor = apple.track,
-                                strokeCap = StrokeCap.Round,
                             )
                             Text(
                                 text = "再攒 ${formatCompactCount(nextTier.threshold - current.score)} 解锁 ${formatCompactCount(nextTier.threshold)} 档",

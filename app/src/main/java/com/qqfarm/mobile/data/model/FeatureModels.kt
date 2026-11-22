@@ -341,6 +341,7 @@ data class RanchFriendDetail(
     val cleanableHazards: Int = 0,
     val career: RanchCareer? = null,
     val notice: String = "",
+    val sceneRestored: Boolean = true,
     val ranches: List<RanchFriendPen> = emptyList(),
 )
 

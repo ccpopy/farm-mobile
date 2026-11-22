@@ -9,6 +9,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
@@ -48,6 +49,7 @@ import com.qqfarm.mobile.data.prefs.StoredConfig
 import com.qqfarm.mobile.data.prefs.UpdateDownloadMode
 import com.qqfarm.mobile.data.prefs.UpdateDownloadSettings
 import com.qqfarm.mobile.ui.components.AppleAlertDialog
+import com.qqfarm.mobile.ui.components.AppleProgressBar
 import com.qqfarm.mobile.ui.components.AppleSegmentedControl
 import com.qqfarm.mobile.ui.components.AppleSettingRow
 import com.qqfarm.mobile.ui.state.isValidGithubToken
@@ -287,7 +289,7 @@ internal fun AppUpdateDialogs(model: AppUpdateViewModel, config: StoredConfig) {
             title = { Text("正在下载 ${current.update.release.version}") },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    LinearProgressIndicator(progress = { current.percent / 100f }, modifier = Modifier.fillMaxWidth())
+                    AppleProgressBar(progress = { current.percent / 100f }, modifier = Modifier.fillMaxWidth().height(6.dp))
                     Text("${current.percent}%")
                 }
             },

@@ -15,6 +15,7 @@ import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.TextStyle
@@ -228,27 +229,127 @@ private val AppleTypography = Typography(
 fun FarmBotTheme(
     themeMode: String = StoredConfig.THEME_SYSTEM,
     dynamicColor: Boolean = false,
+    customAppearance: CustomAppearanceConfig = CustomAppearanceConfig(),
     imageLoader: ImageLoader? = null,
     assetResolver: (String) -> String = { it },
     content: @Composable () -> Unit,
 ) {
+    val effectiveThemeMode = if (themeMode == StoredConfig.THEME_CUSTOM) {
+        customAppearance.baseThemeMode
+    } else {
+        themeMode
+    }
     val systemDark = isSystemInDarkTheme()
-    val darkTheme = when (themeMode) {
+    val darkTheme = when (effectiveThemeMode) {
         StoredConfig.THEME_LIGHT -> false
         StoredConfig.THEME_DARK -> true
         else -> systemDark
     }
+    val appearance = resolveEffectiveAppearance(themeMode, customAppearance)
 
     val context = LocalContext.current
-    val colorScheme = when {
-        dynamicColor && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S -> {
+    val customAccent = appearance.customAccent
+    val baseScheme = when {
+        customAccent == null && dynamicColor && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S -> {
             if (darkTheme) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
         }
         darkTheme -> DarkColorScheme
         else -> LightColorScheme
     }
+    val baseExtended = if (darkTheme) DarkExtendedColors else LightExtendedColors
+    val tonedExtended = when (appearance.backgroundTone) {
+        BackgroundTone.STANDARD -> baseExtended
+        BackgroundTone.WARM_SOFT -> if (darkTheme) {
+            baseExtended.copy(
+                background = Color(0xFF131417),
+                card = Color(0xFF1E2025),
+                elevated = Color(0xFF292C33),
+                track = Color(0xFF292C33),
+                separator = Color(0xFF363A42),
+            )
+        } else {
+            baseExtended.copy(
+                background = Color(0xFFF6F4EC),
+                card = Color(0xFFFFFDF8),
+                elevated = Color(0xFFF1EEE4),
+                track = Color(0xFFEAE6DA),
+                separator = Color(0xFFE1DCCE),
+            )
+        }
+        BackgroundTone.PURE_AMOLED -> if (darkTheme) {
+            baseExtended.copy(
+                background = Color(0xFF000000),
+                card = Color(0xFF101114),
+                elevated = Color(0xFF1A1C21),
+                track = Color(0xFF1C1E23),
+                separator = Color(0xFF262930),
+            )
+        } else {
+            baseExtended.copy(
+                background = Color(0xFFFFFFFF),
+                card = Color(0xFFF7F7FA),
+                elevated = Color(0xFFEFEFF4),
+                track = Color(0xFFE6E6EC),
+                separator = Color(0xFFE4E4EA),
+            )
+        }
+    }
+    val tonedScheme = if (appearance.backgroundTone != BackgroundTone.STANDARD) {
+        baseScheme.copy(
+            background = tonedExtended.background,
+            surface = tonedExtended.card,
+            surfaceVariant = tonedExtended.elevated,
+            outlineVariant = tonedExtended.separator,
+            surfaceContainerLowest = tonedExtended.card,
+            surfaceContainerLow = tonedExtended.card,
+            surfaceContainer = tonedExtended.elevated,
+            surfaceContainerHigh = tonedExtended.elevated,
+            surfaceContainerHighest = tonedExtended.elevated,
+        )
+    } else {
+        baseScheme
+    }
+    val colorScheme = if (customAccent != null) {
+        val primary = if (darkTheme) lerp(customAccent, Color.White, 0.16f) else customAccent
+        val onPrimary = primary.onAccent()
+        val container = if (darkTheme) lerp(tonedExtended.card, primary, 0.24f) else lerp(Color.White, primary, 0.14f)
+        val onContainer = if (darkTheme) lerp(primary, Color.White, 0.42f) else lerp(primary, Color.Black, 0.32f)
+        tonedScheme.copy(
+            primary = primary,
+            onPrimary = onPrimary,
+            primaryContainer = container,
+            onPrimaryContainer = onContainer,
+        )
+    } else {
+        tonedScheme
+    }
 
-    val extended = if (darkTheme) DarkExtendedColors else LightExtendedColors
+    val extended = if (themeMode == StoredConfig.THEME_CUSTOM) {
+        tonedExtended.copy(emerald = colorScheme.primary)
+    } else {
+        tonedExtended
+    }
+    val resolvedRanchAccent = if (themeMode == StoredConfig.THEME_CUSTOM) {
+        customAppearance.resolveRanchAccent(extended.emerald, darkTheme)
+    } else null
+    val finalAppearance = appearance.copy(ranchAccent = resolvedRanchAccent)
+    val shapes = when (appearance.cornerStyle) {
+        CornerStyle.ROUNDED -> Shapes(
+            extraSmall = RoundedCornerShape(8.dp),
+            small = RoundedCornerShape(12.dp),
+            medium = RoundedCornerShape(14.dp),
+            large = RoundedCornerShape(18.dp),
+            extraLarge = RoundedCornerShape(22.dp),
+        )
+        CornerStyle.COMPACT -> Shapes(
+            extraSmall = RoundedCornerShape(4.dp),
+            small = RoundedCornerShape(6.dp),
+            medium = RoundedCornerShape(6.dp),
+            large = RoundedCornerShape(8.dp),
+            extraLarge = RoundedCornerShape(14.dp),
+        )
+        CornerStyle.STANDARD -> AppleShapes
+    }
     val view = LocalView.current
     if (!view.isInEditMode) {
         SideEffect {
@@ -263,13 +364,14 @@ fun FarmBotTheme(
 
     CompositionLocalProvider(
         LocalAppleColors provides extended,
+        LocalAppAppearance provides finalAppearance,
         LocalFarmImageLoader provides imageLoader,
         LocalAssetResolver provides assetResolver,
     ) {
         MaterialTheme(
             colorScheme = colorScheme,
             typography = AppleTypography,
-            shapes = AppleShapes,
+            shapes = shapes,
             content = content,
         )
     }

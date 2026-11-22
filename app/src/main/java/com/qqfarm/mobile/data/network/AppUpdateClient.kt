@@ -23,6 +23,8 @@ import java.util.concurrent.TimeUnit
 
 internal const val DEFAULT_UPDATE_ACCELERATOR = "https://ghfast.top"
 private const val UPDATE_REPOSITORY = "ccpopy/farm-mobile"
+internal const val PROJECT_REPOSITORY = UPDATE_REPOSITORY
+internal const val PROJECT_GITHUB_URL = "https://github.com/$UPDATE_REPOSITORY"
 private const val GITHUB_API = "https://api.github.com/repos/$UPDATE_REPOSITORY"
 private const val GITHUB_RELEASES = "https://github.com/$UPDATE_REPOSITORY/releases"
 private const val TAG_PREFIX = "v"

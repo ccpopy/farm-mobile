@@ -3,8 +3,10 @@ package com.qqfarm.mobile.ui.components
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.progressSemantics
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -59,6 +61,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
@@ -78,6 +81,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
@@ -95,9 +99,13 @@ import coil.request.ImageRequest
 import com.qqfarm.mobile.data.model.CommerceItem
 import com.qqfarm.mobile.data.model.GameSpace
 import com.qqfarm.mobile.data.model.RanchQuote
+import com.qqfarm.mobile.ui.theme.CardSurfaceStyle
+import com.qqfarm.mobile.ui.theme.LocalAppAppearance
 import com.qqfarm.mobile.ui.theme.LocalAppleColors
 import com.qqfarm.mobile.ui.theme.LocalAssetResolver
 import com.qqfarm.mobile.ui.theme.LocalFarmImageLoader
+import com.qqfarm.mobile.ui.theme.ProgressBarStyle
+import com.qqfarm.mobile.ui.theme.onAccent
 import kotlinx.coroutines.delay
 import java.text.NumberFormat
 import java.text.SimpleDateFormat
@@ -113,18 +121,79 @@ fun AppleGroupedCard(
     content: @Composable ColumnScope.() -> Unit,
 ) {
     val apple = LocalAppleColors.current
+    val appearance = LocalAppAppearance.current
+    val border = when (appearance.cardSurfaceStyle) {
+        CardSurfaceStyle.BORDERED -> BorderStroke(0.5.dp, apple.separator)
+        CardSurfaceStyle.ELEVATED -> if (apple.isDark) BorderStroke(0.5.dp, apple.separator) else null
+        CardSurfaceStyle.FLAT -> null
+    }
+    val elevation = when (appearance.cardSurfaceStyle) {
+        CardSurfaceStyle.ELEVATED -> if (apple.isDark) 0.dp else 3.dp
+        else -> 0.dp
+    }
     Surface(
         modifier = modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(AppleRadius.card),
+        shape = RoundedCornerShape(appearance.cardRadius),
         color = containerColor,
-        border = BorderStroke(0.5.dp, apple.separator),
+        border = border,
         tonalElevation = 0.dp,
-        shadowElevation = 0.dp,
+        shadowElevation = elevation,
     ) {
         Column(
             modifier = Modifier.padding(contentPadding),
             content = content,
         )
+    }
+}
+
+@Composable
+fun AppleProgressBar(
+    progress: () -> Float,
+    modifier: Modifier = Modifier,
+    color: Color = MaterialTheme.colorScheme.primary,
+    trackColor: Color = LocalAppleColors.current.track,
+) {
+    val appearance = LocalAppAppearance.current
+    val clamped = progress().coerceIn(0f, 1f)
+    when (appearance.progressBarStyle) {
+        ProgressBarStyle.SEGMENTED -> {
+            LinearProgressIndicator(
+                progress = { clamped },
+                modifier = modifier.clip(CircleShape),
+                color = color,
+                trackColor = trackColor,
+                strokeCap = StrokeCap.Round,
+            )
+        }
+        ProgressBarStyle.SMOOTH, ProgressBarStyle.GRADIENT -> {
+            val animated by animateFloatAsState(
+                targetValue = clamped,
+                animationSpec = spring(stiffness = Spring.StiffnessMediumLow),
+                label = "appleProgress",
+            )
+            val fillModifier = if (appearance.progressBarStyle == ProgressBarStyle.GRADIENT) {
+                Modifier.background(Brush.horizontalGradient(listOf(lerp(color, Color.White, 0.26f), color)))
+            } else {
+                Modifier.background(color)
+            }
+            val fraction = animated.coerceIn(0f, 1f)
+            Box(
+                modifier = modifier
+                    .progressSemantics(clamped)
+                    .clip(CircleShape)
+                    .background(trackColor),
+            ) {
+                if (fraction > 0.001f) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxHeight()
+                            .fillMaxWidth(fraction)
+                            .clip(CircleShape)
+                            .then(fillModifier),
+                    )
+                }
+            }
+        }
     }
 }
 
@@ -468,15 +537,25 @@ fun AppleMetricTile(
     var showExact by remember(label) { mutableStateOf(false) }
     val shownValue = if (showExact && exactValue != null) exactValue else value
     val shownDelta = if (showExact && exactDeltaText != null) exactDeltaText else deltaText
+    val appearance = LocalAppAppearance.current
+    val border = when (appearance.cardSurfaceStyle) {
+        CardSurfaceStyle.BORDERED -> BorderStroke(0.5.dp, apple.separator)
+        CardSurfaceStyle.ELEVATED -> if (apple.isDark) BorderStroke(0.5.dp, apple.separator) else null
+        CardSurfaceStyle.FLAT -> null
+    }
+    val elevation = when (appearance.cardSurfaceStyle) {
+        CardSurfaceStyle.ELEVATED -> if (apple.isDark) 0.dp else 3.dp
+        else -> 0.dp
+    }
     Surface(
         // fillMaxHeight：放进 EqualHeightRow 时与同行卡片等高；普通 Row 中不生效。
         modifier = modifier
             .fillMaxHeight()
-            .clip(RoundedCornerShape(14.dp))
             .then(if (expandable) Modifier.pressable(pressedScale = 0.98f) { showExact = !showExact } else Modifier),
-        shape = RoundedCornerShape(14.dp),
+        shape = RoundedCornerShape(appearance.cardRadius),
         color = apple.card,
-        border = BorderStroke(0.5.dp, apple.separator),
+        border = border,
+        shadowElevation = elevation,
     ) {
         Column(
             modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
@@ -793,7 +872,7 @@ fun AppleSpaceSwitcher(
                     label = "spaceContainer",
                 )
                 val content by animateColorAsState(
-                    targetValue = if (selected) Color.White else apple.secondaryText,
+                    targetValue = if (selected) accent.onAccent() else apple.secondaryText,
                     label = "spaceContent",
                 )
                 Row(
@@ -830,11 +909,12 @@ fun AppleSpaceSwitcher(
     }
 }
 
-/** 空间主色：农场绿、牧场橙，导航、切换器、主按钮统一取这里。 */
+/** 空间主色：农场绿、牧场橙（或自定义牧场色），导航、切换器、主按钮统一取这里。 */
 @Composable
 fun spaceAccent(space: GameSpace): Color {
     val apple = LocalAppleColors.current
-    return if (space == GameSpace.RANCH) apple.orange else apple.emerald
+    val appearance = LocalAppAppearance.current
+    return if (space == GameSpace.RANCH) appearance.ranchAccent ?: apple.orange else apple.emerald
 }
 
 /** 空间图标：农场用拖拉机、牧场用爪印；选中实心、未选中线框。 */
@@ -874,13 +954,10 @@ fun AppleActionPill(
     onClick: () -> Unit,
 ) {
     val apple = LocalAppleColors.current
-    val container = when {
-        primary && enabled -> accentColor
-        primary -> accentColor.copy(alpha = 0.35f)
-        else -> apple.card
-    }
+    val emphasized = primary && enabled
+    val container = if (emphasized) accentColor else apple.card
     val content = when {
-        primary -> Color.White
+        emphasized -> accentColor.onAccent()
         enabled -> apple.primaryText
         else -> apple.secondaryText.copy(alpha = 0.6f)
     }
@@ -890,7 +967,7 @@ fun AppleActionPill(
             .pressable(enabled = enabled, onClick = onClick),
         shape = CircleShape,
         color = container,
-        border = if (primary) null else BorderStroke(0.5.dp, apple.separator),
+        border = if (emphasized) null else BorderStroke(0.5.dp, apple.separator),
     ) {
         Row(
             modifier = Modifier

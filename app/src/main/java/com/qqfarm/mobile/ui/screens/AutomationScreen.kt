@@ -49,6 +49,7 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material3.SheetValue
 import androidx.compose.material3.rememberModalBottomSheetState
@@ -62,6 +63,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -75,6 +77,7 @@ import com.qqfarm.mobile.data.model.SchedulerSummary
 import com.qqfarm.mobile.data.model.SeedOption
 import com.qqfarm.mobile.data.network.ApiException
 import com.qqfarm.mobile.data.network.FarmApiClient
+import com.qqfarm.mobile.ui.components.AppleAlertDialog
 import com.qqfarm.mobile.ui.components.AppleEmptyState
 import com.qqfarm.mobile.ui.components.AppleFilterChip
 import com.qqfarm.mobile.ui.components.AppleGroupedCard
@@ -156,13 +159,20 @@ private val RANCH_SWITCHES = listOf(
     "ranch_clean" to "自动清理",
     "ranch_grass" to "自动补充牧草",
     "ranch_grass_buy" to "牧草不足时购买（金券）",
-    "ranch_fill_cans" to "自动填充库存罐头",
-    "ranch_feed_normal" to "普通罐头喂养",
-    "ranch_feed_organic" to "有机罐头喂养",
     "ranch_task" to "自动领取任务奖励",
     "ranch_share" to "每日分享礼包",
     "ranch_daily_benefit" to "每日商城福利",
 )
+
+private val RANCH_CAN_STAGE_OPTIONS = listOf(
+    Triple("any", "可喂养时就用", "动物允许喂罐头时立即使用"),
+    Triple("longest", "仅最长阶段", "只在动物生长周期最长的阶段使用"),
+    Triple("to_production", "成长期 · 加速到生产期", "仅在成长期使用"),
+    Triple("near_harvest", "成熟期 · 距收获 10 分钟内", "仅在接近收获时使用，减少浪费"),
+)
+
+private fun ranchCanStageLabel(value: String): String =
+    RANCH_CAN_STAGE_OPTIONS.firstOrNull { it.first == value }?.second ?: value
 
 private val RANCH_FRIEND_SWITCHES = listOf(
     "ranch_friend_steal" to "自动偷取好友产物",
@@ -1130,6 +1140,7 @@ private fun RanchAutomationSheet(
         ?: if (model.ranchShedAnimal == 0) "不购买" else "动物 #${model.ranchShedAnimal}"
     val needsPreferred = model.ranchStrategy == "preferred" ||
         (model.ranchStrategy == "bag_priority" && model.ranchBagFallback == "preferred")
+    var pickingCanStageTarget by remember { mutableStateOf<String?>(null) }
 
     ModuleSheetShell(
         title = "日常牧场与养殖策略",
@@ -1245,6 +1256,61 @@ private fun RanchAutomationSheet(
             )
         }
 
+        val normalCanEnabled = model.automationBooleans["ranch_feed_normal"] ?: true
+        val organicCanEnabled = model.automationBooleans["ranch_feed_organic"] ?: true
+        AppleSectionHeader(title = "罐头喂养策略")
+        AppleGroupedCard {
+            AppleSwitchRow(
+                icon = Icons.Rounded.Science,
+                iconTint = apple.orange,
+                title = "自动填充库存罐头",
+                checked = model.automationBooleans["ranch_fill_cans"] ?: true,
+                onCheckedChange = { onToggleBool("ranch_fill_cans", it) },
+            )
+            AppleHairlineDivider(startIndent = 16.dp)
+            AppleSwitchRow(
+                icon = Icons.Rounded.Science,
+                iconTint = apple.blue,
+                title = "普通罐头喂养",
+                checked = normalCanEnabled,
+                onCheckedChange = { onToggleBool("ranch_feed_normal", it) },
+            )
+            model.ranchFeedNormalStage?.let { stage ->
+                AppleSettingRow(
+                    icon = Icons.Rounded.Schedule,
+                    iconTint = apple.blue,
+                    title = "普通罐头使用时机",
+                    trailingText = ranchCanStageLabel(stage),
+                    showChevron = true,
+                    modifier = Modifier.alpha(if (normalCanEnabled) 1f else 0.45f),
+                    onClick = if (normalCanEnabled) {
+                        { pickingCanStageTarget = "normal" }
+                    } else null,
+                )
+            }
+            AppleHairlineDivider(startIndent = 16.dp)
+            AppleSwitchRow(
+                icon = Icons.Rounded.Science,
+                iconTint = apple.emerald,
+                title = "有机罐头喂养",
+                checked = organicCanEnabled,
+                onCheckedChange = { onToggleBool("ranch_feed_organic", it) },
+            )
+            model.ranchFeedOrganicStage?.let { stage ->
+                AppleSettingRow(
+                    icon = Icons.Rounded.Schedule,
+                    iconTint = apple.emerald,
+                    title = "有机罐头使用时机",
+                    trailingText = ranchCanStageLabel(stage),
+                    showChevron = true,
+                    modifier = Modifier.alpha(if (organicCanEnabled) 1f else 0.45f),
+                    onClick = if (organicCanEnabled) {
+                        { pickingCanStageTarget = "organic" }
+                    } else null,
+                )
+            }
+        }
+
         AppleSectionHeader(title = "牧场好友互动")
         AppleGroupedCard {
             RANCH_FRIEND_SWITCHES.forEachIndexed { idx, (key, label) ->
@@ -1258,6 +1324,69 @@ private fun RanchAutomationSheet(
                 )
             }
         }
+    }
+
+    pickingCanStageTarget?.let { target ->
+        val isOrganic = target == "organic"
+        val currentValue = if (isOrganic) model.ranchFeedOrganicStage else model.ranchFeedNormalStage
+        val stageOptions = if (model.ranchFeedOrganicStage != null) RANCH_CAN_STAGE_OPTIONS else {
+            RANCH_CAN_STAGE_OPTIONS.filter { it.first == "any" || it.first == "longest" }
+        }
+        AppleAlertDialog(
+            onDismissRequest = { pickingCanStageTarget = null },
+            title = { Text(if (isOrganic) "有机罐头使用时机" else "普通罐头使用时机") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    stageOptions.forEachIndexed { idx, (value, label, desc) ->
+                        if (idx > 0) AppleHairlineDivider()
+                        val selected = currentValue == value
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(10.dp))
+                                .clickable {
+                                    onChange(
+                                        if (isOrganic) {
+                                            model.copy(ranchFeedOrganicStage = value)
+                                        } else {
+                                            model.copy(ranchFeedNormalStage = value)
+                                        }
+                                    )
+                                    pickingCanStageTarget = null
+                                }
+                                .padding(horizontal = 8.dp, vertical = 10.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = label,
+                                    style = MaterialTheme.typography.titleSmall,
+                                    color = if (selected) MaterialTheme.colorScheme.primary else apple.primaryText,
+                                )
+                                Spacer(modifier = Modifier.height(2.dp))
+                                Text(
+                                    text = desc,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = apple.secondaryText,
+                                )
+                            }
+                            if (selected) {
+                                Icon(
+                                    imageVector = Icons.Rounded.Check,
+                                    contentDescription = "已选",
+                                    tint = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(18.dp),
+                                )
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { pickingCanStageTarget = null }) { Text("关闭") }
+            },
+        )
     }
 }
 

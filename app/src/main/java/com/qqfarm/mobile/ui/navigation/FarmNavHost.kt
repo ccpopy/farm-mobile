@@ -415,6 +415,7 @@ fun FarmNavHost(viewModel: AppSessionViewModel) {
                                 onDisconnect = { viewModel.disconnect() },
                                 onUpdateThemeMode = { mode -> viewModel.updateThemeMode(mode) },
                                 onUpdateDynamicColor = { enabled -> viewModel.updateDynamicColor(enabled) },
+                                onUpdateCustomAppearance = { appearance -> viewModel.updateCustomAppearance(appearance) },
                                 onToggleOfflineAlerts = { enabled -> viewModel.setOfflineAlertsEnabled(enabled) },
                                 onToggleActivityPush = { enabled -> viewModel.setActivityPushEnabled(enabled) },
                                 onToggleNotifyCollapse = { enabled -> viewModel.setNotifyCollapseEnabled(enabled) },
