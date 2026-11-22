@@ -79,14 +79,12 @@ import com.qqfarm.mobile.data.model.ActivityNotifyGroup
 import com.qqfarm.mobile.data.model.ActivityNotifyType
 import com.qqfarm.mobile.data.network.ActivityNotificationManager
 import com.qqfarm.mobile.data.network.PROJECT_GITHUB_URL
-import com.qqfarm.mobile.data.network.PROJECT_REPOSITORY
 import com.qqfarm.mobile.data.prefs.StoredConfig
 import com.qqfarm.mobile.ui.components.AppleAlertDialog
 import com.qqfarm.mobile.ui.components.AppleFilterChip
 import com.qqfarm.mobile.ui.components.AppleGroupedCard
 import com.qqfarm.mobile.ui.components.AppleHairlineDivider
 import com.qqfarm.mobile.ui.components.AppleSectionHeader
-import com.qqfarm.mobile.ui.components.AppleSegmentedControl
 import com.qqfarm.mobile.ui.components.AppleSettingRow
 import com.qqfarm.mobile.ui.components.AppleSwitchRow
 import com.qqfarm.mobile.ui.components.ServerSwitcherSheet
@@ -349,53 +347,22 @@ fun SettingsScreen(
         item {
             AppleSectionHeader(title = "外观与通用")
             Spacer(modifier = Modifier.height(4.dp))
-            AppleGroupedCard {
-                Column(modifier = Modifier.padding(14.dp)) {
-                    Text(
-                        text = "主题外观",
-                        style = MaterialTheme.typography.titleSmall,
-                        color = apple.primaryText,
-                    )
-                    Spacer(modifier = Modifier.height(10.dp))
-                    val themeIndex = when (session.config.themeMode) {
-                        StoredConfig.THEME_LIGHT -> 1
-                        StoredConfig.THEME_DARK -> 2
-                        StoredConfig.THEME_CUSTOM -> 3
-                        else -> 0
-                    }
-                    AppleSegmentedControl(
-                        options = listOf("跟随系统", "浅色", "深色", "自定义"),
-                        selectedIndex = themeIndex,
-                        onSelect = { idx ->
-                            when (idx) {
-                                1 -> onUpdateThemeMode(StoredConfig.THEME_LIGHT)
-                                2 -> onUpdateThemeMode(StoredConfig.THEME_DARK)
-                                3 -> {
-                                    onUpdateThemeMode(StoredConfig.THEME_CUSTOM)
-                                    showCustomAppearanceSheet = true
-                                }
-                                else -> onUpdateThemeMode(StoredConfig.THEME_SYSTEM)
-                            }
-                        },
-                    )
-                }
-                if (session.config.themeMode == StoredConfig.THEME_CUSTOM) {
-                    val custom = session.config.customAppearance
-                    AppleHairlineDivider(startIndent = 16.dp)
-                    AppleSettingRow(
-                        icon = Icons.Rounded.Tune,
-                        iconTint = apple.emerald,
-                        title = "自定义外观参数",
-                        subtitle = "土地:${custom.landPreset.label} · 牧场:${custom.ranchAnimalPreset.label} · ${custom.progressBarStyle.label}",
-                        trailingText = "调整",
-                        showChevron = true,
-                        onClick = { showCustomAppearanceSheet = true },
-                    )
-                }
+            val themeModeLabel = when (session.config.themeMode) {
+                StoredConfig.THEME_LIGHT -> "浅色"
+                StoredConfig.THEME_DARK -> "深色"
+                StoredConfig.THEME_CUSTOM -> "自定义"
+                else -> "跟随系统"
             }
-
-            Spacer(modifier = Modifier.height(10.dp))
             AppleGroupedCard {
+                AppleSettingRow(
+                    icon = Icons.Rounded.Tune,
+                    iconTint = apple.emerald,
+                    title = "主题外观",
+                    trailingText = themeModeLabel,
+                    showChevron = true,
+                    onClick = { showCustomAppearanceSheet = true },
+                )
+                AppleHairlineDivider()
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
                     AppleSwitchRow(
                         icon = Icons.Rounded.Palette,
@@ -447,8 +414,7 @@ fun SettingsScreen(
                 AppleSettingRow(
                     icon = Icons.Rounded.Star,
                     iconTint = SoilGold,
-                    title = "点个 Star 支持",
-                    subtitle = PROJECT_REPOSITORY,
+                    title = "仓库地址",
                     trailingText = "GitHub",
                     showChevron = true,
                     onClick = { openGithubRepository(context, PROJECT_GITHUB_URL, onMessage) },
@@ -502,6 +468,8 @@ fun SettingsScreen(
     AppUpdateDialogs(updateModel, session.config)
     if (showCustomAppearanceSheet) {
         CustomAppearanceSheet(
+            themeMode = session.config.themeMode,
+            onUpdateThemeMode = onUpdateThemeMode,
             config = session.config.customAppearance,
             onUpdate = onUpdateCustomAppearance,
             onReset = { onUpdateCustomAppearance(CustomAppearanceConfig()) },

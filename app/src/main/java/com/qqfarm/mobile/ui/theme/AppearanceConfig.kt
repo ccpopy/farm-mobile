@@ -278,6 +278,7 @@ val ACCENT_PRESETS: List<Pair<String, Color?>> = listOf(
     "樱花粉" to Color(0xFFE5487B),
     "琥珀金" to Color(0xFFD97706),
     "青松青" to Color(0xFF0D9488),
+    "珊瑚红" to Color(0xFFEF4444),
 )
 
 val RANCH_ACCENT_PRESETS: List<Pair<String, Color?>> = listOf(

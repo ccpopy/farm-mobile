@@ -48,7 +48,6 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -62,10 +61,10 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -99,8 +98,6 @@ import com.qqfarm.mobile.ui.theme.RanchAnimalColorPreset
 import com.qqfarm.mobile.ui.theme.SoilGold
 import com.qqfarm.mobile.ui.theme.ranchDefaultLightBackground
 import com.qqfarm.mobile.ui.theme.onAccent
-import com.qqfarm.mobile.ui.theme.resolveEffectiveAppearance
-import com.qqfarm.mobile.ui.theme.resolveRanchAccent
 import com.qqfarm.mobile.ui.theme.resolveLandCardColors
 import com.qqfarm.mobile.ui.theme.resolveRanchAnimalCardColors
 import com.qqfarm.mobile.ui.theme.webLandLightBackground
@@ -141,6 +138,8 @@ private val PREVIEW_LAND_SAMPLES = listOf(
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun CustomAppearanceSheet(
+    themeMode: String,
+    onUpdateThemeMode: (String) -> Unit,
     config: CustomAppearanceConfig,
     onUpdate: (CustomAppearanceConfig) -> Unit,
     onReset: () -> Unit,
@@ -148,12 +147,7 @@ fun CustomAppearanceSheet(
 ) {
     val apple = LocalAppleColors.current
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-    val previewAppearance = remember(config, apple.isDark, apple.emerald, apple.orange) {
-        val base = resolveEffectiveAppearance(StoredConfig.THEME_CUSTOM, config)
-        val resolvedPrimary = base.customAccent?.let { if (apple.isDark) lerp(it, Color.White, 0.16f) else it }
-        val resolvedRanch = config.resolveRanchAccent(resolvedPrimary ?: apple.emerald, apple.isDark)
-        base.copy(customAccent = resolvedPrimary, ranchAccent = resolvedRanch)
-    }
+    val isCustom = themeMode == StoredConfig.THEME_CUSTOM
 
     var editingAccentWheel by remember { mutableStateOf(false) }
     var editingRanchAccentWheel by remember { mutableStateOf(false) }
@@ -171,7 +165,7 @@ fun CustomAppearanceSheet(
                 .navigationBarsPadding()
                 .heightIn(max = 680.dp),
         ) {
-            // Fixed header stays visible when scrolling
+            // Fixed single-line header
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -179,19 +173,15 @@ fun CustomAppearanceSheet(
                     .padding(bottom = 8.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = "自定义主题外观",
-                        style = MaterialTheme.typography.titleLarge,
-                        color = apple.primaryText,
-                    )
-                    Text(
-                        text = "土地 / 牧场配色、背景质感、宫格密度与强调色",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = apple.secondaryText,
-                    )
-                }
-                if (config != CustomAppearanceConfig()) {
+                Text(
+                    text = if (isCustom) "自定义主题外观" else "主题外观",
+                    style = MaterialTheme.typography.titleLarge,
+                    color = apple.primaryText,
+                    modifier = Modifier.weight(1f),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                if (isCustom && config != CustomAppearanceConfig()) {
                     TextButton(onClick = onReset) {
                         Text("恢复默认")
                     }
@@ -205,22 +195,44 @@ fun CustomAppearanceSheet(
                 }
             }
 
-            Box(modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)) {
-                CompositionLocalProvider(LocalAppAppearance provides previewAppearance) {
-                    AppearanceLivePreviewCard(config = config)
+            Box(
+                modifier = Modifier
+                    .padding(horizontal = 16.dp)
+                    .padding(bottom = 8.dp),
+            ) {
+                val modeIdx = when (themeMode) {
+                    StoredConfig.THEME_LIGHT -> 1
+                    StoredConfig.THEME_DARK -> 2
+                    StoredConfig.THEME_CUSTOM -> 3
+                    else -> 0
                 }
+                AppleSegmentedControl(
+                    options = listOf("跟随系统", "浅色", "深色", "自定义"),
+                    selectedIndex = modeIdx,
+                    onSelect = { idx ->
+                        val nextMode = when (idx) {
+                            1 -> StoredConfig.THEME_LIGHT
+                            2 -> StoredConfig.THEME_DARK
+                            3 -> StoredConfig.THEME_CUSTOM
+                            else -> StoredConfig.THEME_SYSTEM
+                        }
+                        onUpdateThemeMode(nextMode)
+                    },
+                )
             }
-
-            Spacer(modifier = Modifier.height(6.dp))
-            AppleHairlineDivider()
 
             Column(
                 modifier = Modifier
                     .weight(1f, fill = false)
                     .verticalScroll(rememberScrollState())
-                    .padding(horizontal = 16.dp, vertical = 14.dp),
+                    .padding(horizontal = 16.dp, vertical = 8.dp),
                 verticalArrangement = Arrangement.spacedBy(14.dp),
-            ) {
+            ) appearanceContent@{
+                AppearanceLivePreviewCard(themeMode = themeMode)
+                if (!isCustom) return@appearanceContent
+                val appearance = LocalAppAppearance.current
+                AppleHairlineDivider()
+
                 // 1. One-tap quick presets
                 Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     AppleSectionHeader(title = "一键快捷方案")
@@ -308,28 +320,30 @@ fun CustomAppearanceSheet(
                         val isPresetMatch = ACCENT_PRESETS.any { (_, presetColor) ->
                             presetColor?.toArgb()?.toLong() == activeCustomAccent
                         }
-                        FlowRow(
-                            horizontalArrangement = Arrangement.spacedBy(10.dp),
-                            verticalArrangement = Arrangement.spacedBy(10.dp),
-                        ) {
+                        val customColor = if (!isPresetMatch && activeCustomAccent != null) {
+                            Color(activeCustomAccent.toInt())
+                        } else null
+                        val globalCells = buildList {
                             ACCENT_PRESETS.forEach { (label, presetColor) ->
                                 val presetArgb = presetColor?.toArgb()?.toLong()
-                                AccentSwatchButton(
-                                    label = label,
-                                    color = presetColor ?: AppleEmerald,
-                                    selected = activeCustomAccent == presetArgb,
-                                    onClick = { onUpdate(config.copy(accentColorArgb = presetArgb)) },
+                                add(
+                                    AccentGridCell.Swatch(
+                                        label = label,
+                                        color = presetColor ?: AppleEmerald,
+                                        selected = activeCustomAccent == presetArgb,
+                                        onClick = { onUpdate(config.copy(accentColorArgb = presetArgb)) },
+                                    )
                                 )
                             }
-                            val customColor = if (!isPresetMatch && activeCustomAccent != null) {
-                                Color(activeCustomAccent.toInt())
-                            } else null
-                            AccentWheelButton(
-                                selected = !isPresetMatch && activeCustomAccent != null,
-                                activeColor = customColor,
-                                onClick = { editingAccentWheel = true },
+                            add(
+                                AccentGridCell.Wheel(
+                                    selected = customColor != null,
+                                    activeColor = customColor,
+                                    onClick = { editingAccentWheel = true },
+                                )
                             )
                         }
+                        FourColumnAccentGrid(cells = globalCells)
 
                         Spacer(modifier = Modifier.height(14.dp))
                         AppleHairlineDivider()
@@ -345,45 +359,49 @@ fun CustomAppearanceSheet(
                         val isRanchPresetMatch = RANCH_ACCENT_PRESETS.any { (_, presetColor) ->
                             presetColor?.toArgb()?.toLong() == activeRanchAccent
                         }
-                        FlowRow(
-                            horizontalArrangement = Arrangement.spacedBy(10.dp),
-                            verticalArrangement = Arrangement.spacedBy(10.dp),
+                        val customRanchColor = if (
+                            !config.ranchAccentFollowPrimary &&
+                            !isRanchPresetMatch &&
+                            activeRanchAccent != null
                         ) {
-                            AccentSwatchButton(
-                                label = "跟随主色",
-                                color = config.accentColorArgb?.let { Color(it.toInt()) } ?: AppleEmerald,
-                                selected = config.ranchAccentFollowPrimary,
-                                onClick = { onUpdate(config.copy(ranchAccentFollowPrimary = true)) },
+                            Color(activeRanchAccent.toInt())
+                        } else null
+                        val ranchCells = buildList {
+                            add(
+                                AccentGridCell.Swatch(
+                                    label = "跟随主色",
+                                    color = apple.emerald,
+                                    selected = config.ranchAccentFollowPrimary,
+                                    onClick = { onUpdate(config.copy(ranchAccentFollowPrimary = true)) },
+                                )
                             )
                             RANCH_ACCENT_PRESETS.forEach { (label, presetColor) ->
                                 val presetArgb = presetColor?.toArgb()?.toLong()
-                                AccentSwatchButton(
-                                    label = label,
-                                    color = presetColor ?: AppleOrange,
-                                    selected = !config.ranchAccentFollowPrimary && activeRanchAccent == presetArgb,
-                                    onClick = {
-                                        onUpdate(
-                                            config.copy(
-                                                ranchAccentFollowPrimary = false,
-                                                ranchAccentColorArgb = presetArgb,
+                                add(
+                                    AccentGridCell.Swatch(
+                                        label = label,
+                                        color = presetColor ?: AppleOrange,
+                                        selected = !config.ranchAccentFollowPrimary && activeRanchAccent == presetArgb,
+                                        onClick = {
+                                            onUpdate(
+                                                config.copy(
+                                                    ranchAccentFollowPrimary = false,
+                                                    ranchAccentColorArgb = presetArgb,
+                                                )
                                             )
-                                        )
-                                    },
+                                        },
+                                    )
                                 )
                             }
-                            val customRanchColor = if (
-                                !config.ranchAccentFollowPrimary &&
-                                !isRanchPresetMatch &&
-                                activeRanchAccent != null
-                            ) {
-                                Color(activeRanchAccent.toInt())
-                            } else null
-                            AccentWheelButton(
-                                selected = customRanchColor != null,
-                                activeColor = customRanchColor,
-                                onClick = { editingRanchAccentWheel = true },
+                            add(
+                                AccentGridCell.Wheel(
+                                    selected = customRanchColor != null,
+                                    activeColor = customRanchColor,
+                                    onClick = { editingRanchAccentWheel = true },
+                                )
                             )
                         }
+                        FourColumnAccentGrid(cells = ranchCells)
                     }
                 }
 
@@ -428,7 +446,7 @@ fun CustomAppearanceSheet(
                                     )
                                     Spacer(modifier = Modifier.height(6.dp))
                                     Row(horizontalArrangement = Arrangement.spacedBy(5.dp)) {
-                                        val rowAppearance = previewAppearance.copy(landPreset = preset)
+                                        val rowAppearance = appearance.copy(landPreset = preset)
                                         LAND_TIER_SPECS.forEach { (level, _) ->
                                             val colors = resolveLandCardColors(level, apple.isDark, apple, rowAppearance)
                                             Box(
@@ -484,7 +502,7 @@ fun CustomAppearanceSheet(
                                 LAND_TIER_SPECS.chunked(3).forEach { rowSpecs ->
                                     EqualHeightRow(spacing = 8.dp) {
                                         rowSpecs.forEach { (level, label) ->
-                                            val resolved = resolveLandCardColors(level, apple.isDark, apple, previewAppearance)
+                                            val resolved = resolveLandCardColors(level, apple.isDark, apple, appearance)
                                             val customArgb = config.customLandColors[level]
                                             val colorDesc = when {
                                                 customArgb == null -> "网页"
@@ -583,7 +601,7 @@ fun CustomAppearanceSheet(
                                     )
                                     Spacer(modifier = Modifier.height(6.dp))
                                     Row(horizontalArrangement = Arrangement.spacedBy(5.dp)) {
-                                        val rowApp = previewAppearance.copy(ranchAnimalPreset = preset)
+                                        val rowApp = appearance.copy(ranchAnimalPreset = preset)
                                         val samples = when (preset) {
                                             RanchAnimalColorPreset.STATUS -> listOf(
                                                 resolveRanchAnimalCardColors(false, false, true, false, false, apple.isDark, apple, rowApp),
@@ -654,7 +672,7 @@ fun CustomAppearanceSheet(
                                             grassBlocked = false,
                                             isDark = apple.isDark,
                                             apple = apple,
-                                            appearance = previewAppearance,
+                                            appearance = appearance,
                                         )
                                         val customArgb = config.customRanchColors[key]
                                         val colorDesc = when {
@@ -872,11 +890,17 @@ fun CustomAppearanceSheet(
 }
 
 @Composable
-private fun AppearanceLivePreviewCard(config: CustomAppearanceConfig) {
+private fun AppearanceLivePreviewCard(themeMode: String) {
     val apple = LocalAppleColors.current
     val appearance = LocalAppAppearance.current
-    val farmAccent = appearance.customAccent ?: apple.emerald
+    val farmAccent = apple.emerald
     val ranchAccent = appearance.ranchAccent ?: apple.orange
+    val modeSummary = when (themeMode) {
+        StoredConfig.THEME_LIGHT -> "浅色"
+        StoredConfig.THEME_DARK -> "深色"
+        StoredConfig.THEME_CUSTOM -> "${appearance.landGridColumns}×${appearance.ranchAnimalColumns}"
+        else -> "跟随系统"
+    }
 
     AppleGroupedCard(
         contentPadding = PaddingValues(12.dp),
@@ -888,7 +912,7 @@ private fun AppearanceLivePreviewCard(config: CustomAppearanceConfig) {
             horizontalArrangement = Arrangement.SpaceBetween,
         ) {
             Text(
-                text = "实时预览 · ${config.landGridColumns}×${config.ranchAnimalColumns}",
+                text = "实时预览 · $modeSummary",
                 style = MaterialTheme.typography.labelLarge,
                 color = apple.primaryText,
             )
@@ -1141,16 +1165,65 @@ private fun QuickPresetCard(
     }
 }
 
+private sealed interface AccentGridCell {
+    data class Swatch(
+        val label: String,
+        val color: Color,
+        val selected: Boolean,
+        val onClick: () -> Unit,
+    ) : AccentGridCell
+
+    data class Wheel(
+        val selected: Boolean,
+        val activeColor: Color?,
+        val onClick: () -> Unit,
+    ) : AccentGridCell
+}
+
+@Composable
+private fun FourColumnAccentGrid(cells: List<AccentGridCell>) {
+    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        cells.chunked(4).forEach { rowCells ->
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                rowCells.forEach { cell ->
+                    when (cell) {
+                        is AccentGridCell.Swatch -> AccentSwatchButton(
+                            label = cell.label,
+                            color = cell.color,
+                            selected = cell.selected,
+                            modifier = Modifier.weight(1f),
+                            onClick = cell.onClick,
+                        )
+                        is AccentGridCell.Wheel -> AccentWheelButton(
+                            selected = cell.selected,
+                            activeColor = cell.activeColor,
+                            modifier = Modifier.weight(1f),
+                            onClick = cell.onClick,
+                        )
+                    }
+                }
+                repeat(4 - rowCells.size) {
+                    Spacer(modifier = Modifier.weight(1f))
+                }
+            }
+        }
+    }
+}
+
 @Composable
 private fun AccentSwatchButton(
     label: String,
     color: Color,
     selected: Boolean,
+    modifier: Modifier = Modifier,
     onClick: () -> Unit,
 ) {
     val apple = LocalAppleColors.current
     Column(
-        modifier = Modifier
+        modifier = modifier
             .clip(RoundedCornerShape(10.dp))
             .clickable(onClick = onClick)
             .padding(horizontal = 4.dp, vertical = 4.dp),
@@ -1171,7 +1244,7 @@ private fun AccentSwatchButton(
                 Icon(
                     imageVector = Icons.Rounded.Check,
                     contentDescription = "已选中",
-                    tint = Color.White,
+                    tint = color.onAccent(),
                     modifier = Modifier.size(18.dp),
                 )
             }
@@ -1182,6 +1255,7 @@ private fun AccentSwatchButton(
                 fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
             ),
             color = if (selected) apple.primaryText else apple.secondaryText,
+            textAlign = TextAlign.Center,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
         )
@@ -1192,6 +1266,7 @@ private fun AccentSwatchButton(
 private fun AccentWheelButton(
     selected: Boolean,
     activeColor: Color?,
+    modifier: Modifier = Modifier,
     onClick: () -> Unit,
 ) {
     val apple = LocalAppleColors.current
@@ -1199,7 +1274,7 @@ private fun AccentWheelButton(
         listOf(Color.Red, Color.Yellow, Color.Green, Color.Cyan, Color.Blue, Color.Magenta, Color.Red)
     }
     Column(
-        modifier = Modifier
+        modifier = modifier
             .clip(RoundedCornerShape(10.dp))
             .clickable(onClick = onClick)
             .padding(horizontal = 4.dp, vertical = 4.dp),
@@ -1225,7 +1300,7 @@ private fun AccentWheelButton(
             Icon(
                 imageVector = if (selected) Icons.Rounded.Check else Icons.Rounded.ColorLens,
                 contentDescription = "颜色环选色",
-                tint = Color.White,
+                tint = activeColor?.onAccent() ?: Color.White,
                 modifier = Modifier.size(18.dp),
             )
         }
@@ -1236,7 +1311,9 @@ private fun AccentWheelButton(
                 fontFeatureSettings = "tnum",
             ),
             color = if (selected) apple.primaryText else apple.secondaryText,
+            textAlign = TextAlign.Center,
             maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
         )
     }
 }
