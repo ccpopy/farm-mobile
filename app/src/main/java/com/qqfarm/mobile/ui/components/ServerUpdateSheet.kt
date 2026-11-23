@@ -1,5 +1,6 @@
 package com.qqfarm.mobile.ui.components
 
+import android.text.format.Formatter
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -30,6 +31,7 @@ import androidx.compose.material.icons.rounded.Visibility
 import androidx.compose.material.icons.rounded.VisibilityOff
 import androidx.compose.material.icons.rounded.WarningAmber
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -38,6 +40,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.SheetValue
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -51,6 +54,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
@@ -86,6 +90,11 @@ private sealed interface ServerDeployment {
     data class Rollback(val releaseId: String) : ServerDeployment
 }
 
+private sealed interface ServerReleaseCleanup {
+    data class Backups(val releaseIds: List<String>) : ServerReleaseCleanup
+    data object Orphans : ServerReleaseCleanup
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ServerUpdateSheet(
@@ -97,8 +106,8 @@ fun ServerUpdateSheet(
     onDismiss: () -> Unit,
 ) {
     val apple = LocalAppleColors.current
+    val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
     var loading by remember { mutableStateOf(true) }
     var busyAction by remember { mutableStateOf<String?>(null) }
@@ -119,8 +128,15 @@ fun ServerUpdateSheet(
     var showRollbackTab by remember { mutableStateOf(false) }
     var selectedReleaseId by remember { mutableStateOf<String?>(null) }
     var pendingDeployment by remember { mutableStateOf<ServerDeployment?>(null) }
+    var batchDeleteMode by remember { mutableStateOf(false) }
+    var checkedReleaseIds by remember { mutableStateOf(emptySet<String>()) }
+    var pendingCleanup by remember { mutableStateOf<ServerReleaseCleanup?>(null) }
     val updateList = rememberLazyListState()
     val rollbackList = rememberLazyListState()
+    val sheetState = rememberModalBottomSheetState(
+        skipPartiallyExpanded = true,
+        confirmValueChange = { it != SheetValue.Hidden || (busyAction == null && !tokenBusy) },
+    )
 
     fun showJobResult(job: SystemUpdateJob) {
         if (job.status == "succeeded") {
@@ -209,10 +225,15 @@ fun ServerUpdateSheet(
     val cur = status
     val isUpdatingNow = pollingActive
     val isBusy = loading || busyAction != null || tokenBusy || pollingActive || pollTimedOut
-    val hasRollback = cur?.gitSupported == true && cur.releases != null
+    val backups = cur?.releases.orEmpty()
+    val orphanSummary = cur?.releaseCleanup?.takeIf { it.hasOrphans }
+    val hasRollback = cur?.releases != null && (cur.gitSupported || backups.isNotEmpty() || orphanSummary != null)
     val rollbackPage = hasRollback && showRollbackTab
-    val selectedBackup = cur?.releases?.firstOrNull { it.releaseId == selectedReleaseId && it.canRollback }
-    val canDeploy = !isBusy && cur?.gitSupported == true && cur.applySupported && !cur.deployBusy
+    val selectedBackup = backups.firstOrNull { it.releaseId == selectedReleaseId && it.canRollback }
+    val deletableBackups = backups.filter { it.canDelete }
+    val checkedBackups = deletableBackups.filter { it.releaseId in checkedReleaseIds }
+    val canManageBackups = !isBusy && cur?.deployBusy == false
+    val canDeploy = canManageBackups && cur?.gitSupported == true && cur.applySupported
 
     fun runAction(name: String, operation: suspend () -> Unit) {
         if (isBusy || busyAction != null) return
@@ -223,11 +244,12 @@ fun ServerUpdateSheet(
             try {
                 operation()
             } catch (e: ApiException) {
-                if (name == "rollback" || name == "apply") {
-                    // 目标版本或部署锁可能已经变化。只重读状态，不重发切换请求。
+                if (name == "rollback" || name == "apply" || name == "delete") {
+                    // 部署锁或备份可能已经变化，重新读取状态。
                     loadStatus()
                 }
                 errorMsg = e.message
+                if (name == "delete") rollbackList.requestScrollToItem(0)
             } finally {
                 busyAction = null
             }
@@ -262,6 +284,7 @@ fun ServerUpdateSheet(
                 )
                 val (badgeLabel, badgeColor) = when {
                     isUpdatingNow -> (if (cur?.job?.isRollback == true) "回滚中" else "更新中") to apple.blue
+                    busyAction == "delete" -> "清理中" to apple.orange
                     unsupported404 -> "暂不支持" to apple.secondaryText
                     pollTimedOut -> "等待重连" to apple.orange
                     errorMsg.isNotBlank() && cur == null -> "读取失败" to apple.red
@@ -291,6 +314,22 @@ fun ServerUpdateSheet(
                     selectedIndex = if (rollbackPage) 1 else 0,
                     onSelect = { showRollbackTab = it == 1 },
                 )
+            }
+            if (rollbackPage && batchDeleteMode) {
+                val outdatedIds = deletableBackups.filter { it.isOutdated }.map { it.releaseId }
+                if (outdatedIds.isNotEmpty()) {
+                    val allOutdatedSelected = outdatedIds.all { it in checkedReleaseIds }
+                    TextButton(
+                        onClick = {
+                            checkedReleaseIds = if (allOutdatedSelected) checkedReleaseIds - outdatedIds
+                                else checkedReleaseIds + outdatedIds
+                        },
+                        enabled = canManageBackups,
+                        modifier = Modifier.align(Alignment.Start),
+                    ) {
+                        Text(if (allOutdatedSelected) "取消选择过时版本" else "选中过时版本（${outdatedIds.size}）")
+                    }
+                }
             }
             LazyColumn(
                 modifier = Modifier.fillMaxWidth().weight(1f),
@@ -394,23 +433,54 @@ fun ServerUpdateSheet(
                     item(key = "job-${job.id}") { ServerUpdateTaskCard(job) }
                 }
                 if (rollbackPage) {
-                    val backups = cur?.releases.orEmpty()
-                    if (cur?.applySupported == false && cur.applyUnsupportedReason.isNotBlank()) {
+                    if (cur?.applySupported == false && cur.applyUnsupportedReason.isNotBlank() && !batchDeleteMode) {
                         item { Text(cur.applyUnsupportedReason, style = MaterialTheme.typography.bodySmall, color = apple.secondaryText) }
+                    }
+                    if (orphanSummary != null && !batchDeleteMode) {
+                        item(key = "orphan-backups") {
+                            AppleGroupedCard(contentPadding = PaddingValues(start = 12.dp, end = 6.dp)) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                ) {
+                                    Text(
+                                        text = "冗余备份 · ${Formatter.formatShortFileSize(context, orphanSummary.orphanSizeBytes)}",
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = apple.primaryText,
+                                        modifier = Modifier.weight(1f),
+                                    )
+                                    TextButton(
+                                        onClick = { pendingCleanup = ServerReleaseCleanup.Orphans },
+                                        enabled = canManageBackups,
+                                    ) { Text("清理冗余") }
+                                }
+                            }
+                        }
                     }
                     if (backups.isEmpty()) {
                         item {
                             AppleGroupedCard {
-                                AppleEmptyState(Icons.Rounded.History, "暂无历史版本", "服务端尚未保留可供回滚的版本备份")
+                                AppleEmptyState(Icons.Rounded.History, "暂无历史版本", "服务端尚未保留版本备份")
                             }
                         }
                     } else {
                         items(backups, key = { it.releaseId }, contentType = { "backup" }) { backup ->
-                            ServerRollbackOption(
+                            val id = backup.releaseId
+                            ServerReleaseRow(
                                 backup = backup,
-                                selected = backup.releaseId == selectedBackup?.releaseId,
-                                enabled = canDeploy && backup.canRollback,
-                                onSelect = { selectedReleaseId = backup.releaseId },
+                                selected = if (batchDeleteMode) backup.canDelete && id in checkedReleaseIds else id == selectedBackup?.releaseId,
+                                selectionEnabled = if (batchDeleteMode) canManageBackups && backup.canDelete else canDeploy && backup.canRollback,
+                                batchMode = batchDeleteMode,
+                                deleteEnabled = canManageBackups,
+                                onSelect = {
+                                    if (batchDeleteMode) {
+                                        checkedReleaseIds = if (id in checkedReleaseIds) checkedReleaseIds - id else checkedReleaseIds + id
+                                    } else {
+                                        selectedReleaseId = id
+                                    }
+                                },
+                                onDelete = { pendingCleanup = ServerReleaseCleanup.Backups(listOf(id)) },
                             )
                         }
                     }
@@ -765,15 +835,47 @@ fun ServerUpdateSheet(
                     }
                 }
             }
-            if (rollbackPage && !cur?.releases.isNullOrEmpty()) {
+            if (rollbackPage && (backups.isNotEmpty() || batchDeleteMode)) {
                 AppleHairlineDivider(startIndent = 0.dp)
-                Button(
-                    onClick = { selectedBackup?.let { pendingDeployment = ServerDeployment.Rollback(it.releaseId) } },
-                    enabled = canDeploy && selectedBackup != null,
-                    shape = RoundedCornerShape(12.dp),
+                Row(
                     modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
-                    Text(if (busyAction == "rollback") "正在提交回滚" else "回滚到所选版本")
+                    if (deletableBackups.isNotEmpty() || batchDeleteMode) {
+                        TextButton(
+                            onClick = {
+                                batchDeleteMode = !batchDeleteMode
+                                checkedReleaseIds = emptySet()
+                                if (batchDeleteMode) rollbackList.requestScrollToItem(0)
+                            },
+                            enabled = canManageBackups,
+                        ) { Text(if (batchDeleteMode) "取消" else "批量删除") }
+                    }
+                    if (batchDeleteMode) {
+                        Button(
+                            onClick = { pendingCleanup = ServerReleaseCleanup.Backups(checkedBackups.map { it.releaseId }) },
+                            enabled = canManageBackups && checkedBackups.isNotEmpty(),
+                            shape = RoundedCornerShape(12.dp),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = MaterialTheme.colorScheme.error,
+                                contentColor = MaterialTheme.colorScheme.onError,
+                            ),
+                            modifier = Modifier.weight(1f),
+                        ) {
+                            val count = checkedBackups.size
+                            ServerActionLabel(if (count == 0) "删除所选" else "删除 ${count} 个备份", busyAction == "delete")
+                        }
+                    } else {
+                        Button(
+                            onClick = { selectedBackup?.let { pendingDeployment = ServerDeployment.Rollback(it.releaseId) } },
+                            enabled = canDeploy && selectedBackup != null,
+                            shape = RoundedCornerShape(12.dp),
+                            modifier = Modifier.weight(1f),
+                        ) {
+                            ServerActionLabel("回滚到所选版本", busyAction == "rollback")
+                        }
+                    }
                 }
             } else if (!rollbackPage && cur?.gitSupported == true &&
                 (cur.canCheck || cur.canPull || cur.applySupported && (cur.behindCount > 0 || cur.needsApply))
@@ -805,6 +907,69 @@ fun ServerUpdateSheet(
                 )
             }
         }
+    }
+
+    pendingCleanup?.let { request ->
+        val cleanOrphans = request == ServerReleaseCleanup.Orphans
+        val ids = (request as? ServerReleaseCleanup.Backups)?.releaseIds.orEmpty()
+        val targets = deletableBackups.filter { it.releaseId in ids }
+        val available = if (cleanOrphans) orphanSummary != null else ids.isNotEmpty() && targets.size == ids.size
+        val target = targets.singleOrNull()
+        val estimate = if (cleanOrphans) orphanSummary?.orphanSizeBytes ?: 0L else targets.sumOf { it.sizeBytes }
+        val size = Formatter.formatShortFileSize(context, estimate)
+        val description = when {
+            !available -> "备份列表已变化，请刷新后重试。"
+            cleanOrphans && orphanSummary != null -> {
+                val parts = listOfNotNull(
+                    orphanSummary.orphanHostCount.takeIf { it > 0 }?.let { "${it} 个旧会话宿主备份" },
+                    orphanSummary.orphanWebCount.takeIf { it > 0 }?.let { "${it} 个未关联网页备份" },
+                )
+                "将永久删除 ${parts.joinToString("、")}。预计释放 $size。"
+            }
+            target != null -> {
+                val time = target.createdAt.takeIf { it > 0 }?.let { "（${formatServerTimestamp(it)}）" }.orEmpty()
+                "将永久删除版本 ${target.label}${time} 的备份。预计释放 $size。"
+            }
+            else -> "将永久删除所选的 ${targets.size} 个历史版本备份。预计释放 $size。"
+        }
+        AppleAlertDialog(
+            onDismissRequest = { pendingCleanup = null },
+            title = { Text(if (cleanOrphans) "清理冗余备份" else "删除历史版本备份") },
+            text = { Text(description) },
+            confirmButton = {
+                Button(
+                    enabled = canManageBackups && available,
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.error,
+                        contentColor = MaterialTheme.colorScheme.onError,
+                    ),
+                    onClick = {
+                        pendingCleanup = null
+                        runAction("delete") {
+                            val result = apiClient.deleteSystemReleases(serverUrl, ids, cleanOrphans)
+                            status = result.status
+                            pollingActive = result.status.deployBusy || result.status.job?.status == "running"
+                            if (result.status.releases?.any { it.releaseId == selectedReleaseId } != true) {
+                                selectedReleaseId = null
+                            }
+                            checkedReleaseIds = emptySet()
+                            batchDeleteMode = false
+                            val count = if (cleanOrphans) result.deletedHostIds.size + result.deletedWebIds.size
+                                else result.deletedReleaseIds.size
+                            actionNote = if (count == 0) {
+                                if (cleanOrphans) "当前没有可清理的冗余备份" else "所选备份已不存在"
+                            } else {
+                                val freed = Formatter.formatShortFileSize(context, result.freedBytes)
+                                val type = if (cleanOrphans) "冗余备份" else "历史版本备份"
+                                "已删除 ${count} 个${type}，释放 $freed"
+                            }
+                            rollbackList.requestScrollToItem(0)
+                        }
+                    },
+                ) { Text("确认删除") }
+            },
+            dismissButton = { TextButton(onClick = { pendingCleanup = null }) { Text("取消") } },
+        )
     }
 
     pendingDeployment?.let { command ->

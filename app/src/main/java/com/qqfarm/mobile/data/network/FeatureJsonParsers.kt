@@ -81,6 +81,8 @@ import com.qqfarm.mobile.data.model.StellarShopGoods
 import com.qqfarm.mobile.data.model.StellarSnapshot
 import com.qqfarm.mobile.data.model.StellarSolarTerm
 import com.qqfarm.mobile.data.model.SystemReleaseBackup
+import com.qqfarm.mobile.data.model.SystemReleaseCleanupResult
+import com.qqfarm.mobile.data.model.SystemReleaseCleanupSummary
 import com.qqfarm.mobile.data.model.SystemUpdateCommit
 import com.qqfarm.mobile.data.model.SystemUpdateJob
 import com.qqfarm.mobile.data.model.SystemUpdatePullResult
@@ -1869,6 +1871,9 @@ object FeatureJsonParsers {
                         compatible = compatible,
                         compatibilityReasons = parseStringList(compat?.optJSONArray("reasons")),
                         canRollback = !active && compatible && row.optBoolFlex("canRollback"),
+                        canDelete = !active && row.optBoolFlex("canDelete"),
+                        isOutdated = compat?.optBoolFlex("outdated") == true,
+                        sizeBytes = row.optLongFlex("sizeBytes"),
                     ))
                 }
             }
@@ -1938,6 +1943,33 @@ object FeatureJsonParsers {
             lastPulledAt = lastPulledAt,
             job = job,
             releases = releases,
+            releaseCleanup = obj.optJSONObject("releasesSummary")?.let { summary ->
+                SystemReleaseCleanupSummary(
+                    orphanHostCount = summary.optIntFlex("orphanHostCount"),
+                    orphanWebCount = summary.optIntFlex("orphanWebCount"),
+                    orphanSizeBytes = summary.optLongFlex("orphanSizeBytes"),
+                )
+            },
+        )
+    }
+
+    fun parseSystemReleaseCleanupResult(obj: JSONObject): SystemReleaseCleanupResult {
+        val deletedReleases = obj.optJSONArray("deletedReleaseIds")
+        val deletedWeb = obj.optJSONArray("deletedWebIds")
+        val deletedHosts = obj.optJSONArray("deletedHostIds")
+        val freed = obj.optLongFlex("freedBytes", fallback = -1L)
+        val status = obj.optJSONObject("status")
+        if (deletedReleases == null || deletedWeb == null || deletedHosts == null ||
+            freed < 0 || status?.optJSONArray("releases") == null
+        ) {
+            throw ApiException("服务端未确认清理结果，请刷新备份列表核对")
+        }
+        return SystemReleaseCleanupResult(
+            deletedReleaseIds = parseStringList(deletedReleases),
+            deletedWebIds = parseStringList(deletedWeb),
+            deletedHostIds = parseStringList(deletedHosts),
+            freedBytes = freed,
+            status = parseSystemUpdateStatus(status),
         )
     }
 

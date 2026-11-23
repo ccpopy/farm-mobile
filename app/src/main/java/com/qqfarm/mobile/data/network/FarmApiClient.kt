@@ -47,6 +47,7 @@ import com.qqfarm.mobile.data.model.SolarActionResult
 import com.qqfarm.mobile.data.model.SolarCalendarState
 import com.qqfarm.mobile.data.model.StatusSnapshot
 import com.qqfarm.mobile.data.model.StellarSnapshot
+import com.qqfarm.mobile.data.model.SystemReleaseCleanupResult
 import com.qqfarm.mobile.data.model.SystemUpdatePullResult
 import com.qqfarm.mobile.data.model.SystemUpdateStatus
 import com.qqfarm.mobile.data.model.WeatherState
@@ -1265,6 +1266,23 @@ class FarmApiClient {
 
     suspend fun rollbackSystemRelease(serverUrl: String, releaseId: String): SystemUpdateStatus =
         submitSystemDeployment("/api/system/update/rollback", JSONObject().put("releaseId", releaseId), sessionForServer(serverUrl))
+
+    suspend fun deleteSystemReleases(
+        serverUrl: String,
+        releaseIds: List<String>,
+        cleanOrphans: Boolean,
+    ): SystemReleaseCleanupResult {
+        val body = JSONObject().put("releaseIds", JSONArray(releaseIds)).put("cleanOrphans", cleanOrphans)
+        val json = executeJson(
+            "POST",
+            "/api/system/update/releases/delete",
+            body = body,
+            client = systemUpdateHttpClient,
+            requestSession = sessionForServer(serverUrl),
+        )
+        val data = json.optJSONObject("data") ?: throw ApiException("服务端未确认清理结果，请刷新备份列表核对")
+        return FeatureJsonParsers.parseSystemReleaseCleanupResult(data)
+    }
 
     private suspend fun submitSystemDeployment(path: String, body: JSONObject, target: Session): SystemUpdateStatus {
         val json = executeJson("POST", path, body = body, client = systemUpdateHttpClient, requestSession = target)

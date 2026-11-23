@@ -1014,8 +1014,19 @@ data class SystemReleaseBackup(
     val compatible: Boolean,
     val compatibilityReasons: List<String>,
     val canRollback: Boolean,
+    val canDelete: Boolean,
+    val isOutdated: Boolean,
+    val sizeBytes: Long,
 ) {
     val label: String get() = shortCommit.ifBlank { releaseId }
+}
+
+data class SystemReleaseCleanupSummary(
+    val orphanHostCount: Int,
+    val orphanWebCount: Int,
+    val orphanSizeBytes: Long,
+) {
+    val hasOrphans: Boolean get() = orphanHostCount > 0 || orphanWebCount > 0
 }
 
 data class SystemUpdateStatus(
@@ -1048,6 +1059,15 @@ data class SystemUpdateStatus(
     val lastPulledAt: Long? = null,
     val job: SystemUpdateJob? = null,
     val releases: List<SystemReleaseBackup>? = null,
+    val releaseCleanup: SystemReleaseCleanupSummary? = null,
+)
+
+data class SystemReleaseCleanupResult(
+    val deletedReleaseIds: List<String>,
+    val deletedWebIds: List<String>,
+    val deletedHostIds: List<String>,
+    val freedBytes: Long,
+    val status: SystemUpdateStatus,
 )
 
 data class SystemUpdatePullResult(
