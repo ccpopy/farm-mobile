@@ -44,6 +44,7 @@ import androidx.compose.material.icons.rounded.Star
 import androidx.compose.material.icons.rounded.DeleteSweep
 import androidx.compose.material.icons.rounded.SystemUpdateAlt
 import androidx.compose.material.icons.rounded.Tune
+import androidx.compose.material.icons.rounded.Update
 import androidx.compose.material.icons.rounded.VolumeOff
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -78,6 +79,7 @@ import com.qqfarm.mobile.data.model.RUN_LOG_RETENTION_DAYS
 import com.qqfarm.mobile.data.model.ActivityNotifyGroup
 import com.qqfarm.mobile.data.model.ActivityNotifyType
 import com.qqfarm.mobile.data.network.ActivityNotificationManager
+import com.qqfarm.mobile.data.network.FarmApiClient
 import com.qqfarm.mobile.data.network.PROJECT_GITHUB_URL
 import com.qqfarm.mobile.data.prefs.StoredConfig
 import com.qqfarm.mobile.ui.components.AppleAlertDialog
@@ -88,6 +90,7 @@ import com.qqfarm.mobile.ui.components.AppleSectionHeader
 import com.qqfarm.mobile.ui.components.AppleSettingRow
 import com.qqfarm.mobile.ui.components.AppleSwitchRow
 import com.qqfarm.mobile.ui.components.ServerSwitcherSheet
+import com.qqfarm.mobile.ui.components.ServerUpdateSheet
 import com.qqfarm.mobile.ui.state.AppUpdateViewModel
 import com.qqfarm.mobile.ui.state.SessionUiState
 import com.qqfarm.mobile.ui.theme.CustomAppearanceConfig
@@ -97,6 +100,7 @@ import com.qqfarm.mobile.ui.theme.SoilGold
 @Composable
 fun SettingsScreen(
     session: SessionUiState,
+    apiClient: FarmApiClient,
     onOpenReconfigureServer: () -> Unit,
     onAddServer: () -> Unit,
     onSwitchServer: (String) -> Unit,
@@ -118,6 +122,7 @@ fun SettingsScreen(
     onApplyNotifyTypes: (Set<String>) -> Unit,
     onSendTestNotification: () -> Boolean,
     onClearLogs: suspend (String) -> Unit,
+    onServerUpdated: () -> Unit,
     onMessage: (String) -> Unit,
 ) {
     val apple = LocalAppleColors.current
@@ -130,6 +135,7 @@ fun SettingsScreen(
     var showLogoutConfirm by remember { mutableStateOf(false) }
     var showDownloadEditor by rememberSaveable { mutableStateOf(false) }
     var showServerSheet by remember { mutableStateOf(false) }
+    var showServerUpdateSheet by rememberSaveable { mutableStateOf(false) }
     var showGithubTokenEditor by rememberSaveable { mutableStateOf(false) }
     var showLogCleanup by remember(session.config.currentAccountId) { mutableStateOf(false) }
     var showCustomAppearanceSheet by remember { mutableStateOf(false) }
@@ -372,10 +378,18 @@ fun SettingsScreen(
                 AppleSettingRow(
                     icon = Icons.Rounded.SystemUpdateAlt,
                     iconTint = apple.blue,
-                    title = "检查更新",
+                    title = "客户端更新",
                     trailingText = "v${BuildConfig.VERSION_NAME}",
                     showChevron = true,
                     onClick = { updateModel.check(session.config) },
+                )
+                AppleHairlineDivider()
+                AppleSettingRow(
+                    icon = Icons.Rounded.Update,
+                    iconTint = apple.emerald,
+                    title = "服务端更新",
+                    showChevron = true,
+                    onClick = { showServerUpdateSheet = true },
                 )
                 AppleHairlineDivider()
                 AppleSettingRow(
@@ -461,6 +475,16 @@ fun SettingsScreen(
         )
     }
     AppUpdateDialogs(updateModel, session.config)
+    if (showServerUpdateSheet) {
+        ServerUpdateSheet(
+            apiClient = apiClient,
+            serverUrl = session.config.serverUrl,
+            appGithubToken = session.config.githubToken,
+            onServerUpdated = onServerUpdated,
+            onMessage = onMessage,
+            onDismiss = { showServerUpdateSheet = false },
+        )
+    }
     if (showCustomAppearanceSheet) {
         CustomAppearanceSheet(
             themeMode = session.config.themeMode,

@@ -80,6 +80,10 @@ import com.qqfarm.mobile.data.model.StellarPassNode
 import com.qqfarm.mobile.data.model.StellarShopGoods
 import com.qqfarm.mobile.data.model.StellarSnapshot
 import com.qqfarm.mobile.data.model.StellarSolarTerm
+import com.qqfarm.mobile.data.model.SystemUpdateCommit
+import com.qqfarm.mobile.data.model.SystemUpdateJob
+import com.qqfarm.mobile.data.model.SystemUpdatePullResult
+import com.qqfarm.mobile.data.model.SystemUpdateStatus
 import com.qqfarm.mobile.data.model.WeatherState
 import org.json.JSONArray
 import org.json.JSONObject
@@ -527,6 +531,10 @@ object FeatureJsonParsers {
                         gid = f.optStringClean("gid"),
                         name = f.optStringClean("name").ifBlank { f.optStringClean("gid") },
                         avatarUrl = f.optStringClean("avatarUrl"),
+                        canSteal = f.optBoolFlex("canSteal"),
+                        stealLotCount = f.optIntFlex("stealLotCount"),
+                        canMidwife = f.optBoolFlex("canMidwife"),
+                        midwifeCount = f.optIntFlex("midwifeCount"),
                         canHelp = f.optBoolFlex("canHelp"),
                         helpCount = f.optIntFlex("helpCount"),
                     )
@@ -1814,6 +1822,107 @@ object FeatureJsonParsers {
             normal = parseMutantEffects(obj.optJSONArray("normal")),
             decoration = parseMutantEffects(obj.optJSONArray("decoration")),
             collections = collections,
+        )
+    }
+
+    fun parseSystemUpdateStatus(obj: JSONObject): SystemUpdateStatus {
+        val dirtyArr = obj.optJSONArray("dirtyFiles") ?: JSONArray()
+        val dirtyFiles = buildList(dirtyArr.length()) {
+            for (i in 0 until dirtyArr.length()) {
+                val item = dirtyArr.opt(i)?.toString()?.trim().orEmpty()
+                if (item.isNotEmpty() && item != "null") add(item)
+            }
+        }
+        val commitsArr = obj.optJSONArray("incomingCommits") ?: JSONArray()
+        val incomingCommits = buildList(commitsArr.length()) {
+            for (i in 0 until commitsArr.length()) {
+                val c = commitsArr.optJSONObject(i) ?: continue
+                add(
+                    SystemUpdateCommit(
+                        hash = c.optStringClean("hash"),
+                        shortHash = c.optStringClean("shortHash"),
+                        subject = c.optStringClean("subject"),
+                        author = c.optStringClean("author"),
+                        timestampMs = c.optLongFlex("timestampMs"),
+                    )
+                )
+            }
+        }
+        val jobObj = obj.optJSONObject("job")
+        val job = if (jobObj != null) {
+            val linesArr = jobObj.optJSONArray("recentLines") ?: JSONArray()
+            val recentLines = buildList(linesArr.length()) {
+                for (i in 0 until linesArr.length()) {
+                    val line = linesArr.opt(i)?.toString()?.trimEnd().orEmpty()
+                    if (line.isNotEmpty() && line != "null") add(line)
+                }
+            }
+            SystemUpdateJob(
+                id = jobObj.optStringClean("id"),
+                status = jobObj.optStringClean("status", "running"),
+                phase = jobObj.optStringClean("phase"),
+                detail = jobObj.optStringClean("detail"),
+                startedAt = jobObj.optLongFlex("startedAt"),
+                updatedAt = jobObj.optLongFlex("updatedAt"),
+                finishedAt = jobObj.optLongFlex("finishedAt"),
+                error = jobObj.optStringClean("error"),
+                fromCommit = jobObj.optStringClean("fromCommit"),
+                targetCommit = jobObj.optStringClean("targetCommit"),
+                recentLines = recentLines,
+            )
+        } else null
+
+        val lastCheckedAt = if (!obj.has("lastCheckedAt") || obj.isNull("lastCheckedAt")) {
+            null
+        } else {
+            obj.optLongFlex("lastCheckedAt").takeIf { it > 0L }
+        }
+        val lastPulledAt = if (!obj.has("lastPulledAt") || obj.isNull("lastPulledAt")) {
+            null
+        } else {
+            obj.optLongFlex("lastPulledAt").takeIf { it > 0L }
+        }
+
+        return SystemUpdateStatus(
+            mode = obj.optStringClean("mode", "unknown"),
+            gitSupported = obj.optBoolFlex("gitSupported"),
+            githubTokenConfigured = obj.optBoolNullable("githubTokenConfigured"),
+            unsupportedReason = obj.optStringClean("unsupportedReason"),
+            applySupported = obj.optBoolFlex("applySupported"),
+            applyUnsupportedReason = obj.optStringClean("applyUnsupportedReason"),
+            branch = obj.optStringClean("branch"),
+            detached = obj.optBoolFlex("detached"),
+            commit = obj.optStringClean("commit"),
+            shortCommit = obj.optStringClean("shortCommit"),
+            commitSubject = obj.optStringClean("commitSubject"),
+            startupCommit = obj.optStringClean("startupCommit"),
+            needsApply = obj.optBoolFlex("needsApply"),
+            upstream = obj.optStringClean("upstream"),
+            remote = obj.optStringClean("remote"),
+            remoteBranch = obj.optStringClean("remoteBranch"),
+            behindCount = obj.optIntFlex("behindCount"),
+            aheadCount = obj.optIntFlex("aheadCount"),
+            dirtyFiles = dirtyFiles,
+            incomingCommits = incomingCommits,
+            canCheck = obj.optBoolFlex("canCheck"),
+            canPull = obj.optBoolFlex("canPull"),
+            canApply = obj.optBoolFlex("canApply"),
+            deployBusy = obj.optBoolFlex("deployBusy"),
+            lastCheckedAt = lastCheckedAt,
+            lastCheckError = obj.optStringClean("lastCheckError"),
+            lastPulledAt = lastPulledAt,
+            job = job,
+        )
+    }
+
+    fun parseSystemUpdatePullResult(obj: JSONObject): SystemUpdatePullResult {
+        val statusObj = obj.optJSONObject("status")
+            ?: throw ApiException("服务端未返回更新状态")
+        return SystemUpdatePullResult(
+            pulled = obj.optBoolFlex("pulled"),
+            fromCommit = obj.optStringClean("fromCommit"),
+            toCommit = obj.optStringClean("toCommit"),
+            status = parseSystemUpdateStatus(statusObj),
         )
     }
 }

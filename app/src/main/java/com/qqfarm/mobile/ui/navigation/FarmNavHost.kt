@@ -168,9 +168,10 @@ fun FarmNavHost(viewModel: AppSessionViewModel) {
                 onBack = { viewModel.closeReconfigureServer() },
                 onTestConnection = { url -> viewModel.testServerConnection(url) },
                 onConnectWithToken = { url, token -> viewModel.connectWithApiToken(url, token) },
-                onConnectWithPassword = { url, user, pass ->
-                    viewModel.connectWithPassword(url, user, pass)
+                onConnectWithPassword = { url, user, pass, remember ->
+                    viewModel.connectWithPassword(url, user, pass, remember)
                 },
+                onForgetPassword = viewModel::forgetPassword,
                 onSuccessMessage = { msg -> viewModel.emitMessage(msg) },
             )
         }
@@ -301,6 +302,12 @@ fun FarmNavHost(viewModel: AppSessionViewModel) {
                 .padding(innerPadding)
                 .then(if (bottomBarVisible) Modifier else Modifier.navigationBarsPadding()),
         ) {
+            val refreshOverviewSilent: () -> Unit = {
+                viewModel.refreshOverview(silent = true)
+                if (gameSpace == GameSpace.RANCH) {
+                    viewModel.refreshRanchOverview(silent = true)
+                }
+            }
             key(session.config.activeProfileId, session.config.serverUrl, session.config.currentAccountId) {
                 if (showAutomationPage) {
                     AutomationScreen(
@@ -313,7 +320,7 @@ fun FarmNavHost(viewModel: AppSessionViewModel) {
                         IllustratedScreen(
                             session = session,
                             apiClient = viewModel.apiClient,
-                            onRefreshOverview = { viewModel.refreshOverview() },
+                            onRefreshOverview = refreshOverviewSilent,
                             onMessage = { msg -> viewModel.emitMessage(msg) },
                         )
                     }
@@ -336,6 +343,8 @@ fun FarmNavHost(viewModel: AppSessionViewModel) {
                                     viewModel.refreshAccounts()
                                     viewModel.refreshOverview()
                                 },
+                                onRefreshSilent = { viewModel.refreshOverview(silent = true) },
+                                onRefreshRanchOverview = { silent -> viewModel.refreshRanchOverview(silent) },
                                 onOpenAccountSwitcher = { showAccountSwitcher = true },
                                 onStartAccount = { id -> viewModel.startAccount(id) },
                                 onClearLogs = viewModel::clearLogs,
@@ -367,12 +376,14 @@ fun FarmNavHost(viewModel: AppSessionViewModel) {
                                         mallSubTab = 0
                                         selectedTab = 2
                                     },
+                                    onRefreshOverview = refreshOverviewSilent,
                                     onMessage = { msg -> viewModel.emitMessage(msg) },
                                 )
                             } else {
                                 FarmRanchScreen(
                                     session = session,
                                     apiClient = viewModel.apiClient,
+                                    onRefreshOverview = refreshOverviewSilent,
                                     onMessage = { msg -> viewModel.emitMessage(msg) },
                                 )
                             }
@@ -386,7 +397,7 @@ fun FarmNavHost(viewModel: AppSessionViewModel) {
                                 mallTab = mallSubTab,
                                 onSelectMallTab = { mallSubTab = it },
                                 onFullScreenOverlayChange = { hideMainChrome = it },
-                                onRefreshOverview = { viewModel.refreshOverview() },
+                                onRefreshOverview = refreshOverviewSilent,
                                 onMessage = { msg -> viewModel.emitMessage(msg) },
                             )
 
@@ -394,11 +405,13 @@ fun FarmNavHost(viewModel: AppSessionViewModel) {
                                 session = session,
                                 apiClient = viewModel.apiClient,
                                 gameSpace = gameSpace,
+                                onRefreshOverview = refreshOverviewSilent,
                                 onMessage = { msg -> viewModel.emitMessage(msg) },
                             )
 
                             4 -> SettingsScreen(
                                 session = session,
+                                apiClient = viewModel.apiClient,
                                 onOpenReconfigureServer = { viewModel.openReconfigureServer() },
                                 onAddServer = { viewModel.openAddServer() },
                                 onSwitchServer = { id -> viewModel.switchServer(id) },
@@ -426,6 +439,10 @@ fun FarmNavHost(viewModel: AppSessionViewModel) {
                                 onApplyNotifyTypes = { keys -> viewModel.applyNotifyTypes(keys) },
                                 onSendTestNotification = { viewModel.sendTestActivityNotification() },
                                 onClearLogs = viewModel::clearLogs,
+                                onServerUpdated = {
+                                    viewModel.refreshAccounts()
+                                    viewModel.refreshOverview(silent = true)
+                                },
                                 onMessage = { msg -> viewModel.emitMessage(msg) },
                             )
                         }

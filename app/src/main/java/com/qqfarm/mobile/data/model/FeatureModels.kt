@@ -310,9 +310,16 @@ data class RanchFriendSummary(
     val gid: String,
     val name: String,
     val avatarUrl: String = "",
+    val canSteal: Boolean = false,
+    val stealLotCount: Int = 0,
+    val canMidwife: Boolean = false,
+    val midwifeCount: Int = 0,
     val canHelp: Boolean = false,
     val helpCount: Int = 0,
-)
+) {
+    val hasActionableTag: Boolean
+        get() = canSteal || canMidwife || canHelp
+}
 
 data class RanchFriendShelf(
     val penId: String,
@@ -970,4 +977,64 @@ data class MutationCatalogSnapshot(
     val normal: List<MutantCatalogEffect> = emptyList(),
     val decoration: List<MutantCatalogEffect> = emptyList(),
     val collections: List<MutationCatalogCollectionSeries> = emptyList(),
+)
+
+data class SystemUpdateCommit(
+    val hash: String,
+    val shortHash: String,
+    val subject: String,
+    val author: String = "",
+    val timestampMs: Long = 0L,
+)
+
+data class SystemUpdateJob(
+    val id: String,
+    val status: String,
+    val phase: String = "",
+    val detail: String = "",
+    val startedAt: Long = 0L,
+    val updatedAt: Long = 0L,
+    val finishedAt: Long = 0L,
+    val error: String = "",
+    val fromCommit: String = "",
+    val targetCommit: String = "",
+    val recentLines: List<String> = emptyList(),
+)
+
+data class SystemUpdateStatus(
+    val mode: String = "unknown",
+    val gitSupported: Boolean = false,
+    val githubTokenConfigured: Boolean? = null,
+    val unsupportedReason: String = "",
+    val applySupported: Boolean = false,
+    val applyUnsupportedReason: String = "",
+    val branch: String = "",
+    val detached: Boolean = false,
+    val commit: String = "",
+    val shortCommit: String = "",
+    val commitSubject: String = "",
+    val startupCommit: String = "",
+    val needsApply: Boolean = false,
+    val upstream: String = "",
+    val remote: String = "",
+    val remoteBranch: String = "",
+    val behindCount: Int = 0,
+    val aheadCount: Int = 0,
+    val dirtyFiles: List<String> = emptyList(),
+    val incomingCommits: List<SystemUpdateCommit> = emptyList(),
+    val canCheck: Boolean = false,
+    val canPull: Boolean = false,
+    val canApply: Boolean = false,
+    val deployBusy: Boolean = false,
+    val lastCheckedAt: Long? = null,
+    val lastCheckError: String = "",
+    val lastPulledAt: Long? = null,
+    val job: SystemUpdateJob? = null,
+)
+
+data class SystemUpdatePullResult(
+    val pulled: Boolean = false,
+    val fromCommit: String = "",
+    val toCommit: String = "",
+    val status: SystemUpdateStatus,
 )

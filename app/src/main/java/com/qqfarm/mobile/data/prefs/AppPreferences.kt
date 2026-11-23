@@ -12,7 +12,10 @@ import androidx.datastore.preferences.preferencesDataStore
 import com.qqfarm.mobile.data.model.ActivityNotifyType
 import com.qqfarm.mobile.data.network.DEFAULT_UPDATE_ACCELERATOR
 import com.qqfarm.mobile.ui.theme.CustomAppearanceConfig
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.flow.map
 import org.json.JSONArray
 import org.json.JSONObject
@@ -47,6 +50,7 @@ data class ServerProfile(
     val authToken: String = "",
     val authMode: String = StoredConfig.AUTH_MODE_PASSWORD,
     val username: String = "",
+    val sealedPassword: String = "",
     val currentAccountId: String = "",
 ) {
     val isAuthenticated: Boolean get() = serverUrl.isNotBlank() && authToken.isNotBlank()
@@ -63,6 +67,7 @@ data class StoredConfig(
     val authToken: String = "",
     val authMode: String = AUTH_MODE_PASSWORD,
     val username: String = "",
+    val savedPassword: String = "",
     val currentAccountId: String = "",
     val themeMode: String = THEME_SYSTEM,
     val dynamicColor: Boolean = false,
@@ -139,6 +144,7 @@ class AppPreferences(private val context: Context) {
                             authToken = o.optString("authToken"),
                             authMode = o.optString("authMode").ifBlank { StoredConfig.AUTH_MODE_PASSWORD },
                             username = o.optString("username"),
+                            sealedPassword = o.optString("sealedPassword"),
                             currentAccountId = o.optString("currentAccountId"),
                         )
                     )
@@ -158,6 +164,7 @@ class AppPreferences(private val context: Context) {
                     .put("authToken", p.authToken)
                     .put("authMode", p.authMode)
                     .put("username", p.username)
+                    .put("sealedPassword", p.sealedPassword)
                     .put("currentAccountId", p.currentAccountId)
             )
         }
@@ -199,11 +206,13 @@ class AppPreferences(private val context: Context) {
         val downloadMode = UpdateDownloadMode.entries.firstOrNull { it.name == prefs[Keys.UPDATE_DOWNLOAD_MODE] }
             ?: if (prefs[Keys.USE_UPDATE_ACCELERATION] == false) UpdateDownloadMode.DIRECT else UpdateDownloadMode.ACCELERATOR
         val (profiles, activeProfileId) = profilesWithLegacy(prefs)
+        val active = profiles.firstOrNull { it.id == activeProfileId }
         StoredConfig(
             serverUrl = prefs[Keys.SERVER_URL].orEmpty(),
             authToken = prefs[Keys.AUTH_TOKEN].orEmpty(),
             authMode = prefs[Keys.AUTH_MODE] ?: StoredConfig.AUTH_MODE_PASSWORD,
             username = prefs[Keys.USERNAME].orEmpty(),
+            savedPassword = active?.let { RememberedPassword.open(it.sealedPassword, it.id) }.orEmpty(),
             currentAccountId = prefs[Keys.CURRENT_ACCOUNT_ID].orEmpty(),
             themeMode = prefs[Keys.THEME_MODE] ?: StoredConfig.THEME_SYSTEM,
             dynamicColor = prefs[Keys.DYNAMIC_COLOR] ?: false,
@@ -223,7 +232,7 @@ class AppPreferences(private val context: Context) {
             activeProfileId = activeProfileId,
             githubToken = prefs[Keys.GITHUB_TOKEN].orEmpty(),
         )
-    }
+    }.flowOn(Dispatchers.IO)
 
     /**
      * 保存连接。
@@ -237,6 +246,7 @@ class AppPreferences(private val context: Context) {
         username: String,
         from: StoredConfig,
         asNewProfile: Boolean = false,
+        passwordToRemember: String? = null,
     ): Boolean {
         var saved = false
         context.dataStore.edit { prefs ->
@@ -253,11 +263,17 @@ class AppPreferences(private val context: Context) {
             val base = existing ?: ServerProfile(id = UUID.randomUUID().toString(), serverUrl = serverUrl)
             val sameToken = base.serverUrl == serverUrl && base.authToken == token
             val sameUser = base.serverUrl == serverUrl && (sameToken || (username.isNotBlank() && base.username == username))
+            val sealedPassword = when {
+                passwordToRemember == null -> if (sameUser) base.sealedPassword else ""
+                passwordToRemember.isEmpty() -> ""
+                else -> withContext(Dispatchers.IO) { RememberedPassword.seal(passwordToRemember, base.id) }
+            }
             val updated = base.copy(
                 serverUrl = serverUrl,
                 authToken = token,
                 authMode = authMode,
                 username = if (sameToken && username.isBlank()) base.username else username,
+                sealedPassword = sealedPassword,
                 currentAccountId = if (sameUser) base.currentAccountId else "",
             )
             val next = if (profiles.any { it.id == updated.id }) {
@@ -270,6 +286,15 @@ class AppPreferences(private val context: Context) {
             saved = true
         }
         return saved
+    }
+
+    suspend fun forgetPassword(profileId: String) {
+        context.dataStore.edit { prefs ->
+            val (profiles, activeId) = profilesWithLegacy(prefs)
+            if (profileId == activeId && profiles.any { it.id == profileId && it.sealedPassword.isNotEmpty() }) {
+                writeProfiles(prefs, profiles.map { if (it.id == profileId) it.copy(sealedPassword = "") else it })
+            }
+        }
     }
 
     /** 切换到已保存的服务器；会恢复该服务器上次选中的农场账号。 */

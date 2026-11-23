@@ -47,6 +47,8 @@ import com.qqfarm.mobile.data.model.SolarActionResult
 import com.qqfarm.mobile.data.model.SolarCalendarState
 import com.qqfarm.mobile.data.model.StatusSnapshot
 import com.qqfarm.mobile.data.model.StellarSnapshot
+import com.qqfarm.mobile.data.model.SystemUpdatePullResult
+import com.qqfarm.mobile.data.model.SystemUpdateStatus
 import com.qqfarm.mobile.data.model.WeatherState
 import com.qqfarm.mobile.data.model.WxQrTask
 import kotlinx.coroutines.Dispatchers
@@ -119,6 +121,10 @@ class FarmApiClient {
 
     private val ranchHttpClient: OkHttpClient = okHttpClient.newBuilder()
         .readTimeout(45, TimeUnit.SECONDS)
+        .build()
+
+    private val systemUpdateHttpClient: OkHttpClient = okHttpClient.newBuilder()
+        .readTimeout(90, TimeUnit.SECONDS)
         .build()
 
     fun updateSession(serverUrl: String, token: String, accountId: String) {
@@ -1232,5 +1238,54 @@ class FarmApiClient {
     suspend fun fetchMutationCatalog(): MutationCatalogSnapshot {
         val json = executeJson("GET", "/api/illustrated/mutations")
         return FeatureJsonParsers.parseMutationCatalog(json.optJSONObject("data") ?: JSONObject())
+    }
+
+    // ---- Server Version Update ----
+
+    suspend fun fetchSystemUpdateStatus(): SystemUpdateStatus {
+        val json = executeJson("GET", "/api/system/update/status")
+        val data = json.optJSONObject("data") ?: throw ApiException("服务端未返回更新状态")
+        return FeatureJsonParsers.parseSystemUpdateStatus(data)
+    }
+
+    suspend fun checkSystemUpdates(): SystemUpdateStatus {
+        val json = executeJson("POST", "/api/system/update/check", client = systemUpdateHttpClient)
+        val data = json.optJSONObject("data") ?: throw ApiException("服务端未返回检查结果")
+        return FeatureJsonParsers.parseSystemUpdateStatus(data)
+    }
+
+    suspend fun pullSystemUpdates(): SystemUpdatePullResult {
+        val json = executeJson("POST", "/api/system/update/pull", client = systemUpdateHttpClient)
+        val data = json.optJSONObject("data") ?: throw ApiException("服务端未返回拉取结果")
+        return FeatureJsonParsers.parseSystemUpdatePullResult(data)
+    }
+
+    suspend fun applySystemUpdate(pullFirst: Boolean): SystemUpdateStatus {
+        val body = JSONObject().put("pullFirst", pullFirst)
+        val json = executeJson("POST", "/api/system/update/apply", body = body, client = systemUpdateHttpClient)
+        val data = json.optJSONObject("data") ?: throw ApiException("服务端未返回更新任务状态")
+        val statusObj = data.optJSONObject("status") ?: throw ApiException("服务端未返回更新状态")
+        return FeatureJsonParsers.parseSystemUpdateStatus(statusObj)
+    }
+
+    private fun sessionForServer(serverUrl: String): Session {
+        val target = session
+        if (target.baseUrl != serverUrl) throw ApiException("当前服务器已切换，请重新打开服务端更新")
+        return target
+    }
+
+    suspend fun saveServerGithubToken(serverUrl: String, token: String) {
+        val body = JSONObject().put("token", token.trim())
+        val json = executeJson("PUT", "/api/system/update/github-token", body = body, requestSession = sessionForServer(serverUrl))
+        if (json.optJSONObject("data")?.opt("githubTokenConfigured") != true) {
+            throw ApiException("服务端未确认保存 GitHub 授权")
+        }
+    }
+
+    suspend fun clearServerGithubToken(serverUrl: String) {
+        val json = executeJson("DELETE", "/api/system/update/github-token", requestSession = sessionForServer(serverUrl))
+        if (json.optJSONObject("data")?.opt("githubTokenConfigured") != false) {
+            throw ApiException("服务端未确认移除 GitHub 授权")
+        }
     }
 }

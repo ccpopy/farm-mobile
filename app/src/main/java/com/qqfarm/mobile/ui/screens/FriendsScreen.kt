@@ -83,6 +83,7 @@ import com.qqfarm.mobile.data.model.InteractRecord
 import com.qqfarm.mobile.data.model.FriendLandsPayload
 import com.qqfarm.mobile.data.model.RejectedFriendHarvests
 import com.qqfarm.mobile.data.model.RanchAnimal
+import com.qqfarm.mobile.data.model.RanchFriendDetail
 import com.qqfarm.mobile.data.model.RanchFriendSummary
 import com.qqfarm.mobile.data.model.RanchQuote
 import com.qqfarm.mobile.data.model.RanchViewSnapshot
@@ -124,12 +125,14 @@ fun FriendsScreen(
     session: SessionUiState,
     apiClient: FarmApiClient,
     gameSpace: GameSpace,
+    onRefreshOverview: () -> Unit = {},
     onMessage: (String) -> Unit,
 ) {
     if (gameSpace == GameSpace.RANCH) {
         RanchFriendsContent(
             session = session,
             apiClient = apiClient,
+            onRefreshOverview = onRefreshOverview,
             onMessage = onMessage,
         )
         return
@@ -220,7 +223,10 @@ fun FriendsScreen(
                     return@launch
                 }
                 val result = try {
-                    apiClient.operateFriend(accountId, friend.gid, opType).also { onMessage(it.message) }
+                    apiClient.operateFriend(accountId, friend.gid, opType).also {
+                        onMessage(it.message)
+                        onRefreshOverview()
+                    }
                 } catch (e: ApiException) {
                     onMessage(e.message)
                     null
@@ -591,6 +597,7 @@ fun FriendsScreen(
             rejectedHarvests = rejectedHarvests,
             onLandsLoaded = { updateFriendActions(friend.gid, it) },
             onBlacklistUpdated = { blacklist = it },
+            onRefreshOverview = onRefreshOverview,
             onDismiss = { inspectedFriend = null },
         )
     }
@@ -641,6 +648,7 @@ private fun FriendLandsSheet(
     rejectedHarvests: RejectedFriendHarvests,
     onLandsLoaded: (FriendLandsPayload?) -> Unit,
     onBlacklistUpdated: (List<FriendBlacklistItem>) -> Unit,
+    onRefreshOverview: () -> Unit = {},
     onDismiss: () -> Unit,
 ) {
     val apple = LocalAppleColors.current
@@ -701,7 +709,10 @@ private fun FriendLandsSheet(
             else -> "正在捣乱…"
         }
         val result = try {
-            apiClient.operateFriend(accountId, friend.gid, opType).also { actionMessage = it.message }
+            apiClient.operateFriend(accountId, friend.gid, opType).also {
+                actionMessage = it.message
+                onRefreshOverview()
+            }
         } catch (e: ApiException) {
             actionMessage = e.message
             null
@@ -853,11 +864,12 @@ private data class PendingRanchFriendOp(
     val quote: RanchQuote,
 )
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 private fun RanchFriendsContent(
     session: SessionUiState,
     apiClient: FarmApiClient,
+    onRefreshOverview: () -> Unit = {},
     onMessage: (String) -> Unit,
 ) {
     val apple = LocalAppleColors.current
@@ -870,12 +882,33 @@ private fun RanchFriendsContent(
     var loadError by remember(accountId, isConnected) { mutableStateOf("") }
     var keyword by remember { mutableStateOf("") }
     var selectedFriend by remember(accountId, isConnected) { mutableStateOf<RanchFriendSummary?>(null) }
+    var loadingList by remember(accountId, isConnected) { mutableStateOf(false) }
     var reportedEntry by remember(accountId) { mutableStateOf(false) }
 
-    suspend fun loadFriendsList() {
-        if (!isConnected || refreshing) return
-        refreshing = true
-        loadError = ""
+    fun updateFriendSummaryFromDetail(gid: String, detail: RanchFriendDetail) {
+        val current = snapshot ?: return
+        val midwifeCount = detail.ranches.sumOf { pen -> pen.animals.count { it.canProduce } }
+        val updatedFriends = current.friends.map { item ->
+            if (item.gid != gid) item else item.copy(
+                canSteal = detail.canSteal,
+                stealLotCount = detail.stealableShelves,
+                canMidwife = midwifeCount > 0,
+                midwifeCount = midwifeCount,
+                canHelp = detail.cleanableHazards > 0,
+                helpCount = detail.cleanableHazards,
+            )
+        }
+        snapshot = current.copy(friends = updatedFriends)
+    }
+
+    suspend fun loadFriendsList(silent: Boolean = false) {
+        if (!isConnected || loadingList) return
+        loadingList = true
+        val keepExisting = silent && snapshot != null
+        if (!keepExisting) {
+            refreshing = true
+            loadError = ""
+        }
         try {
             if (!reportedEntry) {
                 reportedEntry = true
@@ -884,15 +917,21 @@ private fun RanchFriendsContent(
                     val quote = apiClient.quoteRanchAction(accountId, "reportEntry", input)
                     if (!quote.skipped) apiClient.executeRanchAction(accountId, "reportEntry", input, quote.signature)
                 } catch (e: ApiException) {
-                    onMessage(e.message)
+                    if (!keepExisting) onMessage(e.message)
                 }
             }
             snapshot = apiClient.fetchRanchView(accountId, "friends")
+            loadError = ""
         } catch (e: ApiException) {
-            loadError = e.message
-            if (snapshot != null) onMessage(e.message)
+            if (!keepExisting) {
+                loadError = e.message
+                if (snapshot != null) onMessage(e.message)
+            }
         } finally {
-            refreshing = false
+            loadingList = false
+            if (!keepExisting) {
+                refreshing = false
+            }
         }
     }
 
@@ -1028,32 +1067,52 @@ private fun RanchFriendsContent(
                                 )
                                 Spacer(modifier = Modifier.width(12.dp))
                                 Column(modifier = Modifier.weight(1f)) {
-                                    Row(
-                                        verticalAlignment = Alignment.CenterVertically,
-                                        horizontalArrangement = Arrangement.spacedBy(6.dp),
-                                    ) {
-                                        Text(
-                                            text = friend.name,
-                                            style = MaterialTheme.typography.titleSmall,
-                                            color = apple.primaryText,
-                                            maxLines = 1,
-                                            overflow = TextOverflow.Ellipsis,
-                                            modifier = Modifier.weight(1f, fill = false),
-                                        )
-                                        if (!refreshing && loadError.isBlank() && friend.canHelp) {
-                                            AppleStatusPill(
-                                                text = if (friend.helpCount > 0) "可清理 ${friend.helpCount} 处" else "可清理",
-                                                color = apple.green,
-                                                showDot = false,
-                                            )
-                                        }
-                                    }
+                                    Text(
+                                        text = friend.name,
+                                        style = MaterialTheme.typography.titleSmall,
+                                        color = apple.primaryText,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                    )
                                     Spacer(modifier = Modifier.height(2.dp))
                                     Text(
-                                        text = "GID ${friend.gid} · 点击拜访牧场",
+                                        text = if (!refreshing && loadError.isBlank() && friend.hasActionableTag) {
+                                            "GID ${friend.gid}"
+                                        } else {
+                                            "GID ${friend.gid} · 点击拜访牧场"
+                                        },
                                         style = MaterialTheme.typography.bodySmall,
                                         color = apple.secondaryText,
                                     )
+                                    if (!refreshing && loadError.isBlank() && friend.hasActionableTag) {
+                                        Spacer(modifier = Modifier.height(6.dp))
+                                        FlowRow(
+                                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                            verticalArrangement = Arrangement.spacedBy(4.dp),
+                                        ) {
+                                            if (friend.canMidwife) {
+                                                AppleStatusPill(
+                                                    text = if (friend.midwifeCount > 0) "可帮生产 ${friend.midwifeCount}" else "可帮生产",
+                                                    color = apple.blue,
+                                                    showDot = false,
+                                                )
+                                            }
+                                            if (friend.canSteal) {
+                                                AppleStatusPill(
+                                                    text = if (friend.stealLotCount > 0) "可偷取 ${friend.stealLotCount}" else "可偷取",
+                                                    color = apple.green,
+                                                    showDot = false,
+                                                )
+                                            }
+                                            if (friend.canHelp) {
+                                                AppleStatusPill(
+                                                    text = if (friend.helpCount > 0) "可清理 ${friend.helpCount}" else "可清理",
+                                                    color = apple.orange,
+                                                    showDot = false,
+                                                )
+                                            }
+                                        }
+                                    }
                                 }
                                 Icon(
                                     imageVector = Icons.Rounded.ChevronRight,
@@ -1073,9 +1132,11 @@ private fun RanchFriendsContent(
             accountId = accountId,
             friend = friend,
             apiClient = apiClient,
+            onDetailLoaded = { detail -> updateFriendSummaryFromDetail(friend.gid, detail) },
+            onRefreshOverview = onRefreshOverview,
             onDismiss = {
                 selectedFriend = null
-                scope.launch { loadFriendsList() }
+                scope.launch { loadFriendsList(silent = true) }
             },
         )
     }
@@ -1109,6 +1170,8 @@ private fun RanchFriendDetailSheet(
     accountId: String,
     friend: RanchFriendSummary,
     apiClient: FarmApiClient,
+    onDetailLoaded: (RanchFriendDetail) -> Unit = {},
+    onRefreshOverview: () -> Unit = {},
     onDismiss: () -> Unit,
 ) {
     val apple = LocalAppleColors.current
@@ -1131,6 +1194,7 @@ private fun RanchFriendDetailSheet(
             val loaded = apiClient.fetchRanchView(accountId, "friends", hostGid = friend.gid)
             val detail = loaded.friendRanch ?: throw ApiException("未返回好友牧场数据")
             snapshot = loaded
+            onDetailLoaded(detail)
             if (detail.feedMachine == null) showGrassSheet = false
         } catch (e: ApiException) {
             snapshot = null
@@ -1498,6 +1562,9 @@ private fun RanchFriendDetailSheet(
                         pendingOp = null
                         actionMessage = res.notice.ifBlank { if (res.status == "skipped") "当前没有可操作项目" else "操作成功" }
                         loadDetail()
+                        if (res.status != "skipped") {
+                            onRefreshOverview()
+                        }
                     }.onFailure {
                         if (it is CancellationException) throw it
                         pendingOp = null

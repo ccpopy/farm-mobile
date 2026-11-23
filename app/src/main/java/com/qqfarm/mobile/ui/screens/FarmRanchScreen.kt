@@ -120,6 +120,7 @@ import java.util.Locale
 fun FarmRanchScreen(
     session: SessionUiState,
     apiClient: FarmApiClient,
+    onRefreshOverview: () -> Unit = {},
     onMessage: (String) -> Unit,
 ) {
     val apple = LocalAppleColors.current
@@ -175,6 +176,7 @@ fun FarmRanchScreen(
             try {
                 onMessage(apiClient.operateFarm(accountId, operation, landId))
                 loadCurrentTab()
+                onRefreshOverview()
             } catch (e: ApiException) {
                 onMessage(e.message)
             } finally {
@@ -196,7 +198,10 @@ fun FarmRanchScreen(
                 }
                 val updated = apiClient.fetchBag(accountId)
                 bagPayload = updated
-                if (bagActionError == null) onUpdated(updated)
+                if (bagActionError == null) {
+                    onUpdated(updated)
+                    onRefreshOverview()
+                }
                 if (selectedBagKey != null && updated.items.none { it.key == selectedBagKey }) {
                     selectedBagKey = null
                     onMessage(bagActionError ?: "该物品已不在背包")
@@ -296,6 +301,7 @@ fun FarmRanchScreen(
                                         .onSuccess { count ->
                                             onMessage("已为 $count 块土地施肥")
                                             loadCurrentTab()
+                                            onRefreshOverview()
                                         }
                                         .onFailure { onMessage(it.message ?: "施肥失败") }
                                     actionBusy = false
@@ -322,6 +328,7 @@ fun FarmRanchScreen(
                                         .onSuccess {
                                             onMessage("已领取全部宠物技能礼包")
                                             loadCurrentTab()
+                                            onRefreshOverview()
                                         }
                                         .onFailure { onMessage(it.message ?: "领取失败") }
                                     actionBusy = false
@@ -335,6 +342,7 @@ fun FarmRanchScreen(
                                         .onSuccess { updated ->
                                             petSnapshot = updated
                                             onMessage("已喂食狗粮 ×$count")
+                                            onRefreshOverview()
                                         }
                                         .onFailure { onMessage(it.message ?: "喂食失败") }
                                     actionBusy = false
@@ -410,6 +418,7 @@ fun FarmRanchScreen(
                         .onSuccess {
                             onMessage("土地 #${land.id} 施肥成功")
                             loadCurrentTab()
+                            onRefreshOverview()
                         }
                         .onFailure { onMessage(it.message ?: "施肥失败") }
                     actionBusy = false

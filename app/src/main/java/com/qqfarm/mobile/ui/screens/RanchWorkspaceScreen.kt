@@ -149,6 +149,7 @@ fun RanchWorkspaceScreen(
     initialSubTab: Int,
     onSubTabChanged: (Int) -> Unit,
     onOpenRanchMall: () -> Unit,
+    onRefreshOverview: () -> Unit = {},
     onMessage: (String) -> Unit,
 ) {
     val apple = LocalAppleColors.current
@@ -233,6 +234,7 @@ fun RanchWorkspaceScreen(
                 .onSuccess { msg ->
                     onMessage(msg)
                     loadCurrentView()
+                    onRefreshOverview()
                 }
                 .onFailure {
                     if (it is CancellationException) throw it
@@ -509,6 +511,9 @@ fun RanchWorkspaceScreen(
                         pendingRequest = null
                         onMessage(res.notice.ifBlank { if (res.status == "skipped") "当前没有可操作项目" else "操作完成" })
                         loadCurrentView()
+                        if (res.status != "skipped") {
+                            onRefreshOverview()
+                        }
                     }.onFailure {
                         if (it is CancellationException) throw it
                         pendingRequest = null

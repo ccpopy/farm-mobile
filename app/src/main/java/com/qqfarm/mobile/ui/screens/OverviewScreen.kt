@@ -153,6 +153,8 @@ fun OverviewScreen(
     apiClient: FarmApiClient,
     gameSpace: GameSpace,
     onRefresh: () -> Unit,
+    onRefreshSilent: () -> Unit,
+    onRefreshRanchOverview: (Boolean) -> Unit,
     onRefreshInspectionStatus: suspend () -> Unit,
     onOpenAccountSwitcher: () -> Unit,
     onStartAccount: (String) -> Unit,
@@ -164,7 +166,6 @@ fun OverviewScreen(
     onOpenAutomation: () -> Unit,
 ) {
     val apple = LocalAppleColors.current
-    val scope = rememberCoroutineScope()
     var clockTickMs by remember { mutableLongStateOf(SystemClock.elapsedRealtime()) }
     LaunchedEffect(Unit) {
         while (true) {
@@ -178,44 +179,25 @@ fun OverviewScreen(
     val isOnline = session.status?.connected == true && accountId.isNotBlank()
     var showBuyFertilizer by remember(accountId, isOnline, gameSpace) { mutableStateOf(false) }
     var showBuyCans by remember(accountId, isOnline, gameSpace) { mutableStateOf(false) }
-    var ranchPayload by remember(accountId, isOnline) { mutableStateOf<RanchPayload?>(null) }
-    var ranchLoading by remember(accountId, isOnline) { mutableStateOf(false) }
-    var ranchError by remember(accountId, isOnline) { mutableStateOf("") }
-
-    suspend fun loadRanchOverview() {
-        if (!isOnline) {
-            ranchPayload = null
-            ranchError = ""
-            return
-        }
-        if (ranchLoading) return
-        ranchLoading = true
-        ranchError = ""
-        try {
-            ranchPayload = apiClient.fetchRanchView(accountId, "overview").base
-        } catch (e: ApiException) {
-            ranchError = e.message
-        } finally {
-            ranchLoading = false
-        }
-    }
 
     LaunchedEffect(gameSpace, accountId, isOnline) {
+        if (!isOnline) return@LaunchedEffect
+        onRefreshSilent()
         if (gameSpace == GameSpace.RANCH) {
-            loadRanchOverview()
+            onRefreshRanchOverview(session.ranchOverview != null)
         }
     }
 
     PullToRefreshBox(
         isRefreshing = if (gameSpace == GameSpace.RANCH) {
-            ranchLoading || session.accountsLoading
+            session.ranchOverviewLoading || session.accountsLoading
         } else {
             session.statusLoading || session.accountsLoading
         },
         onRefresh = {
             onRefresh()
             if (gameSpace == GameSpace.RANCH) {
-                scope.launch { loadRanchOverview() }
+                onRefreshRanchOverview(false)
             }
         },
         modifier = Modifier
@@ -242,12 +224,12 @@ fun OverviewScreen(
         } else if (gameSpace == GameSpace.RANCH) {
             RanchOverviewContent(
                 session = session,
-                ranch = ranchPayload,
-                loading = ranchLoading,
-                error = ranchError,
+                ranch = session.ranchOverview,
+                loading = session.ranchOverviewLoading,
+                error = session.ranchOverviewError,
                 clockTickMs = clockTickMs,
                 onStartAccount = onStartAccount,
-                onRetry = { scope.launch { loadRanchOverview() } },
+                onRetry = { onRefreshRanchOverview(false) },
                 onSwitchToFarm = { onSwitchSpace(GameSpace.FARM) },
                 onOpenDiscover = onOpenDiscover,
                 onOpenWorkspace = onOpenWorkspace,
@@ -722,7 +704,7 @@ fun OverviewScreen(
         BuyFertilizerSheet(
             accountId = accountId,
             apiClient = apiClient,
-            onPurchased = onRefresh,
+            onPurchased = onRefreshSilent,
             onMessage = onMessage,
             onDismiss = { showBuyFertilizer = false },
         )
@@ -733,8 +715,8 @@ fun OverviewScreen(
             accountId = accountId,
             apiClient = apiClient,
             onPurchased = {
-                onRefresh()
-                scope.launch { loadRanchOverview() }
+                onRefreshSilent()
+                onRefreshRanchOverview(true)
             },
             onMessage = onMessage,
             onDismiss = { showBuyCans = false },

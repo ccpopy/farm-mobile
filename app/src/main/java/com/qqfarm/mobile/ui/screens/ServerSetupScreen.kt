@@ -65,8 +65,13 @@ import com.qqfarm.mobile.ui.components.AppleIconBadge
 import com.qqfarm.mobile.ui.components.AppleSegmentedControl
 import com.qqfarm.mobile.ui.components.AppleSettingRow
 import com.qqfarm.mobile.ui.components.AppleStatusPill
+import com.qqfarm.mobile.ui.components.AppleSwitch
 import com.qqfarm.mobile.ui.theme.LocalAppleColors
 import kotlinx.coroutines.launch
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.selection.toggleable
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.draw.clip
 import androidx.compose.material.icons.rounded.Eco
 
 @Composable
@@ -76,7 +81,8 @@ fun ServerSetupScreen(
     onBack: () -> Unit,
     onTestConnection: suspend (String) -> Result<ServerVersionInfo>,
     onConnectWithToken: suspend (String, String) -> Result<Unit>,
-    onConnectWithPassword: suspend (String, String, String) -> Result<String>,
+    onConnectWithPassword: suspend (String, String, String, Boolean) -> Result<String>,
+    onForgetPassword: (String) -> Unit,
     onSuccessMessage: (String) -> Unit,
     isAddingServer: Boolean = false,
     otherServers: List<ServerProfile> = emptyList(),
@@ -91,7 +97,7 @@ fun ServerSetupScreen(
     }
     var authTabIndex by remember(initialConfig.authMode) {
         mutableIntStateOf(
-            if (initialConfig.authMode == StoredConfig.AUTH_MODE_API_TOKEN) 1 else 0
+            if (initialConfig.authMode == StoredConfig.AUTH_MODE_API_TOKEN && (initialConfig.authToken.isNotBlank() || initialConfig.savedPassword.isEmpty())) 1 else 0
         )
     }
     var apiToken by remember(initialConfig.authToken) {
@@ -102,7 +108,17 @@ fun ServerSetupScreen(
     var showToken by remember { mutableStateOf(false) }
 
     var username by remember(initialConfig.username) { mutableStateOf(initialConfig.username) }
-    var password by remember { mutableStateOf("") }
+    var password by remember { mutableStateOf(initialConfig.savedPassword) }
+    var passwordFromProfile by remember { mutableStateOf(password.isNotEmpty()) }
+    var rememberPassword by remember { mutableStateOf(passwordFromProfile) }
+    fun setRememberPassword(enabled: Boolean) {
+        rememberPassword = enabled
+        if (!enabled && initialConfig.activeProfile?.sealedPassword?.isNotEmpty() == true &&
+            FarmApiClient.normalizeBaseUrl(serverUrl) == initialConfig.serverUrl && username.trim() == initialConfig.username
+        ) {
+            onForgetPassword(initialConfig.activeProfileId)
+        }
+    }
     var showPassword by remember { mutableStateOf(false) }
 
     var testing by remember { mutableStateOf(false) }
@@ -220,9 +236,14 @@ fun ServerSetupScreen(
                 value = serverUrl,
                 enabled = !submitting && !testing,
                 onValueChange = {
-                    if (apiToken.isNotBlank() && apiToken == initialConfig.authToken &&
-                        FarmApiClient.normalizeBaseUrl(it) != initialConfig.serverUrl) {
-                        apiToken = ""
+                    if (FarmApiClient.normalizeBaseUrl(it) != initialConfig.serverUrl) {
+                        if (apiToken.isNotBlank() && apiToken == initialConfig.authToken) {
+                            apiToken = ""
+                        }
+                        if (passwordFromProfile) {
+                            passwordFromProfile = false
+                            password = ""
+                        }
                     }
                     serverUrl = it
                     verifiedInfo = null
@@ -330,7 +351,13 @@ fun ServerSetupScreen(
 
                 OutlinedTextField(
                     value = username,
-                    onValueChange = { username = it },
+                    onValueChange = {
+                        if (passwordFromProfile && it.trim() != initialConfig.username) {
+                            passwordFromProfile = false
+                            password = ""
+                        }
+                        username = it
+                    },
                     label = { Text("用户名") },
                     leadingIcon = { Icon(Icons.Rounded.Person, contentDescription = null) },
                     singleLine = true,
@@ -343,7 +370,10 @@ fun ServerSetupScreen(
 
                 OutlinedTextField(
                     value = password,
-                    onValueChange = { password = it },
+                    onValueChange = {
+                        passwordFromProfile = false
+                        password = it
+                    },
                     label = { Text("密码") },
                     leadingIcon = { Icon(Icons.Rounded.Lock, contentDescription = null) },
                     singleLine = true,
@@ -363,6 +393,29 @@ fun ServerSetupScreen(
                     shape = RoundedCornerShape(14.dp),
                     modifier = Modifier.fillMaxWidth(),
                 )
+
+                Spacer(modifier = Modifier.height(10.dp))
+
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(12.dp))
+                        .toggleable(value = rememberPassword, enabled = !submitting, role = Role.Switch, onValueChange = ::setRememberPassword)
+                        .padding(horizontal = 4.dp, vertical = 6.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        text = "记住密码",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = apple.primaryText,
+                    )
+                    AppleSwitch(
+                        checked = rememberPassword,
+                        onCheckedChange = null,
+                        enabled = !submitting,
+                    )
+                }
 
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(
@@ -452,7 +505,7 @@ fun ServerSetupScreen(
                 submitting = true
                 scope.launch {
                     if (authTabIndex == 0) {
-                        val res = onConnectWithPassword(serverUrl, username, password)
+                        val res = onConnectWithPassword(serverUrl, username, password, rememberPassword)
                         res.onSuccess { note ->
                             onSuccessMessage(note.ifBlank { "登录成功，已连接远程服务器" })
                         }.onFailure { err ->

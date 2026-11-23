@@ -7,6 +7,7 @@ import com.qqfarm.mobile.FarmBotApplication
 import com.qqfarm.mobile.data.model.AccountItem
 import com.qqfarm.mobile.data.model.BagSystemItem
 import com.qqfarm.mobile.data.model.DailyGiftsSummary
+import com.qqfarm.mobile.data.model.RanchPayload
 import com.qqfarm.mobile.data.model.RunLogEntry
 import com.qqfarm.mobile.data.model.RUN_LOG_LIMIT
 import com.qqfarm.mobile.data.model.ServerVersionInfo
@@ -17,8 +18,8 @@ import com.qqfarm.mobile.data.model.runLogCutoff
 import com.qqfarm.mobile.data.network.ApiException
 import com.qqfarm.mobile.data.network.FarmApiClient
 import com.qqfarm.mobile.data.prefs.StoredConfig
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.async
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -27,7 +28,6 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.supervisorScope
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import java.time.Instant
@@ -42,6 +42,9 @@ data class SessionUiState(
     val diamondBalance: Long = 0L,
     val systemItems: List<BagSystemItem> = emptyList(),
     val dailyGifts: DailyGiftsSummary? = null,
+    val ranchOverview: RanchPayload? = null,
+    val ranchOverviewLoading: Boolean = false,
+    val ranchOverviewError: String = "",
     val logs: List<RunLogEntry> = emptyList(),
     val realtimeConnected: Boolean = false,
     val connectionWarning: String = "",
@@ -70,6 +73,9 @@ class AppSessionViewModel(application: Application) : AndroidViewModel(applicati
 
     private var bootstrapJob: Job? = null
     private var logsRefreshJob: Job? = null
+    private var overviewJob: Job? = null
+    private var secondaryOverviewJob: Job? = null
+    private var ranchOverviewJob: Job? = null
     private val tokenUpdates = Mutex()
 
     init {
@@ -99,11 +105,7 @@ class AppSessionViewModel(application: Application) : AndroidViewModel(applicati
                 val activeId = _uiState.value.config.currentAccountId
                 if (accountId == activeId) {
                     val prevConnected = _uiState.value.status?.connected == true
-                    _uiState.value = _uiState.value.copy(
-                        status = snapshot,
-                        statusLoading = false,
-                        connectionWarning = "",
-                    )
+                    setOverviewStatus(snapshot)
                     if (!prevConnected && snapshot.connected) {
                         refreshSecondaryOverview(accountId)
                     }
@@ -154,6 +156,9 @@ class AppSessionViewModel(application: Application) : AndroidViewModel(applicati
         val connectionChanged = previous.initializing || !isActiveConnection(latest)
         if (connectionChanged || previous.config.currentAccountId != latest.currentAccountId) {
             logsRefreshJob?.cancel()
+            overviewJob?.cancel()
+            secondaryOverviewJob?.cancel()
+            ranchOverviewJob?.cancel()
         }
         if (connectionChanged) {
             bootstrapJob?.cancel()
@@ -175,6 +180,9 @@ class AppSessionViewModel(application: Application) : AndroidViewModel(applicati
                 diamondBalance = 0L,
                 systemItems = emptyList(),
                 dailyGifts = null,
+                ranchOverview = null,
+                ranchOverviewLoading = false,
+                ranchOverviewError = "",
                 logs = emptyList(),
             )
             socketManager.subscribeAccount(latest.currentAccountId)
@@ -211,6 +219,16 @@ class AppSessionViewModel(application: Application) : AndroidViewModel(applicati
     fun emitMessage(msg: String) {
         if (msg.isNotBlank()) {
             _snackbars.tryEmit(msg)
+        }
+    }
+
+    fun forgetPassword(profileId: String) {
+        viewModelScope.launch {
+            try {
+                prefs.forgetPassword(profileId)
+            } catch (e: java.io.IOException) {
+                emitMessage("清除密码失败：${e.localizedMessage}")
+            }
         }
     }
 
@@ -300,6 +318,7 @@ class AppSessionViewModel(application: Application) : AndroidViewModel(applicati
         rawUrl: String,
         username: String,
         password: String,
+        rememberPassword: Boolean,
     ): Result<String> {
         val normalized = FarmApiClient.normalizeBaseUrl(rawUrl)
             ?: return Result.failure(IllegalArgumentException("请输入有效的服务器地址"))
@@ -328,14 +347,21 @@ class AppSessionViewModel(application: Application) : AndroidViewModel(applicati
             "登录成功，建议在网页端修改默认密码"
         } else ""
 
-        val saved = prefs.saveConnection(
-            serverUrl = normalized,
-            token = loginRes.token,
-            authMode = StoredConfig.AUTH_MODE_PASSWORD,
-            username = loginRes.username.ifBlank { username.trim() },
-            from = from,
-            asNewProfile = asNew,
-        )
+        val saved = try {
+            prefs.saveConnection(
+                serverUrl = normalized,
+                token = loginRes.token,
+                authMode = StoredConfig.AUTH_MODE_PASSWORD,
+                username = loginRes.username.ifBlank { username.trim() },
+                from = from,
+                asNewProfile = asNew,
+                passwordToRemember = if (rememberPassword) password else "",
+            )
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            return Result.failure(IllegalStateException("保存登录设置失败：${e.localizedMessage}", e))
+        }
         if (!saved) return Result.failure(IllegalStateException("当前连接已切换，请重新操作"))
         _uiState.value = _uiState.value.copy(showReconfigureServer = false, addingServer = false, connectionWarning = "")
         return Result.success(note)
@@ -455,34 +481,71 @@ class AppSessionViewModel(application: Application) : AndroidViewModel(applicati
         }
     }
 
-    fun refreshOverview() {
-        val config = _uiState.value.config
-        val accountId = config.currentAccountId
+    private fun setOverviewStatus(snapshot: StatusSnapshot) {
+        val state = _uiState.value
+        if (!snapshot.connected) {
+            secondaryOverviewJob?.cancel()
+            ranchOverviewJob?.cancel()
+        }
+        _uiState.value = state.copy(
+            status = snapshot,
+            statusLoading = false,
+            connectionWarning = "",
+            ranchOverview = state.ranchOverview.takeIf { snapshot.connected },
+            ranchOverviewLoading = snapshot.connected && state.ranchOverviewLoading,
+            ranchOverviewError = if (snapshot.connected) state.ranchOverviewError else "",
+        )
+    }
+
+    fun refreshOverview(silent: Boolean = false) {
+        val before = _uiState.value
+        val accountId = before.config.currentAccountId
         if (accountId.isBlank()) return
-        refreshRunLogs()
-        viewModelScope.launch {
-            _uiState.value = _uiState.value.copy(statusLoading = true)
-            runCatching { apiClient.fetchStatus(accountId) }
-                .onSuccess { snap ->
-                    if (isActiveConnection(config) && _uiState.value.config.currentAccountId == accountId) {
-                        _uiState.value = _uiState.value.copy(
-                            status = snap,
-                            statusLoading = false,
-                            connectionWarning = "",
-                        )
-                        if (snap.connected) {
-                            refreshSecondaryOverview(accountId)
-                        }
-                    }
+        if (!silent) {
+            refreshRunLogs()
+            _uiState.value = before.copy(statusLoading = true)
+        }
+        if (before.status?.connected == true) refreshSecondaryOverview(accountId)
+        overviewJob?.cancel()
+        overviewJob = viewModelScope.launch {
+            try {
+                val snapshot = apiClient.fetchStatus(accountId)
+                // 请求期间收到的实时推送优先于这次状态查询。
+                if (_uiState.value.status === before.status) {
+                    setOverviewStatus(snapshot)
+                    if (snapshot.connected && before.status?.connected != true) refreshSecondaryOverview(accountId)
                 }
-                .onFailure { err ->
-                    if (isActiveConnection(config) && _uiState.value.config.currentAccountId == accountId) {
-                        _uiState.value = _uiState.value.copy(
-                            statusLoading = false,
-                            connectionWarning = err.message ?: "状态获取失败",
-                        )
-                    }
+            } catch (e: ApiException) {
+                val current = _uiState.value
+                if (current.status === before.status) {
+                    _uiState.value = current.copy(
+                        statusLoading = false,
+                        connectionWarning = if (silent) current.connectionWarning else e.message,
+                    )
                 }
+            }
+        }
+    }
+
+    fun refreshRanchOverview(silent: Boolean = false) {
+        val state = _uiState.value
+        val accountId = state.config.currentAccountId
+        if (accountId.isBlank() || state.status?.connected != true) return
+        ranchOverviewJob?.cancel()
+        ranchOverviewJob = viewModelScope.launch {
+            if (!silent || state.ranchOverview == null) {
+                _uiState.value = _uiState.value.copy(ranchOverviewLoading = true, ranchOverviewError = "")
+            }
+            try {
+                val ranch = apiClient.fetchRanchView(accountId, "overview").base
+                _uiState.value = _uiState.value.copy(ranchOverview = ranch, ranchOverviewLoading = false, ranchOverviewError = "")
+            } catch (e: ApiException) {
+                val current = _uiState.value
+                _uiState.value = current.copy(
+                    ranchOverviewLoading = false,
+                    ranchOverviewError = if (silent && current.ranchOverview != null) current.ranchOverviewError else e.message,
+                )
+            }
         }
     }
 
@@ -531,26 +594,21 @@ class AppSessionViewModel(application: Application) : AndroidViewModel(applicati
     }
 
     private fun refreshSecondaryOverview(accountId: String) {
-        val config = _uiState.value.config
-        viewModelScope.launch {
-            supervisorScope {
-                val diamondJob = async { runCatching { apiClient.fetchDiamond(accountId) } }
-                val bagJob = async { runCatching { apiClient.fetchBag(accountId) } }
-                val giftJob = async { runCatching { apiClient.fetchDailyGifts(accountId) } }
-
-                val d = diamondJob.await().getOrNull()
-                val b = bagJob.await().getOrNull()
-                val g = giftJob.await().getOrNull()
-
-                if (isActiveConnection(config) && _uiState.value.config.currentAccountId == accountId) {
-                    _uiState.value = _uiState.value.copy(
-                        diamondBalance = d ?: _uiState.value.diamondBalance,
-                        systemItems = b?.systemItems ?: _uiState.value.systemItems,
-                        dailyGifts = g ?: _uiState.value.dailyGifts,
-                    )
-                }
-            }
+        secondaryOverviewJob?.cancel()
+        secondaryOverviewJob = viewModelScope.launch {
+            launch { updateOverviewField({ apiClient.fetchBag(accountId) }) { copy(systemItems = it.systemItems) } }
+            launch { updateOverviewField({ apiClient.fetchDiamond(accountId) }) { copy(diamondBalance = it) } }
+            launch { updateOverviewField({ apiClient.fetchDailyGifts(accountId) }) { copy(dailyGifts = it) } }
         }
+    }
+
+    private suspend fun <T> updateOverviewField(fetch: suspend () -> T, merge: SessionUiState.(T) -> SessionUiState) {
+        val value = try {
+            fetch()
+        } catch (_: ApiException) {
+            return
+        }
+        _uiState.value = _uiState.value.merge(value)
     }
 
     suspend fun clearLogs(accountId: String) {
