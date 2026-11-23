@@ -999,7 +999,24 @@ data class SystemUpdateJob(
     val fromCommit: String = "",
     val targetCommit: String = "",
     val recentLines: List<String> = emptyList(),
-)
+) {
+    val isRollback: Boolean get() = id.startsWith("rbk_")
+}
+
+data class SystemReleaseBackup(
+    val releaseId: String,
+    val shortCommit: String,
+    val subject: String,
+    val createdAt: Long,
+    val pairedWebReleaseId: String,
+    val isActive: Boolean,
+    val isPrevious: Boolean,
+    val compatible: Boolean,
+    val compatibilityReasons: List<String>,
+    val canRollback: Boolean,
+) {
+    val label: String get() = shortCommit.ifBlank { releaseId }
+}
 
 data class SystemUpdateStatus(
     val mode: String = "unknown",
@@ -1030,6 +1047,7 @@ data class SystemUpdateStatus(
     val lastCheckError: String = "",
     val lastPulledAt: Long? = null,
     val job: SystemUpdateJob? = null,
+    val releases: List<SystemReleaseBackup>? = null,
 )
 
 data class SystemUpdatePullResult(

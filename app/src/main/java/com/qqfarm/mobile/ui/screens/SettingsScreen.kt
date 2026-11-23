@@ -135,7 +135,7 @@ fun SettingsScreen(
     var showLogoutConfirm by remember { mutableStateOf(false) }
     var showDownloadEditor by rememberSaveable { mutableStateOf(false) }
     var showServerSheet by remember { mutableStateOf(false) }
-    var showServerUpdateSheet by rememberSaveable { mutableStateOf(false) }
+    var showServerUpdateSheet by rememberSaveable(session.config.serverUrl) { mutableStateOf(false) }
     var showGithubTokenEditor by rememberSaveable { mutableStateOf(false) }
     var showLogCleanup by remember(session.config.currentAccountId) { mutableStateOf(false) }
     var showCustomAppearanceSheet by remember { mutableStateOf(false) }

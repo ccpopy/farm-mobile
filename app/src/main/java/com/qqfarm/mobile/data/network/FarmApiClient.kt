@@ -1260,12 +1260,19 @@ class FarmApiClient {
         return FeatureJsonParsers.parseSystemUpdatePullResult(data)
     }
 
-    suspend fun applySystemUpdate(pullFirst: Boolean): SystemUpdateStatus {
-        val body = JSONObject().put("pullFirst", pullFirst)
-        val json = executeJson("POST", "/api/system/update/apply", body = body, client = systemUpdateHttpClient)
+    suspend fun applySystemUpdate(pullFirst: Boolean, serverUrl: String = session.baseUrl): SystemUpdateStatus =
+        submitSystemDeployment("/api/system/update/apply", JSONObject().put("pullFirst", pullFirst), sessionForServer(serverUrl))
+
+    suspend fun rollbackSystemRelease(serverUrl: String, releaseId: String): SystemUpdateStatus =
+        submitSystemDeployment("/api/system/update/rollback", JSONObject().put("releaseId", releaseId), sessionForServer(serverUrl))
+
+    private suspend fun submitSystemDeployment(path: String, body: JSONObject, target: Session): SystemUpdateStatus {
+        val json = executeJson("POST", path, body = body, client = systemUpdateHttpClient, requestSession = target)
         val data = json.optJSONObject("data") ?: throw ApiException("服务端未返回更新任务状态")
         val statusObj = data.optJSONObject("status") ?: throw ApiException("服务端未返回更新状态")
-        return FeatureJsonParsers.parseSystemUpdateStatus(statusObj)
+        val status = FeatureJsonParsers.parseSystemUpdateStatus(statusObj)
+        if (status.job?.id.isNullOrBlank()) throw ApiException("服务端未确认版本切换任务，请刷新进度核对")
+        return status
     }
 
     private fun sessionForServer(serverUrl: String): Session {

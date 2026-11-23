@@ -80,6 +80,7 @@ import com.qqfarm.mobile.data.model.StellarPassNode
 import com.qqfarm.mobile.data.model.StellarShopGoods
 import com.qqfarm.mobile.data.model.StellarSnapshot
 import com.qqfarm.mobile.data.model.StellarSolarTerm
+import com.qqfarm.mobile.data.model.SystemReleaseBackup
 import com.qqfarm.mobile.data.model.SystemUpdateCommit
 import com.qqfarm.mobile.data.model.SystemUpdateJob
 import com.qqfarm.mobile.data.model.SystemUpdatePullResult
@@ -1848,6 +1849,30 @@ object FeatureJsonParsers {
                 )
             }
         }
+        val releases = obj.optJSONArray("releases")?.let { rows ->
+            buildList(rows.length()) {
+                for (i in 0 until rows.length()) {
+                    val row = rows.optJSONObject(i) ?: continue
+                    val id = row.optStringClean("releaseId")
+                    if (id.isBlank()) continue
+                    val compat = row.optJSONObject("compat")
+                    val compatible = compat?.optBoolFlex("compatible") == true
+                    val active = row.optBoolFlex("isActive")
+                    add(SystemReleaseBackup(
+                        releaseId = id,
+                        shortCommit = row.optStringClean("shortCommit"),
+                        subject = row.optStringClean("commitSubject"),
+                        createdAt = row.optLongFlex("createdAt"),
+                        pairedWebReleaseId = row.optStringClean("pairedWebReleaseId"),
+                        isActive = active,
+                        isPrevious = row.optBoolFlex("isPrevious"),
+                        compatible = compatible,
+                        compatibilityReasons = parseStringList(compat?.optJSONArray("reasons")),
+                        canRollback = !active && compatible && row.optBoolFlex("canRollback"),
+                    ))
+                }
+            }
+        }
         val jobObj = obj.optJSONObject("job")
         val job = if (jobObj != null) {
             val linesArr = jobObj.optJSONArray("recentLines") ?: JSONArray()
@@ -1912,6 +1937,7 @@ object FeatureJsonParsers {
             lastCheckError = obj.optStringClean("lastCheckError"),
             lastPulledAt = lastPulledAt,
             job = job,
+            releases = releases,
         )
     }
 
