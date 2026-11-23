@@ -5,6 +5,7 @@ import android.security.keystore.KeyProperties
 import java.io.IOException
 import java.security.GeneralSecurityException
 import java.security.KeyStore
+import java.security.ProviderException
 import java.util.Base64
 import javax.crypto.Cipher
 import javax.crypto.KeyGenerator
@@ -39,14 +40,21 @@ internal object RememberedPassword {
     fun open(sealed: String, profileId: String): String {
         if (sealed.isEmpty()) return ""
         return try {
-            val key = existingKey() ?: return ""
+            val parts = sealed.split('.', limit = 2)
+            if (parts.size != 2) return ""
             val decoder = Base64.getDecoder()
+            val iv = decoder.decode(parts[0])
+            val encrypted = decoder.decode(parts[1])
+            if (iv.isEmpty() || encrypted.size < 16) return "" // AES-GCM 的认证标签占 16 字节。
+            val key = existingKey() ?: return ""
             val cipher = Cipher.getInstance(algorithm)
-            cipher.init(Cipher.DECRYPT_MODE, key, GCMParameterSpec(128, decoder.decode(sealed.substringBefore('.'))))
+            cipher.init(Cipher.DECRYPT_MODE, key, GCMParameterSpec(128, iv))
             cipher.updateAAD(profileId.toByteArray(Charsets.UTF_8))
-            cipher.doFinal(decoder.decode(sealed.substringAfter('.'))).toString(Charsets.UTF_8)
+            cipher.doFinal(encrypted).toString(Charsets.UTF_8)
         } catch (_: GeneralSecurityException) {
             "" // 密钥失效时允许重新输入密码。
+        } catch (_: ProviderException) {
+            ""
         } catch (_: IOException) {
             ""
         } catch (_: IllegalArgumentException) {
