@@ -30,7 +30,6 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.CalendarMonth
 import androidx.compose.material.icons.rounded.CardGiftcard
-import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.Quiz
 import androidx.compose.material3.Button
@@ -335,7 +334,6 @@ fun SolarCalendarScreen(
                         SolarCalendarLeaf(
                             startSec = event.startTimeSec,
                             endSec = event.endTimeSec,
-                            done = done,
                         )
                         Column(
                             modifier = Modifier.weight(1f),
@@ -473,7 +471,6 @@ fun SolarCalendarScreen(
 private fun SolarCalendarLeaf(
     startSec: Long,
     endSec: Long,
-    done: Boolean,
 ) {
     val apple = LocalAppleColors.current
     val tz = remember { TimeZone.getTimeZone("Asia/Shanghai") }
@@ -488,58 +485,44 @@ private fun SolarCalendarLeaf(
     }
     val sealRed = Color(0xFFC0533F)
 
-    Box {
-        Surface(
-            modifier = Modifier.width(66.dp),
-            shape = RoundedCornerShape(14.dp),
-            color = apple.elevated,
-            border = BorderStroke(0.5.dp, apple.separator),
-        ) {
-            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .background(sealRed)
-                        .padding(vertical = 3.dp),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Text(
-                        text = monthLabel,
-                        style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
-                        color = Color.White,
-                    )
-                }
-                Column(
-                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 6.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                ) {
-                    Text(
-                        text = dayLabel,
-                        style = MaterialTheme.typography.headlineSmall.copy(
-                            fontWeight = FontWeight.Bold,
-                            fontFeatureSettings = "tnum",
-                        ),
-                        color = apple.primaryText,
-                    )
-                    Text(
-                        text = untilLabel,
-                        style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
-                        color = apple.secondaryText,
-                        maxLines = 1,
-                    )
-                }
-            }
-        }
-        if (done) {
+    Surface(
+        modifier = Modifier.width(66.dp),
+        shape = RoundedCornerShape(14.dp),
+        color = apple.elevated,
+        border = BorderStroke(0.5.dp, apple.separator),
+    ) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
             Box(
                 modifier = Modifier
-                    .size(20.dp)
-                    .align(Alignment.BottomEnd)
-                    .clip(CircleShape)
-                    .background(apple.green),
+                    .fillMaxWidth()
+                    .background(sealRed)
+                    .padding(vertical = 3.dp),
                 contentAlignment = Alignment.Center,
             ) {
-                Icon(Icons.Rounded.Check, contentDescription = "已完成", tint = Color.White, modifier = Modifier.size(13.dp))
+                Text(
+                    text = monthLabel,
+                    style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                    color = Color.White,
+                )
+            }
+            Column(
+                modifier = Modifier.padding(horizontal = 4.dp, vertical = 6.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                Text(
+                    text = dayLabel,
+                    style = MaterialTheme.typography.headlineSmall.copy(
+                        fontWeight = FontWeight.Bold,
+                        fontFeatureSettings = "tnum",
+                    ),
+                    color = apple.primaryText,
+                )
+                Text(
+                    text = untilLabel,
+                    style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
+                    color = apple.secondaryText,
+                    maxLines = 1,
+                )
             }
         }
     }
