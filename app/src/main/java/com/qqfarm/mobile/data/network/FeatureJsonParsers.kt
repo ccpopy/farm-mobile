@@ -1562,11 +1562,21 @@ object FeatureJsonParsers {
         )
     }
 
+    // Protobuf Long 在线程间传递后，会以 low/high 对象出现在购买回执里。
+    private fun JSONObject.optSeedReceiptLong(key: String): Long {
+        val words = optJSONObject(key) ?: return optLongFlex(key)
+        val low = words.opt("low") as? Int ?: return 0L
+        val high = words.opt("high") as? Int ?: return 0L
+        return (high.toLong() shl 32) or (low.toLong() and 0xffff_ffffL)
+    }
+
     fun parseIllustratedSeedReceipt(obj: JSONObject?, seedId: Int): Long {
         val items = obj?.optJSONArray("get_items")
         val received = if (items == null) 0L else (0 until items.length()).sumOf { index ->
             val item = items.optJSONObject(index)
-            if (item?.optIntFlex("id") == seedId) item.optLongFlex("count").coerceAtLeast(0L) else 0L
+            if (item?.optSeedReceiptLong("id") == seedId.toLong()) {
+                item.optSeedReceiptLong("count").coerceAtLeast(0L)
+            } else 0L
         }
         if (received <= 0L) throw ApiException("种子购买结果未确认，请刷新背包后核对")
         return received
