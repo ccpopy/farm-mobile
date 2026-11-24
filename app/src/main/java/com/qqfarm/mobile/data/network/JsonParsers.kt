@@ -356,13 +356,23 @@ object JsonParsers {
     fun parseFriendOperation(response: JSONObject): FriendOperationResult {
         val data = response.optJSONObject("data") ?: throw ApiException("服务器未返回好友操作结果")
         val message = data.optStringClean("message")
-        if (!data.optBoolFlex("ok")) throw ApiException(
-            message = message.ifBlank { "服务器未确认好友操作结果" },
-            errorCode = data.optStringClean("errorCode").ifBlank { data.optStringClean("code") },
-        )
+        val reason = data.optStringClean("reason")
+        if (!data.optBoolFlex("ok")) {
+            if (reason == "invalid_removed") {
+                return FriendOperationResult(
+                    message = message.ifBlank { "好友关系已失效，已从扫描名单移除" },
+                    count = 0,
+                    reason = reason,
+                )
+            }
+            throw ApiException(
+                message = message.ifBlank { "服务器未确认好友操作结果" },
+                errorCode = data.optStringClean("errorCode").ifBlank { data.optStringClean("code") },
+            )
+        }
         val count = data.optIntFlex("count", -1).takeIf { it >= 0 }
         val display = message.ifBlank { count?.let { "本次操作 $it 块土地" } ?: "服务器已确认操作" }
-        return FriendOperationResult(display, count)
+        return FriendOperationResult(display, count, reason = reason)
     }
 
     fun parseFriendLandsPayload(obj: JSONObject): FriendLandsPayload {

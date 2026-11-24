@@ -444,7 +444,7 @@ class ActivityNotificationManager(
                     takeIfEnabled(ActivityNotifyType.RANCH_TRADE, enabledTypes, "牧场经营", msg)
                 "ranch_steal" ->
                     takeIfEnabled(ActivityNotifyType.FRIEND_STEAL, enabledTypes, "牧场偷取", msg)
-                "ranch_stroke", "ranch_cleanFriend" ->
+                "ranch_stroke", "ranch_cleanFriend", "ranch_produceFriend" ->
                     takeIfEnabled(ActivityNotifyType.FRIEND_HELP, enabledTypes, "牧场帮忙", msg)
                 "ranch_putMosquito" ->
                     takeIfEnabled(ActivityNotifyType.FRIEND_BAD, enabledTypes, "牧场捣乱", msg)

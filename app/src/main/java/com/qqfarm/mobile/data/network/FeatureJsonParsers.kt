@@ -681,12 +681,18 @@ object FeatureJsonParsers {
         )
     }
 
-    fun parseRanchOperateResult(obj: JSONObject): RanchOperateResult = RanchOperateResult(
-        status = obj.optStringClean("status"),
-        notice = obj.optStringClean("notice"),
-        refreshRequired = obj.optBoolFlex("refreshRequired"),
-        sceneRestored = obj.optBoolFlex("sceneRestored", true),
-    )
+    fun parseRanchOperateResult(obj: JSONObject): RanchOperateResult {
+        val status = obj.optStringClean("status")
+        if (status != "confirmed" && status != "skipped") {
+            throw ApiException("牧场操作结果未确认，请刷新核对", errorCode = "RANCH_RESULT_UNKNOWN")
+        }
+        return RanchOperateResult(
+            status = status,
+            notice = obj.optStringClean("notice"),
+            refreshRequired = obj.optBoolFlex("refreshRequired"),
+            sceneRestored = obj.optBoolFlex("sceneRestored", true),
+        )
+    }
 
     // ---- Activity Center ----
 

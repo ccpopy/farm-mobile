@@ -114,7 +114,7 @@ enum class ActivityNotifyType(
     FARM_LAND("farm_land", ActivityNotifyGroup.FARM, "土地解锁与升级", "新土地解锁或土壤升级成功", false),
 
     FRIEND_STEAL("friend_steal", ActivityNotifyGroup.FRIEND, "偷取好友", "偷取好友农场作物或牧场产物", true),
-    FRIEND_HELP("friend_help", ActivityNotifyGroup.FRIEND, "帮好友务农", "帮好友浇水除草除虫或牧场抚摸清理", false),
+    FRIEND_HELP("friend_help", ActivityNotifyGroup.FRIEND, "帮好友务农", "帮好友浇水除草除虫或牧场帮产抚摸清理", false),
     FRIEND_BAD("friend_bad", ActivityNotifyGroup.FRIEND, "好友捣乱", "对好友放草、放虫或放蚊子", false),
 
     RANCH_HARVEST("ranch_harvest", ActivityNotifyGroup.RANCH, "牧场收获", "牧场动物产物或货架收获完成", true),
@@ -251,7 +251,14 @@ data class FriendLandsPayload(
     }
 }
 
-data class FriendOperationResult(val message: String, val count: Int?, val fruitAlreadyPicked: Boolean = false)
+data class FriendOperationResult(
+    val message: String,
+    val count: Int?,
+    val fruitAlreadyPicked: Boolean = false,
+    val reason: String = "",
+) {
+    val invalidRemoved: Boolean get() = reason == "invalid_removed"
+}
 
 class RejectedFriendHarvests {
     private val batches = mutableMapOf<Long, Map<Int, Pair<String, Int>>>()

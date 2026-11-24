@@ -30,6 +30,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.Block
 import androidx.compose.material.icons.rounded.BugReport
 import androidx.compose.material.icons.rounded.ChevronRight
@@ -37,11 +38,13 @@ import androidx.compose.material.icons.rounded.CleaningServices
 import androidx.compose.material.icons.rounded.Grass
 import androidx.compose.material.icons.rounded.Group
 import androidx.compose.material.icons.rounded.History
+import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.Person
 import androidx.compose.material.icons.rounded.Pets
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.ShoppingBag
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -120,6 +123,9 @@ import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 
+private const val INVALID_FRIEND_RELATION_CODE = "1001048"
+private const val REMOVED_FRIEND_NOTICE = "好友关系已失效，已从当前列表移除"
+
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun FriendsScreen(
@@ -149,6 +155,7 @@ fun FriendsScreen(
     val loadedTabs = remember(accountId, isConnected) { mutableStateMapOf<Int, Boolean>() }
     var busyOp by remember { mutableStateOf(false) }
     var friendListReady by remember(accountId, isConnected) { mutableStateOf(false) }
+    var friendListState by remember(accountId, isConnected) { mutableStateOf("") }
     val rejectedHarvests = remember(accountId, isConnected) { RejectedFriendHarvests() }
     var friendActionStates by remember(accountId, isConnected) { mutableStateOf<Map<Long, Boolean>>(emptyMap()) }
 
@@ -172,6 +179,7 @@ fun FriendsScreen(
                     friendActionStates = emptyMap()
                     val res = apiClient.fetchFriends(accountId, forceSync = forceSync)
                     friends = res.friends.map(rejectedHarvests::checkSummary)
+                    friendListState = res.state
                     friendListReady = res.state == "ready"
                     loadedTabs[0] = true
                     try {
@@ -206,6 +214,15 @@ fun FriendsScreen(
         }
     }
 
+    fun removeInvalidFriend(gid: Long, message: String = REMOVED_FRIEND_NOTICE) {
+        friends = friends.filterNot { it.gid == gid }
+        friendActionStates = friendActionStates - gid
+        if (inspectedFriend?.gid == gid) {
+            inspectedFriend = null
+        }
+        onMessage(message)
+    }
+
     fun operateFromList(friend: FriendItem, opType: String) {
         if (busyOp || refreshing) return
         busyOp = true
@@ -214,8 +231,12 @@ fun FriendsScreen(
                 val before = try {
                     rejectedHarvests.checkLands(friend.gid, apiClient.fetchFriendLands(accountId, friend.gid))
                 } catch (e: ApiException) {
-                    updateFriendActions(friend.gid, null)
-                    onMessage(e.message)
+                    if (e.errorCode == INVALID_FRIEND_RELATION_CODE) {
+                        removeInvalidFriend(friend.gid)
+                    } else {
+                        updateFriendActions(friend.gid, null)
+                        onMessage(e.message)
+                    }
                     return@launch
                 }
                 updateFriendActions(friend.gid, before)
@@ -224,13 +245,18 @@ fun FriendsScreen(
                     return@launch
                 }
                 val result = try {
-                    apiClient.operateFriend(accountId, friend.gid, opType).also {
-                        onMessage(it.message)
-                        onRefreshOverview()
-                    }
+                    apiClient.operateFriend(accountId, friend.gid, opType)
                 } catch (e: ApiException) {
                     onMessage(e.message)
                     null
+                }
+                if (result?.invalidRemoved == true) {
+                    removeInvalidFriend(friend.gid, result.message)
+                    return@launch
+                }
+                if (result != null) {
+                    onMessage(result.message)
+                    onRefreshOverview()
                 }
                 if (result?.fruitAlreadyPicked == true) {
                     updateFriendActions(friend.gid, rejectedHarvests.record(friend.gid, before))
@@ -241,8 +267,12 @@ fun FriendsScreen(
                     val refreshed = rejectedHarvests.checkLands(friend.gid, fresh).afterEmptySteal(emptyAttempt)
                     updateFriendActions(friend.gid, refreshed)
                 } catch (e: ApiException) {
-                    updateFriendActions(friend.gid, null)
-                    onMessage("好友状态刷新失败：${e.message}")
+                    if (e.errorCode == INVALID_FRIEND_RELATION_CODE) {
+                        removeInvalidFriend(friend.gid)
+                    } else {
+                        updateFriendActions(friend.gid, null)
+                        onMessage("好友状态刷新失败：${e.message}")
+                    }
                 }
             } finally {
                 busyOp = false
@@ -371,13 +401,56 @@ fun FriendsScreen(
                                 }
                             }
 
+                            val isQqAccount = session.currentAccount?.platform?.equals("qq", ignoreCase = true) == true
+                            val partialNotice = if (friendListState == "partial") {
+                                if (isQqAccount) {
+                                    "部分好友详情暂未返回。漏回的好友会在 30 分钟后补查一次，仍未返回将暂停巡查。右上角可立即复查。"
+                                } else {
+                                    "部分好友详情暂未返回，可点右上角刷新复查。"
+                                }
+                            } else ""
+                            if (!refreshing && partialNotice.isNotBlank() && friends.isNotEmpty()) {
+                                item(key = "partial_notice") {
+                                    Surface(
+                                        shape = RoundedCornerShape(12.dp),
+                                        color = apple.orange.copy(alpha = 0.12f),
+                                        border = BorderStroke(0.5.dp, apple.orange.copy(alpha = 0.25f)),
+                                        modifier = Modifier.fillMaxWidth(),
+                                    ) {
+                                        Row(
+                                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+                                            verticalAlignment = Alignment.Top,
+                                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Rounded.Info,
+                                                contentDescription = null,
+                                                tint = apple.orange,
+                                                modifier = Modifier.padding(top = 1.dp).size(16.dp),
+                                            )
+                                            Text(
+                                                text = partialNotice,
+                                                style = MaterialTheme.typography.bodySmall,
+                                                color = apple.primaryText,
+                                                modifier = Modifier.weight(1f),
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+
                             if (filteredFriends.isEmpty()) {
                                 item {
                                     AppleGroupedCard {
                                         AppleEmptyState(
                                             icon = Icons.Rounded.Group,
-                                            title = if (friends.isEmpty()) "暂无好友数据" else "没有匹配的好友",
-                                            subtitle = "点击右上角刷新图标可向服务器强制同步好友名单",
+                                            title = when {
+                                                friends.isNotEmpty() -> "没有匹配的好友"
+                                                friendListState == "partial" -> "好友详情暂未同步"
+                                                else -> "暂无好友数据"
+                                            },
+                                            subtitle = partialNotice.takeIf { friends.isEmpty() && it.isNotBlank() }
+                                                ?: "点击右上角刷新图标可向服务器强制同步好友名单",
                                         )
                                     }
                                 }
@@ -608,6 +681,7 @@ fun FriendsScreen(
             rejectedHarvests = rejectedHarvests,
             onLandsLoaded = { updateFriendActions(friend.gid, it) },
             onBlacklistUpdated = { blacklist = it },
+            onFriendInvalidRemoved = { msg -> removeInvalidFriend(friend.gid, msg) },
             onRefreshOverview = onRefreshOverview,
             onDismiss = { inspectedFriend = null },
         )
@@ -659,6 +733,7 @@ private fun FriendLandsSheet(
     rejectedHarvests: RejectedFriendHarvests,
     onLandsLoaded: (FriendLandsPayload?) -> Unit,
     onBlacklistUpdated: (List<FriendBlacklistItem>) -> Unit,
+    onFriendInvalidRemoved: (String) -> Unit,
     onRefreshOverview: () -> Unit = {},
     onDismiss: () -> Unit,
 ) {
@@ -690,6 +765,10 @@ private fun FriendLandsSheet(
             payload = snapshot
             onLandsLoaded(snapshot)
         } catch (e: ApiException) {
+            if (e.errorCode == INVALID_FRIEND_RELATION_CODE) {
+                onFriendInvalidRemoved(REMOVED_FRIEND_NOTICE)
+                return
+            }
             payload = null
             onLandsLoaded(null)
             errorMsg = e.message
@@ -722,11 +801,15 @@ private fun FriendLandsSheet(
         val result = try {
             apiClient.operateFriend(accountId, friend.gid, opType).also {
                 actionMessage = it.message
-                onRefreshOverview()
+                if (!it.invalidRemoved) onRefreshOverview()
             }
         } catch (e: ApiException) {
             actionMessage = e.message
             null
+        }
+        if (result?.invalidRemoved == true) {
+            onFriendInvalidRemoved(result.message)
+            return@runAction
         }
         if (result?.fruitAlreadyPicked == true && before != null) {
             val checked = rejectedHarvests.record(friend.gid, before)
@@ -1263,6 +1346,32 @@ private fun RanchFriendDetailSheet(
         }
     }
 
+    fun produceForFriend() {
+        if (busy || loading || pendingOp != null || snapshot?.friendRanch?.sceneRestored != true) return
+        busy = true
+        actionMessage = "正在帮好友生产…"
+        scope.launch {
+            try {
+                actionMessage = apiClient.operateRanchDirect(
+                    accountId,
+                    "produceFriend",
+                    mapOf("hostGid" to friend.gid),
+                )
+                onRefreshOverview()
+                loadDetail()
+            } catch (e: ApiException) {
+                actionMessage = if (e.message.contains("未知牧场操作") || e.message.contains("不支持的牧场操作")) {
+                    "当前服务端暂不支持帮好友生产，请先更新服务端"
+                } else {
+                    e.message
+                }
+                loadDetail()
+            } finally {
+                busy = false
+            }
+        }
+    }
+
     LaunchedEffect(accountId, friend.gid) {
         loadDetail()
     }
@@ -1346,6 +1455,7 @@ private fun RanchFriendDetailSheet(
             } else if (current != null && ranch != null) {
                 val d = ranch
                 val nowMs = current.base.serverNowMs + (clockTickMs - current.base.fetchedAtElapsedMs).coerceAtLeast(0L)
+                val producibleCount = d.ranches.sumOf { pen -> pen.animals.count { it.canProduce } }
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -1373,6 +1483,23 @@ private fun RanchFriendDetailSheet(
                         Icon(Icons.Rounded.ShoppingBag, contentDescription = null, modifier = Modifier.size(16.dp))
                         Spacer(modifier = Modifier.width(4.dp))
                         Text(if (d.canSteal) "偷取 (${d.stealableShelves})" else "暂无可偷")
+                    }
+                }
+                if (producibleCount > 0) {
+                    OutlinedButton(
+                        onClick = { produceForFriend() },
+                        enabled = actionsEnabled,
+                        shape = RoundedCornerShape(12.dp),
+                        colors = ButtonDefaults.outlinedButtonColors(
+                            containerColor = apple.blue.copy(alpha = 0.10f),
+                            contentColor = apple.blue,
+                        ),
+                        border = BorderStroke(0.8.dp, apple.blue.copy(alpha = 0.32f)),
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Icon(Icons.Rounded.AutoAwesome, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("一键帮忙生产（${producibleCount} 只）")
                     }
                 }
 

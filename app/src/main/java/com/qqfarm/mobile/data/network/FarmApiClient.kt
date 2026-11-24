@@ -602,10 +602,8 @@ class FarmApiClient {
             body.put(k, v)
         }
         val json = executeJson("POST", "/api/ranch/${encodeQuery(action)}", body = body, accountIdOverride = accountId, client = longPollClient)
-        val data = json.optJSONObject("data") ?: JSONObject()
-        val notice = data.optStringClean("notice")
-        if (notice.isNotBlank()) return notice
-        return if (data.optStringClean("status") == "skipped") "当前没有可操作项目" else "操作完成"
+        val result = FeatureJsonParsers.parseRanchOperateResult(json.optJSONObject("data") ?: JSONObject())
+        return result.notice.ifBlank { if (result.status == "skipped") "当前没有可操作项目" else "操作完成" }
     }
 
     suspend fun fetchPets(accountId: String): PetSnapshot {
@@ -991,11 +989,7 @@ class FarmApiClient {
             client = ranchHttpClient,
             requestSession = requestSession,
         )
-        val result = FeatureJsonParsers.parseRanchOperateResult(json.optJSONObject("data") ?: JSONObject())
-        if (result.status != "confirmed" && result.status != "skipped") {
-            throw ApiException("牧场操作结果未确认，请刷新核对", errorCode = "RANCH_RESULT_UNKNOWN")
-        }
-        return result
+        return FeatureJsonParsers.parseRanchOperateResult(json.optJSONObject("data") ?: JSONObject())
     }
 
     suspend fun executeQuotedRanchAction(accountId: String, action: String, input: JSONObject): RanchOperateResult {
