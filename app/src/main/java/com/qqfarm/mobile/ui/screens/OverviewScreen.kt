@@ -28,6 +28,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -112,6 +113,7 @@ import com.qqfarm.mobile.ui.components.AppleSegmentedControl
 import com.qqfarm.mobile.ui.components.AppleStatusPill
 import com.qqfarm.mobile.ui.components.QuickEntryItem
 import com.qqfarm.mobile.ui.components.RemoteAssetImage
+import com.qqfarm.mobile.ui.components.ScrollToTopOnTabReselect
 import com.qqfarm.mobile.ui.components.formatBucketHours
 import com.qqfarm.mobile.ui.components.formatCompactCount
 import com.qqfarm.mobile.ui.components.formatDurationSec
@@ -286,7 +288,11 @@ fun OverviewScreen(
             val normalColl = session.systemItems.firstOrNull { it.id == 3001 }
             val rareColl = session.systemItems.firstOrNull { it.id == 3002 }
 
+            val farmListState = rememberLazyListState()
+            ScrollToTopOnTabReselect(0, farmListState)
+
             LazyColumn(
+                state = farmListState,
                 modifier = Modifier.fillMaxSize(),
                 contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 24.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -1359,7 +1365,11 @@ private fun RanchOverviewContent(
         ranch.serverNowMs + elapsedSec * 1000L
     } else System.currentTimeMillis()
 
+    val ranchListState = rememberLazyListState()
+    ScrollToTopOnTabReselect(0, ranchListState)
+
     LazyColumn(
+        state = ranchListState,
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 24.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),

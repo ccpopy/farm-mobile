@@ -22,6 +22,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Dns
@@ -59,6 +60,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -72,6 +74,7 @@ import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.repeatOnLifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.qqfarm.mobile.BuildConfig
@@ -79,6 +82,7 @@ import com.qqfarm.mobile.data.model.RUN_LOG_RETENTION_DAYS
 import com.qqfarm.mobile.data.model.ActivityNotifyGroup
 import com.qqfarm.mobile.data.model.ActivityNotifyType
 import com.qqfarm.mobile.data.network.ActivityNotificationManager
+import com.qqfarm.mobile.data.network.ApiException
 import com.qqfarm.mobile.data.network.FarmApiClient
 import com.qqfarm.mobile.data.network.PROJECT_GITHUB_URL
 import com.qqfarm.mobile.data.prefs.StoredConfig
@@ -89,6 +93,7 @@ import com.qqfarm.mobile.ui.components.AppleHairlineDivider
 import com.qqfarm.mobile.ui.components.AppleSectionHeader
 import com.qqfarm.mobile.ui.components.AppleSettingRow
 import com.qqfarm.mobile.ui.components.AppleSwitchRow
+import com.qqfarm.mobile.ui.components.ScrollToTopOnTabReselect
 import com.qqfarm.mobile.ui.components.ServerSwitcherSheet
 import com.qqfarm.mobile.ui.components.ServerUpdateSheet
 import com.qqfarm.mobile.ui.state.AppUpdateViewModel
@@ -96,6 +101,7 @@ import com.qqfarm.mobile.ui.state.SessionUiState
 import com.qqfarm.mobile.ui.theme.CustomAppearanceConfig
 import com.qqfarm.mobile.ui.theme.LocalAppleColors
 import com.qqfarm.mobile.ui.theme.SoilGold
+import kotlinx.coroutines.delay
 
 @Composable
 fun SettingsScreen(
@@ -144,6 +150,24 @@ fun SettingsScreen(
         mutableStateOf(ActivityNotificationManager.areNotificationsEnabled(context))
     }
     var pendingPermissionTarget by remember { mutableStateOf<String?>(null) }
+
+    val config = session.config
+    var onlineCount by remember(config.activeProfileId, config.serverUrl, config.authToken) { mutableStateOf<Int?>(null) }
+    LaunchedEffect(
+        lifecycleOwner, config.activeProfileId, config.serverUrl, config.authToken,
+        session.realtimeConnected, session.status?.connected,
+    ) {
+        lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
+            while (true) {
+                onlineCount = try {
+                    apiClient.fetchOnlineAccountCount()
+                } catch (_: ApiException) {
+                    null
+                }
+                delay(15_000L)
+            }
+        }
+    }
 
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
@@ -199,7 +223,11 @@ fun SettingsScreen(
         }
     }
 
+    val listState = rememberLazyListState()
+    ScrollToTopOnTabReselect(4, listState)
+
     LazyColumn(
+        state = listState,
         modifier = Modifier
             .fillMaxSize()
             .background(apple.background),
@@ -257,11 +285,7 @@ fun SettingsScreen(
                     icon = Icons.Rounded.Key,
                     iconTint = apple.orange,
                     title = "当前登录凭证",
-                    subtitle = if (session.config.authMode == StoredConfig.AUTH_MODE_PASSWORD) {
-                        "管理员会话 (${session.config.username.ifBlank { "admin" }}) · 点击复制 Token"
-                    } else {
-                        "会话 Token 授权 · 点击复制 Token"
-                    },
+                    trailingText = "复制 Token",
                     onClick = {
                         val token = session.config.authToken.trim()
                         if (token.isNotEmpty()) {
@@ -275,8 +299,8 @@ fun SettingsScreen(
                     icon = Icons.Rounded.Person,
                     iconTint = apple.emerald,
                     title = "农场账号管理",
-                    subtitle = session.currentAccount?.displayTitle ?: "管理、切换与扫码添加账号",
-                    trailingText = "${session.accounts.size} 个",
+                    trailingText = onlineCount?.let { "$it 在线" } ?: "—",
+                    trailingColor = if ((onlineCount ?: 0) > 0) apple.green else apple.secondaryText,
                     showChevron = true,
                     onClick = onOpenAccountSwitcher,
                 )
@@ -284,8 +308,7 @@ fun SettingsScreen(
                 AppleSettingRow(
                     icon = Icons.Rounded.Logout,
                     iconTint = apple.red,
-                    title = "退出当前授权",
-                    subtitle = "清除本地保存的会话 Token，保留服务器地址",
+                    title = "退出当前服务器登录",
                     onClick = { showLogoutConfirm = true },
                 )
             }
@@ -332,7 +355,6 @@ fun SettingsScreen(
                     icon = Icons.Rounded.NotificationsActive,
                     iconTint = apple.red,
                     title = "账号掉线重登提醒",
-                    subtitle = "监听账号登录失效、被踢下线与异常断连（默认关闭）",
                     checked = session.config.offlineAlertsEnabled,
                     onCheckedChange = { wantEnable ->
                         if (!wantEnable) {
@@ -530,7 +552,7 @@ fun SettingsScreen(
     if (showLogoutConfirm) {
         AppleAlertDialog(
             onDismissRequest = { showLogoutConfirm = false },
-            title = { Text("退出授权") },
+            title = { Text("退出当前服务器登录") },
             text = { Text("确定清除本机保存的 Token 并返回服务器连接页面吗？") },
             confirmButton = {
                 TextButton(

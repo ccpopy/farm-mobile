@@ -99,6 +99,7 @@ import com.qqfarm.mobile.ui.components.AppleSegmentedControl
 import com.qqfarm.mobile.ui.components.AppleStatusPill
 import com.qqfarm.mobile.ui.components.RanchQuoteConfirmSheet
 import com.qqfarm.mobile.ui.components.RemoteAssetImage
+import com.qqfarm.mobile.ui.components.ScrollToTopOnTabReselect
 import com.qqfarm.mobile.ui.components.formatCompactCount
 import com.qqfarm.mobile.ui.components.formatDurationSec
 import com.qqfarm.mobile.ui.components.formatNumber
@@ -324,7 +325,11 @@ fun FriendsScreen(
                             }
                         }
 
+                        val friendsListState = rememberLazyListState()
+                        ScrollToTopOnTabReselect(3, friendsListState)
+
                         LazyColumn(
+                            state = friendsListState,
                             modifier = Modifier.fillMaxSize(),
                             contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 24.dp),
                             verticalArrangement = Arrangement.spacedBy(10.dp),
@@ -466,7 +471,10 @@ fun FriendsScreen(
                     }
 
                     1 -> {
+                        val recordsListState = rememberLazyListState()
+                        ScrollToTopOnTabReselect(3, recordsListState)
                         LazyColumn(
+                            state = recordsListState,
                             modifier = Modifier.fillMaxSize(),
                             contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 24.dp),
                         ) {
@@ -524,7 +532,10 @@ fun FriendsScreen(
                     }
 
                     2 -> {
+                        val blacklistState = rememberLazyListState()
+                        ScrollToTopOnTabReselect(3, blacklistState)
                         LazyColumn(
+                            state = blacklistState,
                             modifier = Modifier.fillMaxSize(),
                             contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 24.dp),
                         ) {
@@ -1004,7 +1015,11 @@ private fun RanchFriendsContent(
                 }
             }
 
+            val ranchFriendsListState = rememberLazyListState()
+            ScrollToTopOnTabReselect(3, ranchFriendsListState)
+
             LazyColumn(
+                state = ranchFriendsListState,
                 modifier = Modifier.fillMaxSize(),
                 contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 24.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp),
@@ -1219,6 +1234,26 @@ private fun RanchFriendDetailSheet(
                     actionMessage = ""
                     pendingOp = PendingRanchFriendOp(action, input, quote)
                 }
+            } catch (e: ApiException) {
+                actionMessage = e.message
+                loadDetail()
+            } finally {
+                busy = false
+            }
+        }
+    }
+
+    fun giftGrass(input: JSONObject) {
+        if (busy || loading || pendingOp != null || snapshot?.friendRanch?.sceneRestored != true) return
+        busy = true
+        showGrassSheet = false
+        actionMessage = "正在赠送牧草…"
+        scope.launch {
+            try {
+                val result = apiClient.executeQuotedRanchAction(accountId, "addGrass", input)
+                actionMessage = result.notice.ifBlank { if (result.status == "skipped") "当前没有可操作项目" else "已赠送牧草" }
+                if (result.status == "confirmed") onRefreshOverview()
+                loadDetail()
             } catch (e: ApiException) {
                 actionMessage = e.message
                 loadDetail()
@@ -1588,9 +1623,7 @@ private fun RanchFriendDetailSheet(
             enabled = actionsEnabled,
             onDismiss = { showGrassSheet = false },
             onSubmit = { count ->
-                showGrassSheet = false
-                requestQuote(
-                    "addGrass",
+                giftGrass(
                     JSONObject()
                         .put("hostGid", friend.gid)
                         .put("facilityId", feedMachine.id)
@@ -1745,7 +1778,7 @@ private fun RanchFriendGrassSheet(
                     enabled = enabled && count > 0,
                     shape = RoundedCornerShape(14.dp),
                     modifier = Modifier.weight(1f),
-                ) { Text("下一步") }
+                ) { Text("赠送牧草") }
             }
             Spacer(modifier = Modifier.height(12.dp))
         }

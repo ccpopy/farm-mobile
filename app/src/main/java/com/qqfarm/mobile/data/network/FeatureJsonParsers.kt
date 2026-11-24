@@ -1950,6 +1950,7 @@ object FeatureJsonParsers {
                     orphanSizeBytes = summary.optLongFlex("orphanSizeBytes"),
                 )
             },
+            keepBackups = obj.optBoolNullable("keepBackups"),
         )
     }
 

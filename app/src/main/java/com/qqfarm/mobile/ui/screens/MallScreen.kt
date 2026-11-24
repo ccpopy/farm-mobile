@@ -22,6 +22,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -85,6 +86,7 @@ import com.qqfarm.mobile.ui.components.AppleScrollablePills
 import com.qqfarm.mobile.ui.components.AppleSegmentedControl
 import com.qqfarm.mobile.ui.components.AppleStatusPill
 import com.qqfarm.mobile.ui.components.RemoteAssetImage
+import com.qqfarm.mobile.ui.components.ScrollToTopOnTabReselect
 import com.qqfarm.mobile.ui.components.formatCompactCount
 import com.qqfarm.mobile.ui.components.formatNumber
 import com.qqfarm.mobile.ui.components.formatDurationSec
@@ -275,7 +277,11 @@ private fun FarmMallContent(
                         ((m.expireTimeMs - serverNowMs) / 1000L).coerceAtLeast(0L)
                     } else 0L
 
+                    val mysteryListState = rememberLazyListState()
+                    ScrollToTopOnTabReselect(2, mysteryListState)
+
                     LazyColumn(
+                        state = mysteryListState,
                         modifier = Modifier.fillMaxSize(),
                         contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 24.dp),
                         verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -498,7 +504,11 @@ private fun FarmMallContent(
                         }
                     }
 
+                    val catalogListState = rememberLazyListState()
+                    ScrollToTopOnTabReselect(2, catalogListState)
+
                     LazyColumn(
+                        state = catalogListState,
                         modifier = Modifier.fillMaxSize(),
                         contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 24.dp),
                         verticalArrangement = Arrangement.spacedBy(10.dp),
@@ -1005,7 +1015,11 @@ private fun RanchMallContent(
                 fun balanceOf(good: RanchShopGood): Long? =
                     good.priceBalance ?: current.base.currencies.firstOrNull { it.id == good.priceId }?.count
 
+                val ranchMallListState = rememberLazyListState()
+                ScrollToTopOnTabReselect(2, ranchMallListState)
+
                 LazyColumn(
+                    state = ranchMallListState,
                     modifier = Modifier.fillMaxSize(),
                     contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 24.dp),
                     verticalArrangement = Arrangement.spacedBy(10.dp),

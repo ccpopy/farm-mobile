@@ -2,19 +2,30 @@ package com.qqfarm.mobile.ui.navigation
 
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.height
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.material.icons.outlined.AccountCircle
 import androidx.compose.material.icons.outlined.Explore
 import androidx.compose.material.icons.outlined.People
@@ -48,6 +59,8 @@ import androidx.compose.material.icons.rounded.Explore
 import com.qqfarm.mobile.data.model.GameSpace
 import com.qqfarm.mobile.ui.components.AppleSpaceSwitcher
 import com.qqfarm.mobile.ui.components.AppleSubPageHeader
+import com.qqfarm.mobile.ui.components.LocalTabReselectSignal
+import com.qqfarm.mobile.ui.components.TabReselectSignal
 import com.qqfarm.mobile.ui.screens.DiscoverScreen
 import com.qqfarm.mobile.ui.screens.RanchWorkspaceScreen
 import androidx.compose.material3.CircularProgressIndicator
@@ -60,12 +73,14 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -95,6 +110,11 @@ private data class NavDestination(
     val icon: ImageVector,
 )
 
+private data class MainContentTarget(
+    val tab: Int,
+    val space: GameSpace,
+)
+
 @Composable
 fun FarmNavHost(viewModel: AppSessionViewModel) {
     val apple = LocalAppleColors.current
@@ -110,8 +130,11 @@ fun FarmNavHost(viewModel: AppSessionViewModel) {
     var showIllustratedPage by rememberSaveable { mutableStateOf(false) }
     var hideMainChrome by remember { mutableStateOf(false) }
     var showAccountSwitcher by remember { mutableStateOf(false) }
+    var tabReselectSignal by remember { mutableStateOf(TabReselectSignal()) }
 
     val gameSpace = runCatching { GameSpace.valueOf(spaceName) }.getOrDefault(GameSpace.FARM)
+    val mainTarget = MainContentTarget(selectedTab, if (selectedTab < 4) gameSpace else GameSpace.FARM)
+    val activeTarget by rememberUpdatedState(mainTarget)
     fun selectSpace(target: GameSpace) {
         if (target.name != spaceName) {
             spaceName = target.name
@@ -227,17 +250,25 @@ fun FarmNavHost(viewModel: AppSessionViewModel) {
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        if (selectedTab in 0..3) {
-                            AppleSpaceSwitcher(
-                                space = gameSpace,
-                                onSelect = ::selectSpace,
-                            )
-                        } else {
-                            Text(
-                                text = currentDest.title,
-                                style = MaterialTheme.typography.headlineMedium,
-                                color = apple.primaryText,
-                            )
+                        AnimatedContent(
+                            targetState = selectedTab in 0..3,
+                            transitionSpec = {
+                                fadeIn(tween(180)) togetherWith fadeOut(tween(140))
+                            },
+                            label = "topBarLeading",
+                        ) { showSwitcher ->
+                            if (showSwitcher) {
+                                AppleSpaceSwitcher(
+                                    space = gameSpace,
+                                    onSelect = ::selectSpace,
+                                )
+                            } else {
+                                Text(
+                                    text = currentDest.title,
+                                    style = MaterialTheme.typography.headlineMedium,
+                                    color = apple.primaryText,
+                                )
+                            }
                         }
 
                         Surface(
@@ -292,6 +323,9 @@ fun FarmNavHost(viewModel: AppSessionViewModel) {
                     selectedIndex = selectedTab,
                     gameSpace = gameSpace,
                     onSelect = { selectedTab = it },
+                    onReselect = { idx ->
+                        tabReselectSignal = TabReselectSignal(idx, tabReselectSignal.seq + 1)
+                    },
                 )
             }
         },
@@ -326,125 +360,147 @@ fun FarmNavHost(viewModel: AppSessionViewModel) {
                     }
                 } else {
                     AnimatedContent(
-                        targetState = selectedTab,
+                        targetState = mainTarget,
                         transitionSpec = {
-                            fadeIn(tween(durationMillis = 180, delayMillis = 40)) togetherWith
-                                fadeOut(tween(durationMillis = 120))
+                            if (targetState.tab != initialState.tab) {
+                                val dir = if (targetState.tab > initialState.tab) 1 else -1
+                                (slideInHorizontally(tween(220, easing = FastOutSlowInEasing)) { dir * (it / 22) } +
+                                    fadeIn(tween(200, delayMillis = 30))) togetherWith
+                                    (slideOutHorizontally(tween(160, easing = FastOutSlowInEasing)) { -dir * (it / 28) } +
+                                        fadeOut(tween(140)))
+                            } else if (targetState.space != initialState.space) {
+                                val dir = if (targetState.space == GameSpace.RANCH) 1 else -1
+                                (slideInHorizontally(tween(240, easing = FastOutSlowInEasing)) { dir * (it / 16) } +
+                                    fadeIn(tween(220, delayMillis = 30)) +
+                                    scaleIn(initialScale = 0.985f, animationSpec = tween(240, easing = FastOutSlowInEasing))) togetherWith
+                                    (slideOutHorizontally(tween(180, easing = FastOutSlowInEasing)) { -dir * (it / 22) } +
+                                        fadeOut(tween(150)))
+                            } else {
+                                fadeIn(tween(150)) togetherWith fadeOut(tween(120))
+                            }
                         },
                         label = "mainTab",
-                    ) { tab ->
-                        when (tab) {
-                            0 -> OverviewScreen(
-                                session = session,
-                                apiClient = viewModel.apiClient,
-                                gameSpace = gameSpace,
-                                onRefreshInspectionStatus = viewModel::refreshInspectionStatus,
-                                onRefresh = {
-                                    viewModel.refreshAccounts()
-                                    viewModel.refreshOverview()
-                                },
-                                onRefreshSilent = { viewModel.refreshOverview(silent = true) },
-                                onRefreshRanchOverview = { silent -> viewModel.refreshRanchOverview(silent) },
-                                onOpenAccountSwitcher = { showAccountSwitcher = true },
-                                onStartAccount = { id -> viewModel.startAccount(id) },
-                                onClearLogs = viewModel::clearLogs,
-                                onMessage = { msg -> viewModel.emitMessage(msg) },
-                                onSwitchSpace = ::selectSpace,
-                                onOpenDiscover = { subTab, mallIdx ->
-                                    discoverSubTab = subTab
-                                    mallSubTab = mallIdx
-                                    selectedTab = 2
-                                },
-                                onOpenWorkspace = { subIdx ->
-                                    ranchSubTab = subIdx
-                                    selectedTab = 1
-                                },
-                                onOpenAutomation = {
-                                    showIllustratedPage = false
-                                    showAutomationPage = true
-                                },
-                            )
-
-                            1 -> if (gameSpace == GameSpace.RANCH) {
-                                RanchWorkspaceScreen(
+                    ) { target ->
+                        val signal = if (target == mainTarget) tabReselectSignal else TabReselectSignal()
+                        CompositionLocalProvider(LocalTabReselectSignal provides signal) {
+                            when (target.tab) {
+                                0 -> OverviewScreen(
                                     session = session,
                                     apiClient = viewModel.apiClient,
-                                    initialSubTab = ranchSubTab,
-                                    onSubTabChanged = { ranchSubTab = it },
-                                    onOpenRanchMall = {
-                                        discoverSubTab = 1
-                                        mallSubTab = 0
+                                    gameSpace = target.space,
+                                    onRefreshInspectionStatus = viewModel::refreshInspectionStatus,
+                                    onRefresh = {
+                                        viewModel.refreshAccounts()
+                                        viewModel.refreshOverview()
+                                    },
+                                    onRefreshSilent = { viewModel.refreshOverview(silent = true) },
+                                    onRefreshRanchOverview = { silent -> viewModel.refreshRanchOverview(silent) },
+                                    onOpenAccountSwitcher = { showAccountSwitcher = true },
+                                    onStartAccount = { id -> viewModel.startAccount(id) },
+                                    onClearLogs = viewModel::clearLogs,
+                                    onMessage = { msg -> viewModel.emitMessage(msg) },
+                                    onSwitchSpace = ::selectSpace,
+                                    onOpenDiscover = { subTab, mallIdx ->
+                                        discoverSubTab = subTab
+                                        mallSubTab = mallIdx
                                         selectedTab = 2
+                                    },
+                                    onOpenWorkspace = { subIdx ->
+                                        ranchSubTab = subIdx
+                                        selectedTab = 1
+                                    },
+                                    onOpenAutomation = {
+                                        showIllustratedPage = false
+                                        showAutomationPage = true
+                                    },
+                                )
+
+                                1 -> if (target.space == GameSpace.RANCH) {
+                                    RanchWorkspaceScreen(
+                                        session = session,
+                                        apiClient = viewModel.apiClient,
+                                        initialSubTab = ranchSubTab,
+                                        onSubTabChanged = { ranchSubTab = it },
+                                        onOpenRanchMall = {
+                                            discoverSubTab = 1
+                                            mallSubTab = 0
+                                            selectedTab = 2
+                                        },
+                                        onRefreshOverview = refreshOverviewSilent,
+                                        onMessage = { msg -> viewModel.emitMessage(msg) },
+                                    )
+                                } else {
+                                    FarmRanchScreen(
+                                        session = session,
+                                        apiClient = viewModel.apiClient,
+                                        onRefreshOverview = refreshOverviewSilent,
+                                        onMessage = { msg -> viewModel.emitMessage(msg) },
+                                    )
+                                }
+
+                                2 -> DiscoverScreen(
+                                    session = session,
+                                    apiClient = viewModel.apiClient,
+                                    gameSpace = target.space,
+                                    selectedSubTab = discoverSubTab,
+                                    onSelectSubTab = { discoverSubTab = it },
+                                    mallTab = mallSubTab,
+                                    onSelectMallTab = { mallSubTab = it },
+                                    onFullScreenOverlayChange = { hidden ->
+                                        if (target == activeTarget) hideMainChrome = hidden
                                     },
                                     onRefreshOverview = refreshOverviewSilent,
                                     onMessage = { msg -> viewModel.emitMessage(msg) },
                                 )
-                            } else {
-                                FarmRanchScreen(
+
+                                3 -> FriendsScreen(
                                     session = session,
                                     apiClient = viewModel.apiClient,
+                                    gameSpace = target.space,
                                     onRefreshOverview = refreshOverviewSilent,
                                     onMessage = { msg -> viewModel.emitMessage(msg) },
                                 )
+
+                                4 -> SettingsScreen(
+                                    session = session,
+                                    apiClient = viewModel.apiClient,
+                                    onOpenReconfigureServer = { viewModel.openReconfigureServer() },
+                                    onAddServer = { viewModel.openAddServer() },
+                                    onSwitchServer = { id -> viewModel.switchServer(id) },
+                                    onRenameServer = { id, name -> viewModel.renameServer(id, name) },
+                                    onRemoveServer = { id -> viewModel.removeServer(id) },
+                                    onOpenAccountSwitcher = {
+                                        viewModel.refreshAccounts()
+                                        showAccountSwitcher = true
+                                    },
+                                    onOpenAutomation = {
+                                        showIllustratedPage = false
+                                        showAutomationPage = true
+                                    },
+                                    onOpenIllustrated = {
+                                        showAutomationPage = false
+                                        showIllustratedPage = true
+                                    },
+                                    onDisconnect = { viewModel.disconnect() },
+                                    onUpdateThemeMode = { mode -> viewModel.updateThemeMode(mode) },
+                                    onUpdateDynamicColor = { enabled -> viewModel.updateDynamicColor(enabled) },
+                                    onUpdateCustomAppearance = { appearance -> viewModel.updateCustomAppearance(appearance) },
+                                    onToggleOfflineAlerts = { enabled -> viewModel.setOfflineAlertsEnabled(enabled) },
+                                    onToggleActivityPush = { enabled -> viewModel.setActivityPushEnabled(enabled) },
+                                    onToggleNotifyCollapse = { enabled -> viewModel.setNotifyCollapseEnabled(enabled) },
+                                    onToggleNotifySilent = { enabled -> viewModel.setNotifySilentUpdate(enabled) },
+                                    onToggleNotifyAllAccounts = { enabled -> viewModel.setNotifyAllAccounts(enabled) },
+                                    onToggleNotifyType = { key, enabled -> viewModel.toggleNotifyType(key, enabled) },
+                                    onApplyNotifyTypes = { keys -> viewModel.applyNotifyTypes(keys) },
+                                    onSendTestNotification = { viewModel.sendTestActivityNotification() },
+                                    onClearLogs = viewModel::clearLogs,
+                                    onServerUpdated = {
+                                        viewModel.refreshAccounts()
+                                        viewModel.refreshOverview(silent = true)
+                                    },
+                                    onMessage = { msg -> viewModel.emitMessage(msg) },
+                                )
                             }
-
-                            2 -> DiscoverScreen(
-                                session = session,
-                                apiClient = viewModel.apiClient,
-                                gameSpace = gameSpace,
-                                selectedSubTab = discoverSubTab,
-                                onSelectSubTab = { discoverSubTab = it },
-                                mallTab = mallSubTab,
-                                onSelectMallTab = { mallSubTab = it },
-                                onFullScreenOverlayChange = { hideMainChrome = it },
-                                onRefreshOverview = refreshOverviewSilent,
-                                onMessage = { msg -> viewModel.emitMessage(msg) },
-                            )
-
-                            3 -> FriendsScreen(
-                                session = session,
-                                apiClient = viewModel.apiClient,
-                                gameSpace = gameSpace,
-                                onRefreshOverview = refreshOverviewSilent,
-                                onMessage = { msg -> viewModel.emitMessage(msg) },
-                            )
-
-                            4 -> SettingsScreen(
-                                session = session,
-                                apiClient = viewModel.apiClient,
-                                onOpenReconfigureServer = { viewModel.openReconfigureServer() },
-                                onAddServer = { viewModel.openAddServer() },
-                                onSwitchServer = { id -> viewModel.switchServer(id) },
-                                onRenameServer = { id, name -> viewModel.renameServer(id, name) },
-                                onRemoveServer = { id -> viewModel.removeServer(id) },
-                                onOpenAccountSwitcher = { showAccountSwitcher = true },
-                                onOpenAutomation = {
-                                    showIllustratedPage = false
-                                    showAutomationPage = true
-                                },
-                                onOpenIllustrated = {
-                                    showAutomationPage = false
-                                    showIllustratedPage = true
-                                },
-                                onDisconnect = { viewModel.disconnect() },
-                                onUpdateThemeMode = { mode -> viewModel.updateThemeMode(mode) },
-                                onUpdateDynamicColor = { enabled -> viewModel.updateDynamicColor(enabled) },
-                                onUpdateCustomAppearance = { appearance -> viewModel.updateCustomAppearance(appearance) },
-                                onToggleOfflineAlerts = { enabled -> viewModel.setOfflineAlertsEnabled(enabled) },
-                                onToggleActivityPush = { enabled -> viewModel.setActivityPushEnabled(enabled) },
-                                onToggleNotifyCollapse = { enabled -> viewModel.setNotifyCollapseEnabled(enabled) },
-                                onToggleNotifySilent = { enabled -> viewModel.setNotifySilentUpdate(enabled) },
-                                onToggleNotifyAllAccounts = { enabled -> viewModel.setNotifyAllAccounts(enabled) },
-                                onToggleNotifyType = { key, enabled -> viewModel.toggleNotifyType(key, enabled) },
-                                onApplyNotifyTypes = { keys -> viewModel.applyNotifyTypes(keys) },
-                                onSendTestNotification = { viewModel.sendTestActivityNotification() },
-                                onClearLogs = viewModel::clearLogs,
-                                onServerUpdated = {
-                                    viewModel.refreshAccounts()
-                                    viewModel.refreshOverview(silent = true)
-                                },
-                                onMessage = { msg -> viewModel.emitMessage(msg) },
-                            )
                         }
                     }
                 }
@@ -462,7 +518,7 @@ fun FarmNavHost(viewModel: AppSessionViewModel) {
             onStartAccount = { id -> viewModel.startAccount(id) },
             onStopAccount = { id -> viewModel.stopAccount(id) },
             onDeleteAccount = { id -> viewModel.deleteAccount(id) },
-            onAccountsChanged = viewModel::refreshAccounts,
+            onAccountsChanged = { viewModel.refreshAccounts() },
         )
     }
 }
@@ -473,6 +529,7 @@ private fun AppleBottomBar(
     selectedIndex: Int,
     gameSpace: GameSpace,
     onSelect: (Int) -> Unit,
+    onReselect: (Int) -> Unit = {},
 ) {
     val apple = LocalAppleColors.current
     val haptics = rememberAppHaptics()
@@ -483,76 +540,150 @@ private fun AppleBottomBar(
     ) {
         Column(modifier = Modifier.navigationBarsPadding()) {
             HorizontalDivider(thickness = 0.5.dp, color = apple.separator)
-            Row(
+            BoxWithConstraints(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(60.dp)
-                    .padding(horizontal = 6.dp)
-                    .selectableGroup(),
-                verticalAlignment = Alignment.CenterVertically,
+                    .height(64.dp)
+                    .padding(horizontal = 8.dp, vertical = 6.dp),
             ) {
-                destinations.forEachIndexed { index, dest ->
-                    val selected = index == selectedIndex
-                    // “我的”不随空间变色；其余标签跟随当前空间主色（农场绿 / 牧场橙）。
-                    val accent = if (index < 4) spaceAccent(gameSpace) else MaterialTheme.colorScheme.primary
-                    val tint by animateColorAsState(
-                        targetValue = if (selected) accent else apple.secondaryText,
-                        label = "tabTint",
-                    )
-                    val indicatorAlpha by animateFloatAsState(
-                        targetValue = if (selected) 1f else 0f,
-                        label = "tabIndicator",
-                    )
-                    val iconScale by animateFloatAsState(
-                        targetValue = if (selected) 1f else 0.92f,
-                        animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy),
-                        label = "tabIconScale",
-                    )
-                    Column(
-                        modifier = Modifier
-                            .weight(1f)
-                            .fillMaxHeight()
-                            .selectable(
-                                selected = selected,
-                                interactionSource = remember { MutableInteractionSource() },
-                                indication = null,
-                                role = Role.Tab,
-                            ) {
-                                if (!selected) {
-                                    haptics.tick()
-                                    onSelect(index)
-                                }
-                            },
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.Center,
-                    ) {
-                        Box(
-                            modifier = Modifier
-                                .size(width = 52.dp, height = 28.dp)
-                                .clip(CircleShape)
-                                .background(accent.copy(alpha = 0.14f * indicatorAlpha)),
-                            contentAlignment = Alignment.Center,
-                        ) {
-                            Icon(
-                                imageVector = if (selected) dest.selectedIcon else dest.icon,
-                                contentDescription = null,
-                                tint = tint,
-                                modifier = Modifier
-                                    .size(22.dp)
-                                    .graphicsLayer {
-                                        scaleX = iconScale
-                                        scaleY = iconScale
-                                    },
-                            )
-                        }
-                        Spacer(modifier = Modifier.height(3.dp))
-                        Text(
-                            text = dest.title,
-                            style = MaterialTheme.typography.labelSmall.copy(
-                                fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
-                            ),
-                            color = tint,
+                val count = destinations.size.coerceAtLeast(1)
+                val safeIndex = selectedIndex.coerceIn(0, count - 1)
+                val tabWidth = maxWidth / count
+                val capsuleWidth = (tabWidth - 6.dp).coerceIn(0.dp, 82.dp)
+                val indicatorOffset by animateDpAsState(
+                    targetValue = tabWidth * safeIndex + (tabWidth - capsuleWidth) / 2,
+                    animationSpec = spring(dampingRatio = 0.78f, stiffness = Spring.StiffnessMediumLow),
+                    label = "bottomBarIndicatorOffset",
+                )
+                val activeAccentTarget = if (safeIndex < 4) spaceAccent(gameSpace) else MaterialTheme.colorScheme.primary
+                val activeAccent by animateColorAsState(
+                    targetValue = activeAccentTarget,
+                    animationSpec = tween(durationMillis = 260),
+                    label = "bottomBarAccent",
+                )
+
+                Surface(
+                    modifier = Modifier
+                        .align(Alignment.CenterStart)
+                        .offset { IntOffset(indicatorOffset.roundToPx(), 0) }
+                        .width(capsuleWidth)
+                        .height(48.dp),
+                    shape = RoundedCornerShape(16.dp),
+                    color = activeAccent.copy(alpha = if (apple.isDark) 0.20f else 0.12f),
+                    border = BorderStroke(
+                        0.5.dp,
+                        activeAccent.copy(alpha = if (apple.isDark) 0.30f else 0.22f),
+                    ),
+                ) {}
+
+                Row(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .selectableGroup(),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    destinations.forEachIndexed { index, dest ->
+                        val selected = index == safeIndex
+                        // “我的”不随空间变色；其余标签跟随当前空间主色（农场绿 / 牧场橙）。
+                        val accent = if (index < 4) spaceAccent(gameSpace) else MaterialTheme.colorScheme.primary
+                        val tint by animateColorAsState(
+                            targetValue = if (selected) accent else apple.secondaryText,
+                            animationSpec = tween(durationMillis = 220),
+                            label = "tabTint",
                         )
+                        val iconScale by animateFloatAsState(
+                            targetValue = if (selected) 1.06f else 0.94f,
+                            animationSpec = spring(dampingRatio = 0.65f, stiffness = Spring.StiffnessMedium),
+                            label = "tabIconScale",
+                        )
+                        val iconLift by animateDpAsState(
+                            targetValue = if (selected) (-1).dp else 0.dp,
+                            animationSpec = spring(dampingRatio = 0.75f, stiffness = Spring.StiffnessMedium),
+                            label = "tabIconLift",
+                        )
+                        Column(
+                            modifier = Modifier
+                                .weight(1f)
+                                .fillMaxHeight()
+                                .selectable(
+                                    selected = selected,
+                                    interactionSource = remember(index) { MutableInteractionSource() },
+                                    indication = null,
+                                    role = Role.Tab,
+                                ) {
+                                    if (!selected) {
+                                        haptics.tick()
+                                        onSelect(index)
+                                    } else {
+                                        haptics.tick()
+                                        onReselect(index)
+                                    }
+                                },
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.Center,
+                        ) {
+                            if (index == 1) {
+                                AnimatedContent(
+                                    targetState = gameSpace,
+                                    transitionSpec = {
+                                        (fadeIn(tween(180)) + scaleIn(initialScale = 0.88f, animationSpec = tween(180))) togetherWith
+                                            (fadeOut(tween(120)) + scaleOut(targetScale = 0.88f, animationSpec = tween(120)))
+                                    },
+                                    label = "spaceTabIcon",
+                                ) { targetSpace ->
+                                    Column(
+                                        horizontalAlignment = Alignment.CenterHorizontally,
+                                        verticalArrangement = Arrangement.Center,
+                                    ) {
+                                        Icon(
+                                            imageVector = spaceIcon(targetSpace, filled = selected),
+                                            contentDescription = null,
+                                            tint = tint,
+                                            modifier = Modifier
+                                                .size(22.dp)
+                                                .graphicsLayer {
+                                                    translationY = iconLift.toPx()
+                                                    scaleX = iconScale
+                                                    scaleY = iconScale
+                                                },
+                                        )
+                                        Spacer(modifier = Modifier.height(2.dp))
+                                        Text(
+                                            text = targetSpace.label,
+                                            style = MaterialTheme.typography.labelSmall.copy(
+                                                fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
+                                            ),
+                                            color = tint,
+                                            maxLines = 1,
+                                            softWrap = false,
+                                        )
+                                    }
+                                }
+                            } else {
+                                Icon(
+                                    imageVector = if (selected) dest.selectedIcon else dest.icon,
+                                    contentDescription = null,
+                                    tint = tint,
+                                    modifier = Modifier
+                                        .size(22.dp)
+                                        .graphicsLayer {
+                                            translationY = iconLift.toPx()
+                                            scaleX = iconScale
+                                            scaleY = iconScale
+                                        },
+                                )
+                                Spacer(modifier = Modifier.height(2.dp))
+                                Text(
+                                    text = dest.title,
+                                    style = MaterialTheme.typography.labelSmall.copy(
+                                        fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
+                                    ),
+                                    color = tint,
+                                    maxLines = 1,
+                                    softWrap = false,
+                                )
+                            }
+                        }
                     }
                 }
             }

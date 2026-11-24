@@ -23,6 +23,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -72,6 +73,7 @@ import com.qqfarm.mobile.ui.components.AppleHairlineDivider
 import com.qqfarm.mobile.ui.components.AppleRadius
 import com.qqfarm.mobile.ui.components.AppleStatusPill
 import com.qqfarm.mobile.ui.components.RemoteAssetImage
+import com.qqfarm.mobile.ui.components.ScrollToTopOnTabReselect
 import com.qqfarm.mobile.ui.components.formatCompactCount
 import com.qqfarm.mobile.ui.components.swipeToSwitchTabs
 import com.qqfarm.mobile.ui.state.SessionUiState
@@ -216,8 +218,11 @@ fun SolarCalendarScreen(
         val filteredEvents = remember(current, season) {
             if (season == null) current.events else current.events.filter { it.id in season.eventIds }
         }
+        val listState = rememberLazyListState()
+        ScrollToTopOnTabReselect(2, listState)
 
         LazyColumn(
+            state = listState,
             modifier = Modifier
                 .fillMaxSize()
                 .swipeToSwitchTabs(

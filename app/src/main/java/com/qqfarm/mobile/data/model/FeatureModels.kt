@@ -1060,6 +1060,7 @@ data class SystemUpdateStatus(
     val job: SystemUpdateJob? = null,
     val releases: List<SystemReleaseBackup>? = null,
     val releaseCleanup: SystemReleaseCleanupSummary? = null,
+    val keepBackups: Boolean? = null,
 )
 
 data class SystemReleaseCleanupResult(

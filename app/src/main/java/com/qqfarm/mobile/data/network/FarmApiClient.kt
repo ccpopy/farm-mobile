@@ -336,10 +336,24 @@ class FarmApiClient {
 
     // ---- Accounts & QR Login ----
 
-    suspend fun fetchAccounts(): List<AccountItem> {
-        val json = executeJson("GET", "/api/accounts")
-        val data = json.optJSONObject("data") ?: JSONObject()
+    suspend fun fetchAccounts(): List<AccountItem> = fetchAccounts(session)
+
+    private suspend fun fetchAccounts(requestSession: Session): List<AccountItem> {
+        val json = executeJson("GET", "/api/accounts", requestSession = requestSession)
+        val data = json.optJSONObject("data")
+        if (data?.optJSONArray("accounts") == null) throw ApiException("服务端未返回账号列表")
         return JsonParsers.parseAccounts(data)
+    }
+
+    suspend fun fetchOnlineAccountCount(): Int {
+        val requestSession = session
+        return fetchAccounts(requestSession).count { account ->
+            account.running && run {
+                val reply = fetchStatusResponse(account.id, requestSession)
+                reply.optJSONObject("data")?.optJSONObject("connection")?.opt("connected") as? Boolean
+                    ?: throw ApiException("服务端未返回账号连接状态")
+            }
+        }
     }
 
     suspend fun startAccount(accountId: String) = startAccount(accountId, session)
@@ -460,8 +474,11 @@ class FarmApiClient {
 
     // ---- Overview, Status, Logs, Gifts ----
 
+    private suspend fun fetchStatusResponse(accountId: String, requestSession: Session): JSONObject =
+        executeJson("GET", "/api/status", accountIdOverride = accountId, requestSession = requestSession)
+
     suspend fun fetchStatus(accountId: String): StatusSnapshot {
-        val json = executeJson("GET", "/api/status", accountIdOverride = accountId)
+        val json = fetchStatusResponse(accountId, session)
         val data = json.optJSONObject("data") ?: JSONObject()
         return JsonParsers.parseStatusSnapshot(accountId, data, json.optLongFlex("serverTime"))
     }
@@ -923,6 +940,13 @@ class FarmApiClient {
         accountId: String,
         action: String,
         input: JSONObject = JSONObject(),
+    ): RanchQuote = quoteRanchAction(accountId, action, input, session)
+
+    private suspend fun quoteRanchAction(
+        accountId: String,
+        action: String,
+        input: JSONObject,
+        requestSession: Session,
     ): RanchQuote {
         val json = executeJson(
             "POST",
@@ -930,8 +954,13 @@ class FarmApiClient {
             body = input,
             accountIdOverride = accountId,
             client = ranchHttpClient,
+            requestSession = requestSession,
         )
-        val quote = FeatureJsonParsers.parseRanchQuote(json.optJSONObject("data") ?: JSONObject())
+        val data = json.optJSONObject("data") ?: throw ApiException("服务端未返回牧场报价")
+        if (data.optBoolNullable("sceneRestored") == false) {
+            throw ApiException(data.optStringClean("notice").ifBlank { "牧场场景恢复未确认，请重新连接账号后再试" })
+        }
+        val quote = FeatureJsonParsers.parseRanchQuote(data)
         if (!quote.skipped && quote.signature.isBlank()) {
             throw ApiException("牧场报价缺少确认凭据，请刷新后重试")
         }
@@ -943,6 +972,14 @@ class FarmApiClient {
         action: String,
         input: JSONObject = JSONObject(),
         expectedSignature: String,
+    ): RanchOperateResult = executeRanchAction(accountId, action, input, expectedSignature, session)
+
+    private suspend fun executeRanchAction(
+        accountId: String,
+        action: String,
+        input: JSONObject,
+        expectedSignature: String,
+        requestSession: Session,
     ): RanchOperateResult {
         val payload = JSONObject(input.toString())
             .put("expected", JSONObject().put("signature", expectedSignature))
@@ -952,12 +989,21 @@ class FarmApiClient {
             body = payload,
             accountIdOverride = accountId,
             client = ranchHttpClient,
+            requestSession = requestSession,
         )
         val result = FeatureJsonParsers.parseRanchOperateResult(json.optJSONObject("data") ?: JSONObject())
         if (result.status != "confirmed" && result.status != "skipped") {
             throw ApiException("牧场操作结果未确认，请刷新核对", errorCode = "RANCH_RESULT_UNKNOWN")
         }
         return result
+    }
+
+    suspend fun executeQuotedRanchAction(accountId: String, action: String, input: JSONObject): RanchOperateResult {
+        val requestSession = session
+        val quote = quoteRanchAction(accountId, action, input, requestSession)
+        if (quote.skipped) return RanchOperateResult(status = "skipped", notice = quote.message)
+        if (session != requestSession) throw ApiException("服务器或账号已切换，请重新发起操作")
+        return executeRanchAction(accountId, action, input, quote.signature, requestSession)
     }
 
     // ---- Activity Center ----
@@ -1262,7 +1308,12 @@ class FarmApiClient {
     }
 
     suspend fun applySystemUpdate(pullFirst: Boolean, serverUrl: String = session.baseUrl): SystemUpdateStatus =
-        submitSystemDeployment("/api/system/update/apply", JSONObject().put("pullFirst", pullFirst), sessionForServer(serverUrl))
+        submitSystemDeployment(
+            "/api/system/update/apply",
+            JSONObject().put("pullFirst", pullFirst),
+            sessionForServer(serverUrl),
+            allowNoChange = true,
+        )
 
     suspend fun rollbackSystemRelease(serverUrl: String, releaseId: String): SystemUpdateStatus =
         submitSystemDeployment("/api/system/update/rollback", JSONObject().put("releaseId", releaseId), sessionForServer(serverUrl))
@@ -1284,12 +1335,40 @@ class FarmApiClient {
         return FeatureJsonParsers.parseSystemReleaseCleanupResult(data)
     }
 
-    private suspend fun submitSystemDeployment(path: String, body: JSONObject, target: Session): SystemUpdateStatus {
+    suspend fun setServerBackupEnabled(serverUrl: String, keepBackups: Boolean): Boolean {
+        val body = JSONObject().put("keepBackups", keepBackups)
+        val json = executeJson(
+            method = "PUT",
+            path = "/api/system/update/backup-setting",
+            body = body,
+            client = systemUpdateHttpClient,
+            requestSession = sessionForServer(serverUrl),
+        )
+        val saved = json.optJSONObject("data")?.opt("keepBackups") as? Boolean
+            ?: throw ApiException("服务端未确认备份设置")
+        if (saved != keepBackups) {
+            throw ApiException("服务端备份设置未生效，请刷新后核对")
+        }
+        return saved
+    }
+
+    private suspend fun submitSystemDeployment(
+        path: String,
+        body: JSONObject,
+        target: Session,
+        allowNoChange: Boolean = false,
+    ): SystemUpdateStatus {
         val json = executeJson("POST", path, body = body, client = systemUpdateHttpClient, requestSession = target)
         val data = json.optJSONObject("data") ?: throw ApiException("服务端未返回更新任务状态")
         val statusObj = data.optJSONObject("status") ?: throw ApiException("服务端未返回更新状态")
         val status = FeatureJsonParsers.parseSystemUpdateStatus(statusObj)
-        if (status.job?.id.isNullOrBlank()) throw ApiException("服务端未确认版本切换任务，请刷新进度核对")
+        val noJob = data.has("job") && data.isNull("job")
+        if (allowNoChange && noJob && status.gitSupported && !status.needsApply && !status.deployBusy) {
+            return status.copy(job = null)
+        }
+        if (noJob || status.job?.id.isNullOrBlank()) {
+            throw ApiException("服务端未确认版本切换任务，请刷新进度核对")
+        }
         return status
     }
 

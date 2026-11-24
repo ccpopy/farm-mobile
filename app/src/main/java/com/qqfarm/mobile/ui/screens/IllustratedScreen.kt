@@ -109,6 +109,7 @@ import com.qqfarm.mobile.ui.components.AppleSearchField
 import com.qqfarm.mobile.ui.components.AppleStatusPill
 import com.qqfarm.mobile.ui.components.AppleTabStrip
 import com.qqfarm.mobile.ui.components.RemoteThumbImage
+import com.qqfarm.mobile.ui.components.ScrollToTopOnTabReselect
 import com.qqfarm.mobile.ui.components.formatCompactCount
 import com.qqfarm.mobile.ui.components.formatNumber
 import com.qqfarm.mobile.ui.components.swipeToSwitchTabs
@@ -682,10 +683,14 @@ private fun CrossTabRewardNotice(
 private fun SearchableBookGrid(
     minTileWidth: Dp,
     vararg filters: Any,
+    reselectTabIndex: Int? = null,
     toolbar: @Composable ColumnScope.() -> Unit,
     content: LazyGridScope.() -> Unit,
 ) {
     val gridState = rememberLazyGridState()
+    if (reselectTabIndex != null) {
+        ScrollToTopOnTabReselect(reselectTabIndex, gridState)
+    }
     LaunchedEffect(*filters) { gridState.scrollToItem(0) }
     Column(modifier = Modifier.fillMaxSize()) {
         Column(
@@ -1055,6 +1060,7 @@ internal fun SeedShopGridContent(
 
     SearchableBookGrid(
         84.dp, filterKey, search,
+        reselectTabIndex = 2,
         toolbar = {
             Row(
                 modifier = Modifier.fillMaxWidth(),

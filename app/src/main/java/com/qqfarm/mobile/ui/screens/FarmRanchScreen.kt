@@ -24,6 +24,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -94,6 +95,7 @@ import com.qqfarm.mobile.ui.components.AppleSectionHeader
 import com.qqfarm.mobile.ui.components.AppleSegmentedControl
 import com.qqfarm.mobile.ui.components.AppleStatusPill
 import com.qqfarm.mobile.ui.components.RemoteAssetImage
+import com.qqfarm.mobile.ui.components.ScrollToTopOnTabReselect
 import com.qqfarm.mobile.ui.components.formatDurationSec
 import com.qqfarm.mobile.ui.components.formatNumber
 import com.qqfarm.mobile.ui.state.SessionUiState
@@ -541,8 +543,11 @@ private fun FarmContent(
         land.unlocked && !land.occupiedByMaster && land.status == "growing" && land.matureInSec > elapsedSec
     }
     val canFertilizeOrganic = fertilizable.any { (it.leftInorcFertTimes ?: 1) > 0 }
+    val listState = rememberLazyListState()
+    ScrollToTopOnTabReselect(1, listState)
 
     LazyColumn(
+        state = listState,
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 24.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -1321,8 +1326,11 @@ private fun BagContent(
             else -> allItems.filter { it.itemType !in listOf(5, 6, 17) }
         }
     }
+    val listState = rememberLazyListState()
+    ScrollToTopOnTabReselect(1, listState)
 
     LazyColumn(
+        state = listState,
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 24.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -1626,8 +1634,11 @@ private fun PetsContent(
     val protectFraction = if (snapshot.maxProtectDurationSec > 0L) {
         (snapshot.protectDurationSec.toFloat() / snapshot.maxProtectDurationSec.toFloat()).coerceIn(0f, 1f)
     } else 0f
+    val listState = rememberLazyListState()
+    ScrollToTopOnTabReselect(1, listState)
 
     LazyColumn(
+        state = listState,
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 24.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),

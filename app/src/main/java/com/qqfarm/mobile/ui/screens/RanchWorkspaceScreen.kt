@@ -23,6 +23,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -91,6 +92,7 @@ import com.qqfarm.mobile.ui.components.AppleSegmentedControl
 import com.qqfarm.mobile.ui.components.AppleStatusPill
 import com.qqfarm.mobile.ui.components.RanchQuoteConfirmSheet
 import com.qqfarm.mobile.ui.components.RemoteAssetImage
+import com.qqfarm.mobile.ui.components.ScrollToTopOnTabReselect
 import com.qqfarm.mobile.ui.components.formatBucketHours
 import com.qqfarm.mobile.ui.components.formatCompactCount
 import com.qqfarm.mobile.ui.components.formatDurationSec
@@ -226,6 +228,24 @@ fun RanchWorkspaceScreen(
         }
     }
 
+    fun triggerQuotedDirectAction(action: String, input: JSONObject) {
+        if (actionBusy || refreshing || !isConnected) return
+        actionBusy = true
+        scope.launch {
+            try {
+                val result = apiClient.executeQuotedRanchAction(accountId, action, input)
+                onMessage(result.notice.ifBlank { if (result.status == "skipped") "当前没有可操作项目" else "操作完成" })
+                if (result.status == "confirmed") onRefreshOverview()
+                loadCurrentView()
+            } catch (e: ApiException) {
+                onMessage(e.message)
+                loadCurrentView()
+            } finally {
+                actionBusy = false
+            }
+        }
+    }
+
     fun triggerDirectAction(action: String, params: Map<String, Any>) {
         if (actionBusy || refreshing || !isConnected) return
         actionBusy = true
@@ -345,9 +365,10 @@ fun RanchWorkspaceScreen(
                             clockTickMs = clockTickMs,
                             busy = actionBusy || refreshing,
                             onAddGrass = { fac ->
-                                val grassOwned = current?.base?.grass ?: 0L
-                                val room = (fac.capacity - fac.feedCount).coerceAtLeast(1)
-                                val maxAdd = grassOwned.coerceAtMost(room.toLong()).toInt().coerceAtLeast(1)
+                                val grassOwned = current.base.grass
+                                val room = fac.capacity - fac.feedCount
+                                val maxAdd = minOf(grassOwned, room.toLong()).toInt()
+                                if (maxAdd <= 0) return@RanchFacilitiesTab
                                 amountPrompt = AmountPromptConfig(
                                     title = "为${fac.name}补充牧草",
                                     itemName = "牧草",
@@ -356,7 +377,7 @@ fun RanchWorkspaceScreen(
                                     maxCount = maxAdd,
                                     submitLabel = "补充牧草",
                                     onConfirm = { cnt, _ ->
-                                        triggerQuoteAction(
+                                        triggerQuotedDirectAction(
                                             "addGrass",
                                             JSONObject().put("facilityId", fac.id).put("count", cnt),
                                         )
@@ -428,7 +449,7 @@ fun RanchWorkspaceScreen(
                                             maxCount = owned,
                                             submitLabel = "添加罐头",
                                             onConfirm = { cnt, _ ->
-                                                triggerQuoteAction(
+                                                triggerQuotedDirectAction(
                                                     "useCan",
                                                     JSONObject()
                                                         .put("uid", item.uid)
@@ -568,11 +589,13 @@ fun RanchWorkspaceScreen(
     amountPrompt?.let { cfg ->
         RanchAmountPickerSheet(
             config = cfg,
+            enabled = isConnected && !actionBusy && !refreshing,
             onDismiss = { amountPrompt = null },
             onSubmit = { cnt, penId ->
-                val callback = cfg.onConfirm
-                amountPrompt = null
-                callback(cnt, penId)
+                if (isConnected && !actionBusy && !refreshing) {
+                    amountPrompt = null
+                    cfg.onConfirm(cnt, penId)
+                }
             },
         )
     }
@@ -600,8 +623,11 @@ private fun RanchAnimalsTab(
     val canFeed = payload.canFeed(allAnimals, organic = false) || payload.canFeed(allAnimals, organic = true)
     val totalCapacity = payload.facilities.filter { it.hasRanch }.sumOf { it.ranchCapacity }
         .takeIf { it > 0 } ?: payload.pens.sumOf { it.capacity }
+    val listState = rememberLazyListState()
+    ScrollToTopOnTabReselect(1, listState)
 
     LazyColumn(
+        state = listState,
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 24.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -995,8 +1021,11 @@ private fun RanchFacilitiesTab(
 
     val elapsedSec = ((clockTickMs - payload.fetchedAtElapsedMs) / 1000L).coerceAtLeast(0L)
     val serverNowMs = payload.serverNowMs + elapsedSec * 1000L
+    val listState = rememberLazyListState()
+    ScrollToTopOnTabReselect(1, listState)
 
     LazyColumn(
+        state = listState,
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 24.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -1253,8 +1282,11 @@ private fun RanchBagTab(
     val canSellProducts = remember(items) {
         items.any { !it.locked && it.canSell && it.isProduct }
     }
+    val listState = rememberLazyListState()
+    ScrollToTopOnTabReselect(1, listState)
 
     LazyColumn(
+        state = listState,
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 24.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp),
@@ -1436,8 +1468,11 @@ private fun RanchTasksTab(
     val dailyTasks = remember(tasks) { tasks.filter { it.category == "daily" } }
     val growthTasks = remember(tasks) { tasks.filter { it.category != "daily" } }
     val claimableCount = remember(tasks) { tasks.count { it.canClaim } }
+    val listState = rememberLazyListState()
+    ScrollToTopOnTabReselect(1, listState)
 
     LazyColumn(
+        state = listState,
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 24.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -2034,6 +2069,7 @@ private fun RanchWorkspaceFeedSheet(
 @Composable
 private fun RanchAmountPickerSheet(
     config: AmountPromptConfig,
+    enabled: Boolean,
     onDismiss: () -> Unit,
     onSubmit: (Int, String) -> Unit,
 ) {
@@ -2125,7 +2161,7 @@ private fun RanchAmountPickerSheet(
                 ) { Text("取消") }
                 Button(
                     onClick = { onSubmit(count, selectedPenId) },
-                    enabled = count > 0,
+                    enabled = enabled && count > 0,
                     shape = RoundedCornerShape(14.dp),
                     modifier = Modifier.weight(1f),
                 ) { Text(config.submitLabel) }

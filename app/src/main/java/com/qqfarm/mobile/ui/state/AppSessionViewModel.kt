@@ -72,6 +72,7 @@ class AppSessionViewModel(application: Application) : AndroidViewModel(applicati
     val snackbars: SharedFlow<String> = _snackbars.asSharedFlow()
 
     private var bootstrapJob: Job? = null
+    private var accountsJob: Job? = null
     private var logsRefreshJob: Job? = null
     private var overviewJob: Job? = null
     private var secondaryOverviewJob: Job? = null
@@ -162,6 +163,7 @@ class AppSessionViewModel(application: Application) : AndroidViewModel(applicati
         }
         if (connectionChanged) {
             bootstrapJob?.cancel()
+            accountsJob?.cancel()
             socketManager.disconnect()
             offlineMonitor.stop()
             activityNotifier.stop()
@@ -397,14 +399,16 @@ class AppSessionViewModel(application: Application) : AndroidViewModel(applicati
                 apiClient.logout()
             }
             if (clearAuth(config.serverUrl, config.authToken)) {
-                emitMessage("已退出当前服务器授权")
+                emitMessage("已退出当前服务器登录")
             }
         }
     }
 
     fun refreshAccounts() {
-        viewModelScope.launch {
-            val config = _uiState.value.config
+        val config = _uiState.value.config
+        if (!config.isAuthenticated) return
+        accountsJob?.cancel()
+        accountsJob = viewModelScope.launch {
             _uiState.value = _uiState.value.copy(accountsLoading = true)
             try {
                 val list = apiClient.fetchAccounts()
@@ -425,6 +429,7 @@ class AppSessionViewModel(application: Application) : AndroidViewModel(applicati
                     prefs.updateCurrentAccountId(resolvedId, config)
                 }
             } catch (e: Exception) {
+                if (e is CancellationException) throw e
                 if (isActiveConnection(config)) {
                     _uiState.value = _uiState.value.copy(
                         accountsLoading = false,

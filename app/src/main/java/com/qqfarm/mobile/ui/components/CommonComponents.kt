@@ -5,6 +5,7 @@ import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.progressSemantics
 import androidx.compose.foundation.interaction.collectIsPressedAsState
@@ -43,7 +44,11 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.foundation.lazy.grid.LazyGridState
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -72,7 +77,9 @@ import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.material3.ripple
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
@@ -83,16 +90,20 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import kotlin.math.roundToInt
 import coil.compose.AsyncImage
 import coil.request.CachePolicy
 import coil.request.ImageRequest
@@ -854,55 +865,111 @@ fun AppleSpaceSwitcher(
 ) {
     val apple = LocalAppleColors.current
     val haptics = rememberAppHaptics()
+    val entries = GameSpace.entries
+    val selectedIndex = entries.indexOf(space).coerceAtLeast(0)
+    val animatedIndex by animateFloatAsState(
+        targetValue = selectedIndex.toFloat(),
+        animationSpec = spring(dampingRatio = 0.75f, stiffness = Spring.StiffnessMediumLow),
+        label = "spaceSliderIndex",
+    )
+    val activeAccent = if (space == GameSpace.FARM) MaterialTheme.colorScheme.primary else spaceAccent(space)
+    val indicatorColor by animateColorAsState(
+        targetValue = activeAccent,
+        animationSpec = tween(durationMillis = 260),
+        label = "spaceSliderColor",
+    )
+
     Surface(
         modifier = modifier,
         shape = CircleShape,
         color = apple.track,
+        border = BorderStroke(0.5.dp, apple.separator.copy(alpha = 0.6f)),
     ) {
-        Row(
-            modifier = Modifier.padding(3.dp),
-            horizontalArrangement = Arrangement.spacedBy(2.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            GameSpace.entries.forEach { entry ->
-                val selected = entry == space
-                val accent = if (entry == GameSpace.FARM) MaterialTheme.colorScheme.primary else spaceAccent(entry)
-                val container by animateColorAsState(
-                    targetValue = if (selected) accent else Color.Transparent,
-                    label = "spaceContainer",
-                )
-                val content by animateColorAsState(
-                    targetValue = if (selected) accent.onAccent() else apple.secondaryText,
-                    label = "spaceContent",
-                )
-                Row(
-                    modifier = Modifier
-                        .clip(CircleShape)
-                        .background(container)
-                        .clickable(role = Role.Tab) {
-                            if (!selected) {
-                                haptics.tick()
-                                onSelect(entry)
+        Layout(
+            modifier = Modifier.padding(3.dp).selectableGroup(),
+            content = {
+                Surface(
+                    shape = CircleShape,
+                    color = indicatorColor,
+                    shadowElevation = if (apple.isDark) 0.dp else 2.dp,
+                ) {}
+                entries.forEach { entry ->
+                    val selected = entry == space
+                    val entryAccent = if (entry == GameSpace.FARM) MaterialTheme.colorScheme.primary else spaceAccent(entry)
+                    val contentColor by animateColorAsState(
+                        targetValue = if (selected) entryAccent.onAccent() else apple.secondaryText,
+                        animationSpec = tween(durationMillis = 220),
+                        label = "spaceContent",
+                    )
+                    val iconScale by animateFloatAsState(
+                        targetValue = if (selected) 1.06f else 0.92f,
+                        animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy),
+                        label = "spaceIconScale",
+                    )
+                    Row(
+                        modifier = Modifier
+                            .clip(CircleShape)
+                            .selectable(
+                                selected = selected,
+                                interactionSource = remember(entry) { MutableInteractionSource() },
+                                indication = null,
+                                role = Role.Tab,
+                            ) {
+                                if (!selected) {
+                                    haptics.tick()
+                                    onSelect(entry)
+                                }
                             }
-                        }
-                        .padding(horizontal = 12.dp, vertical = 6.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(5.dp),
-                ) {
-                    Icon(
-                        imageVector = spaceIcon(entry, filled = selected),
-                        contentDescription = null,
-                        tint = content,
-                        modifier = Modifier.size(16.dp),
-                    )
-                    Text(
-                        text = entry.label,
-                        style = MaterialTheme.typography.labelLarge.copy(
-                            fontSize = 13.sp,
-                            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
-                        ),
-                        color = content,
-                    )
+                            .padding(horizontal = 12.dp, vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(5.dp, Alignment.CenterHorizontally),
+                    ) {
+                        Icon(
+                            imageVector = spaceIcon(entry, filled = selected),
+                            contentDescription = null,
+                            tint = contentColor,
+                            modifier = Modifier
+                                .size(16.dp)
+                                .graphicsLayer {
+                                    scaleX = iconScale
+                                    scaleY = iconScale
+                                },
+                        )
+                        Text(
+                            text = entry.label,
+                            style = MaterialTheme.typography.labelLarge.copy(
+                                fontSize = 13.sp,
+                                fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
+                            ),
+                            color = contentColor,
+                            maxLines = 1,
+                            softWrap = false,
+                        )
+                    }
+                }
+            },
+        ) { measurables, constraints ->
+            val itemMeasurables = measurables.drop(1)
+            val count = itemMeasurables.size.coerceAtLeast(1)
+            val rawSlotWidth = itemMeasurables.maxOfOrNull { it.maxIntrinsicWidth(constraints.maxHeight) } ?: 0
+            val slotWidth = if (constraints.hasBoundedWidth) {
+                rawSlotWidth.coerceAtMost(constraints.maxWidth / count)
+            } else {
+                rawSlotWidth
+            }.coerceAtLeast(0)
+            val itemConstraints = Constraints(
+                minWidth = slotWidth,
+                maxWidth = slotWidth,
+                minHeight = 0,
+                maxHeight = constraints.maxHeight,
+            )
+            val itemPlaceables = itemMeasurables.map { it.measure(itemConstraints) }
+            val slotHeight = itemPlaceables.maxOfOrNull { it.height } ?: 0
+            val indicatorPlaceable = measurables.first().measure(Constraints.fixed(slotWidth, slotHeight))
+            layout(slotWidth * count, slotHeight) {
+                indicatorPlaceable.placeRelative((animatedIndex * slotWidth).roundToInt(), 0)
+                itemPlaceables.forEachIndexed { index, placeable ->
+                    placeable.placeRelative(index * slotWidth, (slotHeight - placeable.height) / 2)
                 }
             }
         }
@@ -1368,6 +1435,51 @@ private fun QuoteItemRow(
                 ),
                 color = amountColor,
             )
+        }
+    }
+}
+
+data class TabReselectSignal(
+    val tabIndex: Int = -1,
+    val seq: Int = 0,
+)
+
+val LocalTabReselectSignal = compositionLocalOf { TabReselectSignal() }
+
+@Composable
+fun ScrollToTopOnTabReselect(
+    tabIndex: Int,
+    listState: LazyListState,
+) {
+    val signal = LocalTabReselectSignal.current
+    var handledSeq by remember { mutableIntStateOf(signal.seq) }
+    LaunchedEffect(signal.seq) {
+        if (signal.seq > handledSeq) {
+            handledSeq = signal.seq
+            if (signal.tabIndex == tabIndex &&
+                (listState.firstVisibleItemIndex > 0 || listState.firstVisibleItemScrollOffset > 0)
+            ) {
+                listState.animateScrollToItem(0)
+            }
+        }
+    }
+}
+
+@Composable
+fun ScrollToTopOnTabReselect(
+    tabIndex: Int,
+    gridState: LazyGridState,
+) {
+    val signal = LocalTabReselectSignal.current
+    var handledSeq by remember { mutableIntStateOf(signal.seq) }
+    LaunchedEffect(signal.seq) {
+        if (signal.seq > handledSeq) {
+            handledSeq = signal.seq
+            if (signal.tabIndex == tabIndex &&
+                (gridState.firstVisibleItemIndex > 0 || gridState.firstVisibleItemScrollOffset > 0)
+            ) {
+                gridState.animateScrollToItem(0)
+            }
         }
     }
 }

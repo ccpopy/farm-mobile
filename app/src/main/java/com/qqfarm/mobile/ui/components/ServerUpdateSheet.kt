@@ -227,7 +227,8 @@ fun ServerUpdateSheet(
     val isBusy = loading || busyAction != null || tokenBusy || pollingActive || pollTimedOut
     val backups = cur?.releases.orEmpty()
     val orphanSummary = cur?.releaseCleanup?.takeIf { it.hasOrphans }
-    val hasRollback = cur?.releases != null && (cur.gitSupported || backups.isNotEmpty() || orphanSummary != null)
+    val showBackupSwitch = cur?.keepBackups != null && cur.mode != "docker" && cur.mode != "binary"
+    val hasRollback = cur?.releases != null && (cur.gitSupported || backups.isNotEmpty() || orphanSummary != null || showBackupSwitch)
     val rollbackPage = hasRollback && showRollbackTab
     val selectedBackup = backups.firstOrNull { it.releaseId == selectedReleaseId && it.canRollback }
     val deletableBackups = backups.filter { it.canDelete }
@@ -244,12 +245,12 @@ fun ServerUpdateSheet(
             try {
                 operation()
             } catch (e: ApiException) {
-                if (name == "rollback" || name == "apply" || name == "delete") {
+                if (name == "rollback" || name == "apply" || name == "delete" || name == "backup") {
                     // 部署锁或备份可能已经变化，重新读取状态。
                     loadStatus()
                 }
                 errorMsg = e.message
-                if (name == "delete") rollbackList.requestScrollToItem(0)
+                if (name == "delete" || name == "backup") rollbackList.requestScrollToItem(0)
             } finally {
                 busyAction = null
             }
@@ -285,6 +286,7 @@ fun ServerUpdateSheet(
                 val (badgeLabel, badgeColor) = when {
                     isUpdatingNow -> (if (cur?.job?.isRollback == true) "回滚中" else "更新中") to apple.blue
                     busyAction == "delete" -> "清理中" to apple.orange
+                    busyAction == "backup" -> "保存中" to apple.blue
                     unsupported404 -> "暂不支持" to apple.secondaryText
                     pollTimedOut -> "等待重连" to apple.orange
                     errorMsg.isNotBlank() && cur == null -> "读取失败" to apple.red
@@ -436,6 +438,38 @@ fun ServerUpdateSheet(
                     if (cur?.applySupported == false && cur.applyUnsupportedReason.isNotBlank() && !batchDeleteMode) {
                         item { Text(cur.applyUnsupportedReason, style = MaterialTheme.typography.bodySmall, color = apple.secondaryText) }
                     }
+                    if (showBackupSwitch && !batchDeleteMode) {
+                        val backupEnabled = cur?.keepBackups != false
+                        item(key = "backup-setting") {
+                            AppleGroupedCard {
+                                AppleSwitchRow(
+                                    icon = Icons.Rounded.History,
+                                    iconTint = if (backupEnabled) apple.blue else apple.secondaryText,
+                                    title = "保留历史备份",
+                                    subtitle = if (backupEnabled) {
+                                        "更新时保留被替换的版本，兼容的备份可回滚"
+                                    } else {
+                                        "从下次更新起停止新增备份，已有历史备份仍可管理"
+                                    },
+                                    checked = backupEnabled,
+                                    enabled = canManageBackups,
+                                    onCheckedChange = { nextEnabled ->
+                                        if (nextEnabled == backupEnabled) return@AppleSwitchRow
+                                        runAction("backup") {
+                                            val saved = apiClient.setServerBackupEnabled(serverUrl, nextEnabled)
+                                            status = status?.copy(keepBackups = saved)
+                                            actionNote = if (saved) {
+                                                "已开启备份，下次更新会保留被替换的版本"
+                                            } else {
+                                                "已关闭备份，下次更新生效"
+                                            }
+                                            rollbackList.requestScrollToItem(0)
+                                        }
+                                    },
+                                )
+                            }
+                        }
+                    }
                     if (orphanSummary != null && !batchDeleteMode) {
                         item(key = "orphan-backups") {
                             AppleGroupedCard(contentPadding = PaddingValues(start = 12.dp, end = 6.dp)) {
@@ -461,7 +495,15 @@ fun ServerUpdateSheet(
                     if (backups.isEmpty()) {
                         item {
                             AppleGroupedCard {
-                                AppleEmptyState(Icons.Rounded.History, "暂无历史版本", "服务端尚未保留版本备份")
+                                AppleEmptyState(
+                                    icon = Icons.Rounded.History,
+                                    title = "暂无历史版本",
+                                    subtitle = if (cur?.keepBackups == false) {
+                                        "当前已关闭备份，后续更新不会保留旧版备份"
+                                    } else {
+                                        "服务端尚未保留版本备份"
+                                    },
+                                )
                             }
                         }
                     } else {
@@ -1007,7 +1049,11 @@ fun ServerUpdateSheet(
                             }
                             status = next
                             pollingActive = next.job?.status == "running" || next.deployBusy
-                            if (!pollingActive) next.job?.let(::showJobResult)
+                            if (!pollingActive) {
+                                val job = next.job
+                                if (job != null) showJobResult(job)
+                                else actionNote = "当前运行版本已是最新"
+                            }
                             if (rollback != null) selectedReleaseId = null
                             val list = if (showRollbackTab && next.releases != null && next.gitSupported) rollbackList else updateList
                             list.requestScrollToItem(0)
