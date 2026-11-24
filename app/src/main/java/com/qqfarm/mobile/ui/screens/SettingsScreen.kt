@@ -25,6 +25,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.Send
 import androidx.compose.material.icons.rounded.Dns
 import androidx.compose.material.icons.rounded.Eco
 import androidx.compose.material.icons.rounded.FilterList
@@ -78,6 +79,7 @@ import androidx.lifecycle.repeatOnLifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.qqfarm.mobile.BuildConfig
+import com.qqfarm.mobile.data.model.OfflineReminderConfig
 import com.qqfarm.mobile.data.model.RUN_LOG_RETENTION_DAYS
 import com.qqfarm.mobile.data.model.ActivityNotifyGroup
 import com.qqfarm.mobile.data.model.ActivityNotifyType
@@ -93,6 +95,7 @@ import com.qqfarm.mobile.ui.components.AppleHairlineDivider
 import com.qqfarm.mobile.ui.components.AppleSectionHeader
 import com.qqfarm.mobile.ui.components.AppleSettingRow
 import com.qqfarm.mobile.ui.components.AppleSwitchRow
+import com.qqfarm.mobile.ui.components.PushChannelSheet
 import com.qqfarm.mobile.ui.components.ScrollToTopOnTabReselect
 import com.qqfarm.mobile.ui.components.ServerSwitcherSheet
 import com.qqfarm.mobile.ui.components.ServerUpdateSheet
@@ -153,6 +156,22 @@ fun SettingsScreen(
 
     val config = session.config
     var onlineCount by remember(config.activeProfileId, config.serverUrl, config.authToken) { mutableStateOf<Int?>(null) }
+    var offlineReminder by remember(config.activeProfileId, config.serverUrl, config.authToken) {
+        mutableStateOf<OfflineReminderConfig?>(null)
+    }
+    val pushSettings = remember(apiClient, config.serverUrl, config.authToken) {
+        apiClient.pushSettings(config.serverUrl, config.authToken)
+    }
+    var showPushChannelSheet by remember(config.activeProfileId, pushSettings) { mutableStateOf(false) }
+    LaunchedEffect(config.activeProfileId, pushSettings, session.realtimeConnected, showPushChannelSheet) {
+        if (!showPushChannelSheet && config.authToken.isNotBlank()) {
+            offlineReminder = try {
+                pushSettings.fetch()
+            } catch (_: ApiException) {
+                null
+            }
+        }
+    }
     LaunchedEffect(
         lifecycleOwner, config.activeProfileId, config.serverUrl, config.authToken,
         session.realtimeConnected, session.status?.connected,
@@ -364,6 +383,16 @@ fun SettingsScreen(
                         }
                     },
                 )
+                AppleHairlineDivider()
+                AppleSettingRow(
+                    icon = Icons.AutoMirrored.Rounded.Send,
+                    iconTint = apple.blue,
+                    title = "推送渠道",
+                    trailingText = offlineReminder?.summaryText ?: "—",
+                    trailingColor = if (offlineReminder?.hasActiveChannel == true) apple.green else apple.secondaryText,
+                    showChevron = true,
+                    onClick = { showPushChannelSheet = true },
+                )
             }
         }
 
@@ -546,6 +575,16 @@ fun SettingsScreen(
                 }
             },
             onDismiss = { showNotifySheet = false },
+        )
+    }
+
+    if (showPushChannelSheet) {
+        PushChannelSheet(
+            settings = pushSettings,
+            initialConfig = offlineReminder,
+            onConfigUpdated = { offlineReminder = it },
+            onMessage = onMessage,
+            onDismiss = { showPushChannelSheet = false },
         )
     }
 

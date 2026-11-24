@@ -50,6 +50,11 @@ import com.qqfarm.mobile.data.model.MutationCatalogSnapshot
 import com.qqfarm.mobile.data.model.MysteryNpcOffer
 import com.qqfarm.mobile.data.model.MysteryPurchaseResult
 import com.qqfarm.mobile.data.model.MysteryShopState
+import com.qqfarm.mobile.data.model.OfflineNotificationTypes
+import com.qqfarm.mobile.data.model.OfflineReminderConfig
+import com.qqfarm.mobile.data.model.PushChannelEntry
+import com.qqfarm.mobile.data.model.findPushChannelSpec
+import com.qqfarm.mobile.data.model.normalizeDingTalkEndpoint
 import com.qqfarm.mobile.data.model.QingMeiState
 import com.qqfarm.mobile.data.model.QixiState
 import com.qqfarm.mobile.data.model.RanchBagItem
@@ -1988,6 +1993,80 @@ object FeatureJsonParsers {
             fromCommit = obj.optStringClean("fromCommit"),
             toCommit = obj.optStringClean("toCommit"),
             status = parseSystemUpdateStatus(statusObj),
+        )
+    }
+
+    private fun normalizePushEntry(
+        rawChannel: String,
+        enabled: Boolean,
+        endpoint: String,
+        token: String,
+        secret: String,
+    ): PushChannelEntry? {
+        val ch = rawChannel.trim().lowercase()
+        val spec = findPushChannelSpec(ch) ?: return null
+        val ep = if (spec.isDingTalk) normalizeDingTalkEndpoint(endpoint, token) else endpoint.trim()
+        val tk = if (spec.isDingTalk) "" else token.trim()
+        val entry = PushChannelEntry(
+            channel = ch,
+            enabled = enabled,
+            endpoint = ep,
+            token = tk,
+            secret = secret.trim(),
+        )
+        return entry.takeIf { it.hasCredentials }?.copy(enabled = entry.isEffectivelyEnabled)
+    }
+
+    fun parseOfflineReminder(obj: JSONObject): OfflineReminderConfig {
+        val channelsArr = obj.optJSONArray("channels")
+        val typesObj = obj.optJSONObject("notificationTypes")
+        val notificationTypes = if (typesObj != null) {
+            OfflineNotificationTypes(
+                offline = typesObj.optBoolFlex("offline", true),
+                mysteryArrival = typesObj.optBoolFlex("mysteryArrival", false),
+                mysteryPurchase = typesObj.optBoolFlex("mysteryPurchase", false),
+            )
+        } else {
+            OfflineNotificationTypes()
+        }
+
+        val channels = if (channelsArr != null) {
+            val map = LinkedHashMap<String, PushChannelEntry>()
+            for (i in 0 until channelsArr.length()) {
+                val item = channelsArr.optJSONObject(i) ?: continue
+                val normalized = normalizePushEntry(
+                    rawChannel = item.optStringClean("channel"),
+                    enabled = item.optBoolFlex("enabled", false),
+                    endpoint = item.optStringClean("endpoint"),
+                    token = item.optStringClean("token"),
+                    secret = item.optStringClean("secret"),
+                ) ?: continue
+                map.remove(normalized.normalizedChannel)
+                map[normalized.normalizedChannel] = normalized
+            }
+            map.values.toList()
+        } else {
+            val endpoint = obj.optStringClean("endpoint")
+            val channel = obj.optStringClean("channel")
+            val migrated = if (channel.isBlank()) findPushChannelSpec(endpoint) else null
+            val legacy = normalizePushEntry(
+                rawChannel = channel.ifBlank { migrated?.value ?: "webhook" },
+                enabled = true,
+                endpoint = if (migrated == null) endpoint else "",
+                token = obj.optStringClean("token"),
+                secret = obj.optStringClean("secret"),
+            )
+            if (legacy != null) listOf(legacy) else emptyList()
+        }
+
+        return OfflineReminderConfig(
+            supportsMultiChannel = channelsArr != null,
+            hasNotificationTypes = typesObj != null,
+            channels = channels,
+            title = obj.optStringClean("title", "账号下线提醒").ifBlank { "账号下线提醒" },
+            msg = obj.optStringClean("msg", "账号下线").ifBlank { "账号下线" },
+            offlineDeleteSec = obj.optLongFlex("offlineDeleteSec", 0).coerceAtLeast(0),
+            notificationTypes = notificationTypes,
         )
     }
 }

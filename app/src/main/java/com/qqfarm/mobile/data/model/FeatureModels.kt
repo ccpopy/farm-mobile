@@ -1,5 +1,7 @@
 package com.qqfarm.mobile.data.model
 
+import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
+
 enum class GameSpace(
     val key: String,
     val label: String,
@@ -1077,3 +1079,131 @@ data class SystemUpdatePullResult(
     val toCommit: String = "",
     val status: SystemUpdateStatus,
 )
+
+// ---- Multi-Channel Push Notifications ----
+
+data class PushChannelSpec(
+    val value: String,
+    val label: String,
+    val docUrl: String = "",
+    val usesEndpoint: Boolean = false,
+    val isDingTalk: Boolean = false,
+    val isMeow: Boolean = false,
+)
+
+val PUSH_CHANNEL_SPECS: List<PushChannelSpec> = listOf(
+    PushChannelSpec(value = "webhook", label = "Webhook(自定义接口)", usesEndpoint = true),
+    PushChannelSpec(value = "qmsg", label = "Qmsg 酱", docUrl = "https://qmsg.zendee.cn/"),
+    PushChannelSpec(value = "serverchan", label = "Server 酱", docUrl = "https://sct.ftqq.com/"),
+    PushChannelSpec(value = "pushplus", label = "Push Plus", docUrl = "https://www.pushplus.plus/"),
+    PushChannelSpec(value = "pushplushxtrip", label = "Push Plus Hxtrip", docUrl = "https://pushplus.hxtrip.com/"),
+    PushChannelSpec(
+        value = "dingtalk",
+        label = "钉钉",
+        docUrl = "https://open.dingtalk.com/document/orgapp/customize-robot-security-settings",
+        usesEndpoint = true,
+        isDingTalk = true,
+    ),
+    PushChannelSpec(value = "wecom", label = "企业微信", docUrl = "https://guole.fun/posts/626/"),
+    PushChannelSpec(value = "bark", label = "Bark", docUrl = "https://github.com/Finb/Bark"),
+    PushChannelSpec(value = "gocqhttp", label = "Go-cqhttp", docUrl = "https://docs.go-cqhttp.org/api/"),
+    PushChannelSpec(value = "onebot", label = "OneBot", docUrl = "https://docs.go-cqhttp.org/api/"),
+    PushChannelSpec(value = "atri", label = "Atri", docUrl = "https://blog.tianli0.top/"),
+    PushChannelSpec(value = "pushdeer", label = "PushDeer", docUrl = "https://www.pushdeer.com/"),
+    PushChannelSpec(value = "igot", label = "iGot", docUrl = "https://push.hellyw.com/"),
+    PushChannelSpec(value = "telegram", label = "Telegram", docUrl = "https://core.telegram.org/bots"),
+    PushChannelSpec(value = "feishu", label = "飞书", docUrl = "https://www.feishu.cn/hc/zh-CN/articles/360024984973"),
+    PushChannelSpec(value = "ifttt", label = "IFTTT", docUrl = "https://ifttt.com/maker_webhooks"),
+    PushChannelSpec(value = "wecombot", label = "企业微信群机器人", docUrl = "https://developer.work.weixin.qq.com/document/path/91770"),
+    PushChannelSpec(value = "discord", label = "Discord", docUrl = "https://discord.com/developers/docs/resources/webhook#execute-webhook"),
+    PushChannelSpec(value = "wxpusher", label = "WxPusher", docUrl = "https://wxpusher.zjiecode.com/docs/#/"),
+    PushChannelSpec(value = "meow", label = "MeoW", docUrl = "https://www.chuckfang.com/MeoW/api_doc.html", isMeow = true),
+)
+
+private val PUSH_CHANNEL_SPEC_MAP: Map<String, PushChannelSpec> =
+    PUSH_CHANNEL_SPECS.associateBy { it.value }
+
+fun findPushChannelSpec(channel: String): PushChannelSpec? =
+    PUSH_CHANNEL_SPEC_MAP[channel.trim().lowercase()]
+
+fun normalizeDingTalkEndpoint(endpoint: String, token: String): String {
+    val credential = endpoint.trim().ifBlank { token.trim() }
+    if (credential.isEmpty()) return ""
+    if (credential.startsWith("http://", ignoreCase = true) || credential.startsWith("https://", ignoreCase = true)) {
+        return credential
+    }
+    return "https://oapi.dingtalk.com/robot/send?access_token=" +
+        java.net.URLEncoder.encode(credential, "UTF-8")
+}
+
+fun validateDingTalkWebhookUrl(endpoint: String): String {
+    val url = endpoint.trim().toHttpUrlOrNull()
+    if (url != null && url.isHttps && url.host == "oapi.dingtalk.com" &&
+        url.encodedPath == "/robot/send" && !url.queryParameter("access_token").isNullOrBlank()
+    ) {
+        return ""
+    }
+    return "钉钉 Webhook 地址格式不正确，请从群机器人设置页重新复制"
+}
+
+fun parseOfflineDeleteSeconds(input: String): Long? =
+    input.trim().toLongOrNull()?.takeIf { it in 0..9_007_199_254_740_991L }
+
+data class PushChannelEntry(
+    val channel: String,
+    val enabled: Boolean = false,
+    val endpoint: String = "",
+    val token: String = "",
+    val secret: String = "",
+) {
+    val normalizedChannel: String get() = channel.trim().lowercase()
+    val hasCredentials: Boolean get() = endpoint.isNotBlank() || token.isNotBlank() || secret.isNotBlank()
+
+    val isConfigured: Boolean
+        get() {
+            val spec = findPushChannelSpec(normalizedChannel) ?: return false
+            return when {
+                spec.isDingTalk -> endpoint.trim().isNotEmpty() || token.trim().isNotEmpty()
+                spec.usesEndpoint -> endpoint.trim().isNotEmpty()
+                else -> token.trim().isNotEmpty()
+            }
+        }
+
+    val isEffectivelyEnabled: Boolean get() = enabled && isConfigured
+}
+
+data class OfflineNotificationTypes(
+    val offline: Boolean = true,
+    val mysteryArrival: Boolean = false,
+    val mysteryPurchase: Boolean = false,
+)
+
+data class OfflineReminderConfig(
+    val supportsMultiChannel: Boolean = false,
+    val hasNotificationTypes: Boolean = false,
+    val channels: List<PushChannelEntry> = emptyList(),
+    val title: String = "账号下线提醒",
+    val msg: String = "账号下线",
+    val offlineDeleteSec: Long = 0,
+    val notificationTypes: OfflineNotificationTypes = OfflineNotificationTypes(),
+) {
+    val configuredChannels: List<PushChannelEntry> get() = channels.filter { it.isConfigured }
+    val activeChannels: List<PushChannelEntry> get() = channels.filter { it.isEffectivelyEnabled }
+    val hasActiveChannel: Boolean get() = activeChannels.isNotEmpty()
+
+    val summaryText: String
+        get() = when {
+            activeChannels.size > 1 -> "已启用 ${activeChannels.size} 个"
+            activeChannels.size == 1 -> {
+                val active = activeChannels.first()
+                findPushChannelSpec(active.normalizedChannel)?.label ?: active.channel
+            }
+            configuredChannels.isNotEmpty() -> "已停用 (${configuredChannels.size})"
+            else -> "未配置"
+        }
+
+    fun entryFor(channelId: String): PushChannelEntry {
+        val key = channelId.trim().lowercase()
+        return channels.firstOrNull { it.normalizedChannel == key } ?: PushChannelEntry(channel = key)
+    }
+}

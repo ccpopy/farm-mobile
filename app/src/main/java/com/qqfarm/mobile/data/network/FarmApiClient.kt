@@ -30,7 +30,9 @@ import com.qqfarm.mobile.data.model.MugeState
 import com.qqfarm.mobile.data.model.MutationCatalogSnapshot
 import com.qqfarm.mobile.data.model.MysteryPurchaseResult
 import com.qqfarm.mobile.data.model.MysteryShopState
+import com.qqfarm.mobile.data.model.OfflineReminderConfig
 import com.qqfarm.mobile.data.model.PetSnapshot
+import com.qqfarm.mobile.data.model.PushChannelEntry
 import com.qqfarm.mobile.data.model.QingMeiState
 import com.qqfarm.mobile.data.model.QixiState
 import com.qqfarm.mobile.data.model.QqQrTask
@@ -1384,6 +1386,118 @@ class FarmApiClient {
         val json = executeJson("DELETE", "/api/system/update/github-token", requestSession = sessionForServer(serverUrl))
         if (json.optJSONObject("data")?.opt("githubTokenConfigured") != false) {
             throw ApiException("服务端未确认移除 GitHub 授权")
+        }
+    }
+
+    fun pushSettings(serverUrl: String, authToken: String): PushSettings =
+        PushSettings(normalizeBaseUrl(serverUrl).orEmpty(), authToken.trim())
+
+    inner class PushSettings internal constructor(
+        private val serverUrl: String,
+        private val authToken: String,
+    ) {
+        private val saveUnconfirmed = "服务端未确认保存推送配置，请刷新后核对"
+
+        suspend fun fetch(): OfflineReminderConfig {
+            val response = request("GET", "/api/settings")
+            return readConfig(
+                response.optJSONObject("data")?.optJSONObject("offlineReminder"),
+                "当前服务端未提供推送渠道配置",
+            )
+        }
+
+        suspend fun setNotificationType(type: String, enabled: Boolean): OfflineReminderConfig =
+            save(JSONObject().put("notificationTypes", JSONObject().put(type, enabled))) { data ->
+                data.optJSONObject("notificationTypes")?.opt(type) == enabled
+            }
+
+        suspend fun saveGeneral(title: String, message: String, deleteSeconds: Long): OfflineReminderConfig {
+            val body = messageBody(title, message).put("offlineDeleteSec", deleteSeconds)
+            return save(body) { data -> data.optLongFlex("offlineDeleteSec", -1) == deleteSeconds }
+        }
+
+        suspend fun setChannelEnabled(channel: String, enabled: Boolean): OfflineReminderConfig {
+            val config = save(JSONObject().put("channel", channel).put("enabled", enabled))
+            if (!config.supportsMultiChannel || config.entryFor(channel).isEffectivelyEnabled != enabled) {
+                throw ApiException(saveUnconfirmed)
+            }
+            return config
+        }
+
+        suspend fun saveChannel(entry: PushChannelEntry, multiChannel: Boolean): OfflineReminderConfig {
+            val body = channelBody(entry)
+            if (multiChannel) body.put("enabled", entry.enabled)
+            val saved = save(body)
+            if (saved.supportsMultiChannel != multiChannel ||
+                saved.entryFor(entry.channel) != entry ||
+                (!multiChannel && !entry.hasCredentials && saved.channels.isNotEmpty())
+            ) {
+                throw ApiException(saveUnconfirmed)
+            }
+            return saved
+        }
+
+        suspend fun clearChannel(entry: PushChannelEntry, multiChannel: Boolean): OfflineReminderConfig {
+            if (multiChannel) return saveChannel(PushChannelEntry(entry.channel), multiChannel = true)
+
+            // The legacy endpoint clears the only channel. Check it still belongs to the open editor.
+            val latest = fetch()
+            if (latest.supportsMultiChannel || latest.entryFor(entry.channel) != entry) {
+                throw ApiException("推送配置已变化，请刷新后再清空")
+            }
+            return saveChannel(PushChannelEntry("webhook"), multiChannel = false)
+        }
+
+        suspend fun testChannel(entry: PushChannelEntry, title: String, message: String): String {
+            val body = channelBody(entry)
+            val text = messageBody(title, message)
+            body.put("title", text.getString("title")).put("msg", text.getString("msg"))
+            val response = request("POST", "/api/settings/offline-reminder/test", body)
+            val receipt = response.optJSONObject("data")
+            if (receipt?.opt("ok") != true ||
+                receipt.optStringClean("channel").ifBlank { entry.channel } != entry.channel
+            ) {
+                throw ApiException("服务端未确认测试通知已发送")
+            }
+            return response.optStringClean("message").ifBlank { "测试通知已发送" }
+        }
+
+        private fun channelBody(entry: PushChannelEntry): JSONObject =
+            JSONObject()
+                .put("channel", entry.channel)
+                .put("endpoint", entry.endpoint)
+                .put("token", entry.token)
+                .put("secret", entry.secret)
+
+        private fun messageBody(title: String, message: String): JSONObject =
+            JSONObject()
+                .put("title", title.trim().ifBlank { "账号下线提醒" })
+                .put("msg", message.trim().ifBlank { "账号下线" })
+
+        private suspend fun save(
+            body: JSONObject,
+            confirmed: (JSONObject) -> Boolean = { true },
+        ): OfflineReminderConfig {
+            val data = request("POST", "/api/settings/offline-reminder", body).optJSONObject("data")
+            if (data == null || !confirmed(data)) throw ApiException(saveUnconfirmed)
+            return readConfig(data, saveUnconfirmed)
+        }
+
+        private fun readConfig(data: JSONObject?, error: String): OfflineReminderConfig {
+            if (data == null || (data.optJSONArray("channels") == null &&
+                    data.opt("channel") !is String && data.opt("endpoint") !is String)
+            ) {
+                throw ApiException(error)
+            }
+            return FeatureJsonParsers.parseOfflineReminder(data)
+        }
+
+        private suspend fun request(method: String, path: String, body: JSONObject? = null): JSONObject {
+            val current = session
+            if (current.baseUrl != serverUrl || current.token != authToken || authToken.isBlank()) {
+                throw ApiException("服务器或登录状态已切换，请重新打开推送渠道")
+            }
+            return executeJson(method, path, body = body, accountIdOverride = "", requestSession = current)
         }
     }
 }
