@@ -177,6 +177,7 @@ private fun ranchCanStageLabel(value: String): String =
 
 private val RANCH_FRIEND_SWITCHES = listOf(
     "ranch_friend_steal" to "自动偷取好友产物",
+    "ranch_friend_produce" to "自动帮忙生产",
     "ranch_friend_clean" to "自动帮好友清理",
     "ranch_stroke" to "自动抚摸动物",
     "ranch_friend_mosquito" to "自动放蚊子",
