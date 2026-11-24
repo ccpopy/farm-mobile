@@ -44,8 +44,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.lazy.LazyListState
-import androidx.compose.foundation.lazy.grid.LazyGridState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
@@ -77,9 +75,7 @@ import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.material3.ripple
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
@@ -1435,51 +1431,6 @@ private fun QuoteItemRow(
                 ),
                 color = amountColor,
             )
-        }
-    }
-}
-
-data class TabReselectSignal(
-    val tabIndex: Int = -1,
-    val seq: Int = 0,
-)
-
-val LocalTabReselectSignal = compositionLocalOf { TabReselectSignal() }
-
-@Composable
-fun ScrollToTopOnTabReselect(
-    tabIndex: Int,
-    listState: LazyListState,
-) {
-    val signal = LocalTabReselectSignal.current
-    var handledSeq by remember { mutableIntStateOf(signal.seq) }
-    LaunchedEffect(signal.seq) {
-        if (signal.seq > handledSeq) {
-            handledSeq = signal.seq
-            if (signal.tabIndex == tabIndex &&
-                (listState.firstVisibleItemIndex > 0 || listState.firstVisibleItemScrollOffset > 0)
-            ) {
-                listState.animateScrollToItem(0)
-            }
-        }
-    }
-}
-
-@Composable
-fun ScrollToTopOnTabReselect(
-    tabIndex: Int,
-    gridState: LazyGridState,
-) {
-    val signal = LocalTabReselectSignal.current
-    var handledSeq by remember { mutableIntStateOf(signal.seq) }
-    LaunchedEffect(signal.seq) {
-        if (signal.seq > handledSeq) {
-            handledSeq = signal.seq
-            if (signal.tabIndex == tabIndex &&
-                (gridState.firstVisibleItemIndex > 0 || gridState.firstVisibleItemScrollOffset > 0)
-            ) {
-                gridState.animateScrollToItem(0)
-            }
         }
     }
 }
