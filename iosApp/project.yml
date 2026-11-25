@@ -1,0 +1,47 @@
+name: FarmBot
+options:
+  bundleIdPrefix: io.github.asunxu
+  deploymentTarget:
+    iOS: "14.0"
+  createIntermediateGroups: true
+
+settings:
+  base:
+    MARKETING_VERSION: "0.1.5"
+    CURRENT_PROJECT_VERSION: "15"
+    CODE_SIGNING_ALLOWED: "NO"
+    CODE_SIGNING_REQUIRED: "NO"
+    CODE_SIGN_IDENTITY: ""
+    GENERATE_INFOPLIST_FILE: "NO"
+
+targets:
+  FarmBot:
+    type: application
+    platform: iOS
+    sources:
+      - path: Sources
+    info:
+      path: Sources/Info.plist
+      properties:
+        CFBundleDisplayName: FarmBot
+        CFBundleShortVersionString: "0.1.5"
+        CFBundleVersion: "15"
+        UILaunchScreen: {}
+        NSHighResolutionCapable: true
+        UIApplicationSupportsIndirectInputEvents: true
+        CADisableMinimumFrameDurationOnPhone: true
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
+        ITSAppUsesNonExemptEncryption: false
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: io.github.asunxu.farmbot
+        FRAMEWORK_SEARCH_PATHS: "$(inherited) $(SRCROOT)/build"
+        OTHER_LDFLAGS: "$(inherited) -framework FarmMobile"
+    preBuildScripts:
+      - name: Build FarmMobile Framework
+        script: |
+          "$SRCROOT/gradle-build-framework.sh"
+        showEnvVars: false

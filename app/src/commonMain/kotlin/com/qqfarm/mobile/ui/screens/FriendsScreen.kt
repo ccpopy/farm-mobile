@@ -1,0 +1,1909 @@
+package com.qqfarm.mobile.ui.screens
+
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.AutoAwesome
+import androidx.compose.material.icons.rounded.Block
+import androidx.compose.material.icons.rounded.BugReport
+import androidx.compose.material.icons.rounded.ChevronRight
+import androidx.compose.material.icons.rounded.CleaningServices
+import androidx.compose.material.icons.rounded.Grass
+import androidx.compose.material.icons.rounded.Group
+import androidx.compose.material.icons.rounded.History
+import androidx.compose.material.icons.rounded.Info
+import androidx.compose.material.icons.rounded.Person
+import androidx.compose.material.icons.rounded.Pets
+import androidx.compose.material.icons.rounded.Refresh
+import androidx.compose.material.icons.rounded.ShoppingBag
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.SnackbarDuration
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
+import androidx.compose.material3.rememberModalBottomSheetState
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.runtime.mutableStateMapOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import com.qqfarm.mobile.data.model.FriendBlacklistItem
+import com.qqfarm.mobile.data.model.FriendItem
+import com.qqfarm.mobile.data.model.GameSpace
+import com.qqfarm.mobile.data.model.InteractRecord
+import com.qqfarm.mobile.data.model.FriendLandsPayload
+import com.qqfarm.mobile.data.model.RejectedFriendHarvests
+import com.qqfarm.mobile.data.model.RanchAnimal
+import com.qqfarm.mobile.data.model.RanchFriendDetail
+import com.qqfarm.mobile.data.model.RanchFriendSummary
+import com.qqfarm.mobile.data.model.RanchQuote
+import com.qqfarm.mobile.data.model.RanchViewSnapshot
+import com.qqfarm.mobile.data.network.FarmApiClient
+import com.qqfarm.mobile.data.network.ApiException
+import com.qqfarm.mobile.ui.components.AppleEmptyState
+import com.qqfarm.mobile.ui.components.AppleLoadingState
+import com.qqfarm.mobile.ui.components.AppleGroupedCard
+import com.qqfarm.mobile.ui.components.AppleHairlineDivider
+import com.qqfarm.mobile.ui.components.AppleProgressBar
+import com.qqfarm.mobile.ui.components.AppleQuantityStepper
+import com.qqfarm.mobile.ui.components.AppleSegmentedControl
+import com.qqfarm.mobile.ui.components.AppleStatusPill
+import com.qqfarm.mobile.ui.components.RanchQuoteConfirmSheet
+import com.qqfarm.mobile.ui.components.RemoteAssetImage
+import com.qqfarm.mobile.ui.components.ScrollToTopOnTabReselect
+import com.qqfarm.mobile.ui.components.formatCompactCount
+import com.qqfarm.mobile.ui.components.formatDurationSec
+import com.qqfarm.mobile.ui.components.formatNumber
+import com.qqfarm.mobile.ui.state.SessionUiState
+import com.qqfarm.mobile.ui.theme.LocalAppAppearance
+import com.qqfarm.mobile.ui.theme.LocalAppleColors
+import com.qqfarm.mobile.ui.components.spaceAccent
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import com.qqfarm.mobile.data.network.json.JSONObject
+import com.qqfarm.mobile.ui.components.EqualHeightRow
+import com.qqfarm.mobile.ui.components.AppleFilterChip
+import com.qqfarm.mobile.ui.components.searchHeader
+import com.qqfarm.mobile.ui.components.AppleSearchField
+import com.qqfarm.mobile.ui.components.swipeToSwitchTabs
+
+private const val INVALID_FRIEND_RELATION_CODE = "1001048"
+private const val REMOVED_FRIEND_NOTICE = "好友关系已失效，已从当前列表移除"
+
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
+@Composable
+fun FriendsScreen(
+    session: SessionUiState,
+    apiClient: FarmApiClient,
+    gameSpace: GameSpace,
+    onRefreshOverview: () -> Unit = {},
+    onMessage: (String) -> Unit,
+) {
+    if (gameSpace == GameSpace.RANCH) {
+        RanchFriendsContent(
+            session = session,
+            apiClient = apiClient,
+            onRefreshOverview = onRefreshOverview,
+            onMessage = onMessage,
+        )
+        return
+    }
+    val apple = LocalAppleColors.current
+    val scope = rememberCoroutineScope()
+    val accountId = session.config.currentAccountId
+    val isConnected = session.status?.connected == true && accountId.isNotBlank()
+
+    var subTab by remember { mutableIntStateOf(0) }
+    var refreshing by remember(accountId, isConnected, subTab) { mutableStateOf(false) }
+    var loadError by remember(accountId, isConnected, subTab) { mutableStateOf("") }
+    val loadedTabs = remember(accountId, isConnected) { mutableStateMapOf<Int, Boolean>() }
+    var busyOp by remember { mutableStateOf(false) }
+    var friendListReady by remember(accountId, isConnected) { mutableStateOf(false) }
+    var friendListState by remember(accountId, isConnected) { mutableStateOf("") }
+    val rejectedHarvests = remember(accountId, isConnected) { RejectedFriendHarvests() }
+    var friendActionStates by remember(accountId, isConnected) { mutableStateOf<Map<Long, Boolean>>(emptyMap()) }
+
+    var friends by remember(accountId, isConnected) { mutableStateOf<List<FriendItem>>(emptyList()) }
+    var records by remember(accountId, isConnected) { mutableStateOf<List<InteractRecord>>(emptyList()) }
+    var blacklist by remember(accountId, isConnected) { mutableStateOf<List<FriendBlacklistItem>>(emptyList()) }
+
+    var searchKeyword by remember { mutableStateOf("") }
+    var onlyActionable by remember { mutableStateOf(false) }
+    var inspectedFriend by remember(accountId, isConnected) { mutableStateOf<FriendItem?>(null) }
+
+    suspend fun loadTab(forceSync: Boolean = false) {
+        if (!isConnected || refreshing || busyOp) return
+        val tab = subTab
+        refreshing = true
+        loadError = ""
+        try {
+            when (tab) {
+                0 -> {
+                    friendListReady = false
+                    friendActionStates = emptyMap()
+                    val res = apiClient.fetchFriends(accountId, forceSync = forceSync)
+                    friends = res.friends.map(rejectedHarvests::checkSummary)
+                    friendListState = res.state
+                    friendListReady = res.state == "ready"
+                    loadedTabs[0] = true
+                    try {
+                        blacklist = apiClient.fetchFriendBlacklist(accountId)
+                        loadedTabs[2] = true
+                    } catch (e: ApiException) {
+                        onMessage(e.message)
+                    }
+                }
+                1 -> records = apiClient.fetchInteractRecords(accountId)
+                2 -> blacklist = apiClient.fetchFriendBlacklist(accountId)
+            }
+            loadedTabs[tab] = true
+        } catch (e: ApiException) {
+            loadError = e.message
+            if (loadedTabs[tab] == true) onMessage(e.message)
+        } finally {
+            refreshing = false
+        }
+    }
+
+    fun updateFriendActions(gid: Long, snapshot: FriendLandsPayload?) {
+        friendActionStates = friendActionStates + (gid to (snapshot != null))
+        if (snapshot == null) return
+        friends = friends.map { friend ->
+            if (friend.gid != gid) friend else friend.copy(
+                stealNum = snapshot.stealableCount,
+                dryNum = snapshot.dryCount,
+                weedNum = snapshot.weedCount,
+                insectNum = snapshot.insectCount,
+            )
+        }
+    }
+
+    fun removeInvalidFriend(gid: Long, message: String = REMOVED_FRIEND_NOTICE) {
+        friends = friends.filterNot { it.gid == gid }
+        friendActionStates = friendActionStates - gid
+        if (inspectedFriend?.gid == gid) {
+            inspectedFriend = null
+        }
+        onMessage(message)
+    }
+
+    fun operateFromList(friend: FriendItem, opType: String) {
+        if (busyOp || refreshing) return
+        busyOp = true
+        scope.launch {
+            try {
+                val before = try {
+                    rejectedHarvests.checkLands(friend.gid, apiClient.fetchFriendLands(accountId, friend.gid))
+                } catch (e: ApiException) {
+                    if (e.errorCode == INVALID_FRIEND_RELATION_CODE) {
+                        removeInvalidFriend(friend.gid)
+                    } else {
+                        updateFriendActions(friend.gid, null)
+                        onMessage(e.message)
+                    }
+                    return@launch
+                }
+                updateFriendActions(friend.gid, before)
+                if ((opType == "steal" && before.stealableCount == 0) || (opType == "farming" && !before.needsCare)) {
+                    onMessage(if (opType == "steal") "当前没有可偷取的土地" else "当前没有需要照顾的土地")
+                    return@launch
+                }
+                val result = try {
+                    apiClient.operateFriend(accountId, friend.gid, opType)
+                } catch (e: ApiException) {
+                    onMessage(e.message)
+                    null
+                }
+                if (result?.invalidRemoved == true) {
+                    removeInvalidFriend(friend.gid, result.message)
+                    return@launch
+                }
+                if (result != null) {
+                    onMessage(result.message)
+                    onRefreshOverview()
+                }
+                if (result?.fruitAlreadyPicked == true) {
+                    updateFriendActions(friend.gid, rejectedHarvests.record(friend.gid, before))
+                }
+                val emptyAttempt = before.takeIf { opType == "steal" && result?.count == 0 }
+                try {
+                    val fresh = apiClient.fetchFriendLands(accountId, friend.gid)
+                    val refreshed = rejectedHarvests.checkLands(friend.gid, fresh).afterEmptySteal(emptyAttempt)
+                    updateFriendActions(friend.gid, refreshed)
+                } catch (e: ApiException) {
+                    if (e.errorCode == INVALID_FRIEND_RELATION_CODE) {
+                        removeInvalidFriend(friend.gid)
+                    } else {
+                        updateFriendActions(friend.gid, null)
+                        onMessage("好友状态刷新失败：${e.message}")
+                    }
+                }
+            } finally {
+                busyOp = false
+            }
+        }
+    }
+
+    LaunchedEffect(accountId, isConnected, subTab) {
+        if (isConnected) loadTab(forceSync = subTab == 0)
+    }
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(apple.background),
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 8.dp),
+        ) {
+            AppleSegmentedControl(
+                options = listOf("好友", "访客", "黑名单"),
+                selectedIndex = subTab,
+                onSelect = { if (!busyOp) subTab = it },
+            )
+        }
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .weight(1f)
+                .swipeToSwitchTabs(subTab, 3, !busyOp) { idx -> if (!busyOp) subTab = idx },
+        ) {
+
+            if (!isConnected) {
+                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    AppleGroupedCard(modifier = Modifier.padding(16.dp)) {
+                        AppleEmptyState(
+                            icon = Icons.Rounded.Group,
+                            title = "账号未在线",
+                            subtitle = "请先启动并登录当前账号后再查看好友农场与访客记录",
+                        )
+                    }
+                }
+            } else {
+                val hasData = loadedTabs[subTab] == true
+                PullToRefreshBox(
+                isRefreshing = refreshing && hasData,
+                onRefresh = { scope.launch { loadTab(subTab == 0) } },
+                modifier = Modifier.fillMaxSize(),
+            ) {
+                if (!hasData) {
+                    if (loadError.isBlank()) {
+                        AppleLoadingState()
+                    } else {
+                        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                            AppleGroupedCard(modifier = Modifier.padding(16.dp)) {
+                                AppleEmptyState(
+                                    icon = Icons.Rounded.Group,
+                                    title = "好友数据读取失败",
+                                    subtitle = loadError,
+                                    actionLabel = "重新加载",
+                                    onAction = { scope.launch { loadTab(subTab == 0) } },
+                                )
+                            }
+                        }
+                    }
+                    return@PullToRefreshBox
+                }
+                when (subTab) {
+                    0 -> {
+                        val blockedGids = remember(blacklist) { blacklist.map { it.gid }.toSet() }
+                        val filteredFriends = remember(friends, searchKeyword, onlyActionable, friendListReady, friendActionStates) {
+                            val kw = searchKeyword.trim().lowercase()
+                            friends.filter { f ->
+                                val matchesKw = kw.isEmpty() || f.name.lowercase().contains(kw) || f.gid.toString().contains(kw)
+                                val statusKnown = friendActionStates[f.gid] ?: friendListReady
+                                val matchesAction = !onlyActionable || (statusKnown && (f.stealNum > 0 || f.needsCareCount > 0))
+                                matchesKw && matchesAction
+                            }
+                        }
+
+                        val friendsListState = rememberLazyListState()
+                        ScrollToTopOnTabReselect(3, friendsListState)
+
+                        LazyColumn(
+                            state = friendsListState,
+                            modifier = Modifier.fillMaxSize(),
+                            contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 24.dp),
+                            verticalArrangement = Arrangement.spacedBy(10.dp),
+                        ) {
+                            searchHeader {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                ) {
+                                    AppleSearchField(
+                                        value = searchKeyword,
+                                        onValueChange = { searchKeyword = it },
+                                        placeholder = "搜索好友昵称或 GID",
+                                        modifier = Modifier.weight(1f),
+                                    )
+                                    IconButton(
+                                        onClick = { scope.launch { loadTab(forceSync = true) } },
+                                        enabled = !refreshing && !busyOp,
+                                    ) {
+                                        Icon(Icons.Rounded.Refresh, contentDescription = "强制同步好友")
+                                    }
+                                }
+                                Spacer(modifier = Modifier.height(6.dp))
+                                Row(
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                ) {
+                                    AppleFilterChip(
+                                        selected = onlyActionable,
+                                        onClick = { onlyActionable = !onlyActionable },
+                                        label = { Text("仅看可偷/可帮") },
+                                    )
+                                    Text(
+                                        text = "共 ${filteredFriends.size} 位",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = apple.secondaryText,
+                                    )
+                                }
+                            }
+
+                            val isQqAccount = session.currentAccount?.platform?.equals("qq", ignoreCase = true) == true
+                            val partialNotice = if (friendListState == "partial") {
+                                if (isQqAccount) {
+                                    "部分好友详情暂未返回。漏回的好友会在 30 分钟后补查一次，仍未返回将暂停巡查。右上角可立即复查。"
+                                } else {
+                                    "部分好友详情暂未返回，可点右上角刷新复查。"
+                                }
+                            } else ""
+                            if (!refreshing && partialNotice.isNotBlank() && friends.isNotEmpty()) {
+                                item(key = "partial_notice") {
+                                    Surface(
+                                        shape = RoundedCornerShape(12.dp),
+                                        color = apple.orange.copy(alpha = 0.12f),
+                                        border = BorderStroke(0.5.dp, apple.orange.copy(alpha = 0.25f)),
+                                        modifier = Modifier.fillMaxWidth(),
+                                    ) {
+                                        Row(
+                                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+                                            verticalAlignment = Alignment.Top,
+                                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Rounded.Info,
+                                                contentDescription = null,
+                                                tint = apple.orange,
+                                                modifier = Modifier.padding(top = 1.dp).size(16.dp),
+                                            )
+                                            Text(
+                                                text = partialNotice,
+                                                style = MaterialTheme.typography.bodySmall,
+                                                color = apple.primaryText,
+                                                modifier = Modifier.weight(1f),
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+
+                            if (filteredFriends.isEmpty()) {
+                                item {
+                                    AppleGroupedCard {
+                                        AppleEmptyState(
+                                            icon = Icons.Rounded.Group,
+                                            title = when {
+                                                friends.isNotEmpty() -> "没有匹配的好友"
+                                                friendListState == "partial" -> "好友详情暂未同步"
+                                                else -> "暂无好友数据"
+                                            },
+                                            subtitle = partialNotice.takeIf { friends.isEmpty() && it.isNotBlank() }
+                                                ?: "点击右上角刷新图标可向服务器强制同步好友名单",
+                                        )
+                                    }
+                                }
+                            } else {
+                                itemsIndexed(filteredFriends, key = { _, f -> f.gid }) { _, friend ->
+                                    val isBlocked = blockedGids.contains(friend.gid)
+                                    val statusKnown = !refreshing && (friendActionStates[friend.gid] ?: friendListReady)
+                                    val canSteal = statusKnown && friend.stealNum > 0
+                                    val canHelp = statusKnown && friend.needsCareCount > 0
+                                    AppleGroupedCard(contentPadding = PaddingValues(14.dp)) {
+                                        Row(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .clickable(enabled = !busyOp && !refreshing) { inspectedFriend = friend },
+                                            verticalAlignment = Alignment.CenterVertically,
+                                        ) {
+                                            RemoteAssetImage(
+                                                url = friend.avatarUrl,
+                                                contentDescription = friend.name,
+                                                fallbackIcon = Icons.Rounded.Person,
+                                                contentScale = ContentScale.Crop,
+                                                modifier = Modifier
+                                                    .size(44.dp)
+                                                    .clip(CircleShape)
+                                                    .background(apple.track),
+                                            )
+                                            Spacer(modifier = Modifier.width(12.dp))
+                                            Column(modifier = Modifier.weight(1f)) {
+                                                Row(
+                                                    verticalAlignment = Alignment.CenterVertically,
+                                                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                                ) {
+                                                    Text(
+                                                        text = friend.name,
+                                                        style = MaterialTheme.typography.titleSmall,
+                                                        color = apple.primaryText,
+                                                        maxLines = 1,
+                                                        overflow = TextOverflow.Ellipsis,
+                                                        modifier = Modifier.weight(1f, fill = false),
+                                                    )
+                                                    if (friend.level > 0) {
+                                                        Text(
+                                                            text = "Lv.${friend.level}",
+                                                            style = MaterialTheme.typography.labelSmall,
+                                                            color = apple.secondaryText,
+                                                        )
+                                                    }
+                                                    if (isBlocked) {
+                                                        AppleStatusPill("已屏蔽", apple.red, showDot = false)
+                                                    }
+                                                }
+                                                Spacer(modifier = Modifier.height(4.dp))
+                                                FlowRow(
+                                                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                                                ) {
+                                                    if (canSteal) AppleStatusPill("可偷 ${friend.stealNum}", apple.orange, showDot = false)
+                                                    if (statusKnown && friend.dryNum > 0) AppleStatusPill("缺水 ${friend.dryNum}", apple.cyan, showDot = false)
+                                                    if (statusKnown && friend.weedNum > 0) AppleStatusPill("杂草 ${friend.weedNum}", apple.green, showDot = false)
+                                                    if (statusKnown && friend.insectNum > 0) AppleStatusPill("虫害 ${friend.insectNum}", apple.red, showDot = false)
+                                                    if (!canSteal && !canHelp) {
+                                                        Text(
+                                                            text = "GID ${friend.gid}",
+                                                            style = MaterialTheme.typography.bodySmall,
+                                                            color = apple.secondaryText,
+                                                        )
+                                                    }
+                                                }
+                                            }
+                                        }
+
+                                        Spacer(modifier = Modifier.height(10.dp))
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                        ) {
+                                            FriendActionChip("偷菜", canSteal, !busyOp && canSteal, Modifier.weight(1f)) {
+                                                operateFromList(friend, "steal")
+                                            }
+                                            FriendActionChip("帮务农", canHelp, !busyOp && canHelp, Modifier.weight(1f)) {
+                                                operateFromList(friend, "farming")
+                                            }
+                                            FriendActionChip("查看农田", false, !busyOp && !refreshing, Modifier.weight(1f)) {
+                                                inspectedFriend = friend
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    1 -> {
+                        val recordsListState = rememberLazyListState()
+                        ScrollToTopOnTabReselect(3, recordsListState)
+                        LazyColumn(
+                            state = recordsListState,
+                            modifier = Modifier.fillMaxSize(),
+                            contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 24.dp),
+                        ) {
+                            if (records.isEmpty()) {
+                                item {
+                                    AppleGroupedCard {
+                                        AppleEmptyState(
+                                            icon = Icons.Rounded.History,
+                                            title = "暂无访客记录",
+                                            subtitle = "好友来访偷菜、帮忙或捣乱的记录会显示在这里",
+                                        )
+                                    }
+                                }
+                            } else {
+                                item {
+                                    AppleGroupedCard {
+                                        records.forEachIndexed { idx, rec ->
+                                            Row(
+                                                modifier = Modifier
+                                                    .fillMaxWidth()
+                                                    .padding(horizontal = 14.dp, vertical = 12.dp),
+                                                verticalAlignment = Alignment.CenterVertically,
+                                            ) {
+                                                RemoteAssetImage(
+                                                    url = rec.friendAvatar,
+                                                    contentDescription = rec.friendName,
+                                                    fallbackIcon = Icons.Rounded.Person,
+                                                    contentScale = ContentScale.Crop,
+                                                    modifier = Modifier
+                                                        .size(40.dp)
+                                                        .clip(CircleShape)
+                                                        .background(apple.track),
+                                                )
+                                                Spacer(modifier = Modifier.width(12.dp))
+                                                Column(modifier = Modifier.weight(1f)) {
+                                                    Text(rec.friendName, style = MaterialTheme.typography.titleSmall, color = apple.primaryText)
+                                                    Text(rec.actionText, style = MaterialTheme.typography.bodySmall, color = apple.secondaryText)
+                                                }
+                                                if (rec.timeText.isNotBlank()) {
+                                                    Text(
+                                                        text = rec.timeText,
+                                                        style = MaterialTheme.typography.labelSmall.copy(fontFeatureSettings = "tnum"),
+                                                        color = apple.secondaryText,
+                                                    )
+                                                }
+                                            }
+                                            if (idx < records.lastIndex) {
+                                                AppleHairlineDivider(startIndent = 66.dp)
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    2 -> {
+                        val blacklistState = rememberLazyListState()
+                        ScrollToTopOnTabReselect(3, blacklistState)
+                        LazyColumn(
+                            state = blacklistState,
+                            modifier = Modifier.fillMaxSize(),
+                            contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 24.dp),
+                        ) {
+                            if (blacklist.isEmpty()) {
+                                item {
+                                    AppleGroupedCard {
+                                        AppleEmptyState(
+                                            icon = Icons.Rounded.Block,
+                                            title = "黑名单为空",
+                                            subtitle = "加入黑名单的好友将被自动巡查跳过",
+                                        )
+                                    }
+                                }
+                            } else {
+                                item {
+                                    AppleGroupedCard {
+                                        blacklist.forEachIndexed { idx, item ->
+                                            Row(
+                                                modifier = Modifier
+                                                    .fillMaxWidth()
+                                                    .padding(horizontal = 14.dp, vertical = 12.dp),
+                                                verticalAlignment = Alignment.CenterVertically,
+                                            ) {
+                                                RemoteAssetImage(
+                                                    url = item.avatarUrl,
+                                                    contentDescription = item.name,
+                                                    fallbackIcon = Icons.Rounded.Person,
+                                                    contentScale = ContentScale.Crop,
+                                                    modifier = Modifier
+                                                        .size(40.dp)
+                                                        .clip(CircleShape)
+                                                        .background(apple.track),
+                                                )
+                                                Spacer(modifier = Modifier.width(12.dp))
+                                                Column(modifier = Modifier.weight(1f)) {
+                                                    Text(item.name, style = MaterialTheme.typography.titleSmall, color = apple.primaryText)
+                                                    Text("GID ${item.gid}", style = MaterialTheme.typography.bodySmall, color = apple.secondaryText)
+                                                }
+                                                TextButton(
+                                                    onClick = {
+                                                        scope.launch {
+                                                            runCatching { apiClient.toggleFriendBlacklist(accountId, item.gid) }
+                                                                .onSuccess { next -> blacklist = next; onMessage("已移出黑名单") }
+                                                                .onFailure { onMessage(it.message ?: "操作失败") }
+                                                        }
+                                                    },
+                                                ) { Text("移除") }
+                                            }
+                                            if (idx < blacklist.lastIndex) {
+                                                AppleHairlineDivider(startIndent = 66.dp)
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            }
+        }
+    }
+
+    inspectedFriend?.let { friend ->
+        FriendLandsSheet(
+            friend = friend,
+            accountId = accountId,
+            isBlocked = blacklist.any { it.gid == friend.gid },
+            apiClient = apiClient,
+            rejectedHarvests = rejectedHarvests,
+            onLandsLoaded = { updateFriendActions(friend.gid, it) },
+            onBlacklistUpdated = { blacklist = it },
+            onFriendInvalidRemoved = { msg -> removeInvalidFriend(friend.gid, msg) },
+            onRefreshOverview = onRefreshOverview,
+            onDismiss = { inspectedFriend = null },
+        )
+    }
+}
+
+@Composable
+private fun FriendActionChip(
+    label: String,
+    highlighted: Boolean,
+    enabled: Boolean,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit,
+) {
+    val apple = LocalAppleColors.current
+    val accent = enabled && highlighted
+    Surface(
+        modifier = modifier
+            .clip(RoundedCornerShape(10.dp))
+            .clickable(enabled = enabled, onClick = onClick),
+        shape = RoundedCornerShape(10.dp),
+        color = if (accent) MaterialTheme.colorScheme.primary.copy(alpha = 0.14f) else apple.elevated,
+        border = BorderStroke(
+            0.5.dp,
+            if (accent) MaterialTheme.colorScheme.primary else apple.separator,
+        ),
+    ) {
+        Box(
+            modifier = Modifier.padding(vertical = 7.dp),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(
+                text = label,
+                style = MaterialTheme.typography.labelMedium,
+                color = if (accent) MaterialTheme.colorScheme.primary else if (enabled) apple.primaryText else apple.secondaryText,
+                maxLines = 1,
+            )
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun FriendLandsSheet(
+    friend: FriendItem,
+    accountId: String,
+    isBlocked: Boolean,
+    apiClient: FarmApiClient,
+    rejectedHarvests: RejectedFriendHarvests,
+    onLandsLoaded: (FriendLandsPayload?) -> Unit,
+    onBlacklistUpdated: (List<FriendBlacklistItem>) -> Unit,
+    onFriendInvalidRemoved: (String) -> Unit,
+    onRefreshOverview: () -> Unit = {},
+    onDismiss: () -> Unit,
+) {
+    val apple = LocalAppleColors.current
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val scope = rememberCoroutineScope()
+
+    val landListState = rememberLazyListState()
+    var payload by remember { mutableStateOf<FriendLandsPayload?>(null) }
+    var loading by remember { mutableStateOf(true) }
+    var busy by remember { mutableStateOf(false) }
+    var errorMsg by remember { mutableStateOf("") }
+    var actionMessage by remember { mutableStateOf("") }
+    var clockTickMs by remember { mutableLongStateOf(com.qqfarm.mobile.platform.monotonicMillis()) }
+
+    LaunchedEffect(Unit) {
+        while (true) {
+            delay(1000L)
+            clockTickMs = com.qqfarm.mobile.platform.monotonicMillis()
+        }
+    }
+
+    suspend fun loadLands(emptyAttempt: FriendLandsPayload? = null) {
+        loading = true
+        errorMsg = ""
+        try {
+            val fresh = apiClient.fetchFriendLands(accountId, friend.gid)
+            val snapshot = rejectedHarvests.checkLands(friend.gid, fresh).afterEmptySteal(emptyAttempt)
+            payload = snapshot
+            onLandsLoaded(snapshot)
+        } catch (e: ApiException) {
+            if (e.errorCode == INVALID_FRIEND_RELATION_CODE) {
+                onFriendInvalidRemoved(REMOVED_FRIEND_NOTICE)
+                return
+            }
+            payload = null
+            onLandsLoaded(null)
+            errorMsg = e.message
+        } finally {
+            loading = false
+        }
+    }
+
+    fun runAction(action: suspend () -> Unit) {
+        if (loading || busy) return
+        busy = true
+        scope.launch {
+            try {
+                action()
+            } catch (e: ApiException) {
+                actionMessage = e.message
+            } finally {
+                busy = false
+            }
+        }
+    }
+
+    fun operate(opType: String) = runAction {
+        val before = payload
+        actionMessage = when (opType) {
+            "steal" -> "正在偷取…"
+            "farming" -> "正在帮务农…"
+            else -> "正在捣乱…"
+        }
+        val result = try {
+            apiClient.operateFriend(accountId, friend.gid, opType).also {
+                actionMessage = it.message
+                if (!it.invalidRemoved) onRefreshOverview()
+            }
+        } catch (e: ApiException) {
+            actionMessage = e.message
+            null
+        }
+        if (result?.invalidRemoved == true) {
+            onFriendInvalidRemoved(result.message)
+            return@runAction
+        }
+        if (result?.fruitAlreadyPicked == true && before != null) {
+            val checked = rejectedHarvests.record(friend.gid, before)
+            payload = checked
+            onLandsLoaded(checked)
+        }
+        loadLands(before.takeIf { opType == "steal" && result?.count == 0 })
+    }
+
+    LaunchedEffect(accountId, friend.gid) { loadLands() }
+    val actionsEnabled = !loading && !busy && errorMsg.isBlank()
+
+    ModalBottomSheet(
+        onDismissRequest = { if (!busy) onDismiss() },
+        sheetState = sheetState,
+        containerColor = apple.background,
+    ) {
+        FriendDetailPanel(actionMessage) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                RemoteAssetImage(
+                    url = friend.avatarUrl,
+                    contentDescription = friend.name,
+                    fallbackIcon = Icons.Rounded.Person,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier
+                        .size(44.dp)
+                        .clip(CircleShape)
+                        .background(apple.track),
+                )
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(friend.name, style = MaterialTheme.typography.titleLarge, color = apple.primaryText, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text("GID ${friend.gid} · Lv.${friend.level}", style = MaterialTheme.typography.bodySmall, color = apple.secondaryText)
+                }
+                TextButton(
+                    onClick = {
+                        runAction {
+                            onBlacklistUpdated(apiClient.toggleFriendBlacklist(accountId, friend.gid))
+                            actionMessage = if (isBlocked) "已移出黑名单" else "已加入黑名单"
+                        }
+                    },
+                    enabled = !loading && !busy,
+                    contentPadding = PaddingValues(horizontal = 4.dp),
+                ) { Text(if (isBlocked) "解除屏蔽" else "屏蔽") }
+                IconButton(onClick = { scope.launch { actionMessage = ""; loadLands() } }, enabled = !loading && !busy) {
+                    if ((loading || busy) && payload != null) {
+                        CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+                    } else {
+                        Icon(Icons.Rounded.Refresh, contentDescription = "刷新")
+                    }
+                }
+            }
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Button(
+                    onClick = { operate("steal") },
+                    enabled = actionsEnabled && (payload?.stealableCount ?: 0) > 0,
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier.weight(1f),
+                ) { Text("一键偷菜") }
+
+                OutlinedButton(
+                    onClick = { operate("farming") },
+                    enabled = actionsEnabled && payload?.needsCare == true,
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier.weight(1f),
+                ) { Text("帮务农") }
+
+                OutlinedButton(
+                    onClick = { operate("bad") },
+                    enabled = actionsEnabled && payload?.canDisrupt == true,
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier.weight(1f),
+                ) { Text("捣乱") }
+            }
+
+            if (loading && payload == null) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    AppleLoadingState()
+                }
+            } else if (errorMsg.isNotBlank()) {
+                AppleGroupedCard(contentPadding = PaddingValues(20.dp)) {
+                    Text(errorMsg, style = MaterialTheme.typography.bodyMedium, color = apple.red)
+                }
+            } else {
+                val lands = payload?.lands.orEmpty()
+                val landColumns = LocalAppAppearance.current.landGridColumns
+                val rows = lands.chunked(landColumns)
+                LazyColumn(
+                    state = landListState,
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    items(rows, key = { row -> row.first().id }) { row ->
+                        EqualHeightRow(spacing = if (landColumns >= 4) 6.dp else 8.dp) {
+                            row.forEach { land ->
+                                AppleLandTile(
+                                    land = land,
+                                    clockTickMs = clockTickMs,
+                                    compact = landColumns >= 4,
+                                    modifier = Modifier.weight(1f),
+                                )
+                            }
+                            repeat(landColumns - row.size) {
+                                Spacer(modifier = Modifier.weight(1f))
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun FriendDetailPanel(message: String, content: @Composable ColumnScope.() -> Unit) {
+    val messages = remember { SnackbarHostState() }
+    LaunchedEffect(message) {
+        if (message.isNotBlank()) messages.showSnackbar(message, withDismissAction = true, duration = SnackbarDuration.Long)
+    }
+    Box(Modifier.fillMaxWidth().navigationBarsPadding().height(580.dp)) {
+        Column(
+            modifier = Modifier.fillMaxSize().padding(horizontal = 16.dp).padding(bottom = 20.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+            content = content,
+        )
+        SnackbarHost(hostState = messages, modifier = Modifier.align(Alignment.BottomCenter))
+    }
+}
+
+private data class PendingRanchFriendOp(
+    val action: String,
+    val input: JSONObject,
+    val quote: RanchQuote,
+)
+
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
+@Composable
+private fun RanchFriendsContent(
+    session: SessionUiState,
+    apiClient: FarmApiClient,
+    onRefreshOverview: () -> Unit = {},
+    onMessage: (String) -> Unit,
+) {
+    val apple = LocalAppleColors.current
+    val scope = rememberCoroutineScope()
+    val accountId = session.config.currentAccountId
+    val isConnected = session.status?.connected == true && accountId.isNotBlank()
+
+    var refreshing by remember(accountId, isConnected) { mutableStateOf(false) }
+    var snapshot by remember(accountId, isConnected) { mutableStateOf<RanchViewSnapshot?>(null) }
+    var loadError by remember(accountId, isConnected) { mutableStateOf("") }
+    var keyword by remember { mutableStateOf("") }
+    var selectedFriend by remember(accountId, isConnected) { mutableStateOf<RanchFriendSummary?>(null) }
+    var loadingList by remember(accountId, isConnected) { mutableStateOf(false) }
+    var reportedEntry by remember(accountId) { mutableStateOf(false) }
+
+    fun updateFriendSummaryFromDetail(gid: String, detail: RanchFriendDetail) {
+        val current = snapshot ?: return
+        val midwifeCount = detail.ranches.sumOf { pen -> pen.animals.count { it.canProduce } }
+        val updatedFriends = current.friends.map { item ->
+            if (item.gid != gid) item else item.copy(
+                canSteal = detail.canSteal,
+                stealLotCount = detail.stealableShelves,
+                canMidwife = midwifeCount > 0,
+                midwifeCount = midwifeCount,
+                canHelp = detail.cleanableHazards > 0,
+                helpCount = detail.cleanableHazards,
+            )
+        }
+        snapshot = current.copy(friends = updatedFriends)
+    }
+
+    suspend fun loadFriendsList(silent: Boolean = false) {
+        if (!isConnected || loadingList) return
+        loadingList = true
+        val keepExisting = silent && snapshot != null
+        if (!keepExisting) {
+            refreshing = true
+            loadError = ""
+        }
+        try {
+            if (!reportedEntry) {
+                reportedEntry = true
+                val input = JSONObject().put("entry", "friends")
+                try {
+                    val quote = apiClient.quoteRanchAction(accountId, "reportEntry", input)
+                    if (!quote.skipped) apiClient.executeRanchAction(accountId, "reportEntry", input, quote.signature)
+                } catch (e: ApiException) {
+                    if (!keepExisting) onMessage(e.message)
+                }
+            }
+            snapshot = apiClient.fetchRanchView(accountId, "friends")
+            loadError = ""
+        } catch (e: ApiException) {
+            if (!keepExisting) {
+                loadError = e.message
+                if (snapshot != null) onMessage(e.message)
+            }
+        } finally {
+            loadingList = false
+            if (!keepExisting) {
+                refreshing = false
+            }
+        }
+    }
+
+    LaunchedEffect(accountId, isConnected) {
+        if (isConnected) loadFriendsList()
+    }
+
+    if (!isConnected) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(apple.background),
+            contentAlignment = Alignment.Center,
+        ) {
+            AppleGroupedCard(modifier = Modifier.padding(16.dp)) {
+                AppleEmptyState(
+                    icon = Icons.Rounded.Pets,
+                    title = "账号未在线",
+                    subtitle = "请先启动当前账号后查看并拜访好友牧场",
+                )
+            }
+        }
+        return
+    }
+
+    PullToRefreshBox(
+        isRefreshing = refreshing && snapshot != null,
+        onRefresh = { scope.launch { loadFriendsList() } },
+        modifier = Modifier
+            .fillMaxSize()
+            .background(apple.background),
+    ) {
+        val current = snapshot
+        if (current == null) {
+            if (loadError.isBlank()) {
+                AppleLoadingState()
+            } else {
+                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    AppleGroupedCard(modifier = Modifier.padding(16.dp)) {
+                        AppleEmptyState(
+                            icon = Icons.Rounded.Group,
+                            title = "好友牧场读取失败",
+                            subtitle = loadError,
+                            actionLabel = "重新加载",
+                            onAction = { scope.launch { loadFriendsList() } },
+                        )
+                    }
+                }
+            }
+            return@PullToRefreshBox
+        }
+        if (!current.base.unlocked) {
+            LazyColumn(modifier = Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp)) {
+                item {
+                    AppleGroupedCard {
+                        AppleEmptyState(
+                            icon = Icons.Rounded.Pets,
+                            title = "牧场暂未解锁",
+                            subtitle = current.base.reason.ifBlank { "达到牧场解锁条件后即可拜访好友牧场" },
+                        )
+                    }
+                }
+            }
+        } else {
+            val friends = current.friends
+            val filtered = remember(friends, keyword) {
+                val kw = keyword.trim().lowercase()
+                if (kw.isEmpty()) friends else friends.filter {
+                    it.name.lowercase().contains(kw) || it.gid.lowercase().contains(kw)
+                }
+            }
+
+            val ranchFriendsListState = rememberLazyListState()
+            ScrollToTopOnTabReselect(3, ranchFriendsListState)
+
+            LazyColumn(
+                state = ranchFriendsListState,
+                modifier = Modifier.fillMaxSize(),
+                contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 24.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                searchHeader {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        AppleSearchField(
+                            value = keyword,
+                            onValueChange = { keyword = it },
+                            placeholder = "搜索牧场好友或 GID",
+                            modifier = Modifier.weight(1f),
+                        )
+                        IconButton(
+                            onClick = { scope.launch { loadFriendsList() } },
+                            enabled = !refreshing,
+                        ) {
+                            Icon(Icons.Rounded.Refresh, contentDescription = "刷新牧场好友")
+                        }
+                    }
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = "共 ${filtered.size} 位好友",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = apple.secondaryText,
+                    )
+                }
+
+                if (filtered.isEmpty() && !refreshing) {
+                    item {
+                        AppleGroupedCard {
+                            AppleEmptyState(
+                                icon = Icons.Rounded.Group,
+                                title = if (friends.isEmpty()) "暂无牧场好友" else "没有匹配的好友",
+                                subtitle = "添加游戏好友后可以互相拜访牧场、偷取货架或抚摸巨大动物",
+                            )
+                        }
+                    }
+                } else {
+                    itemsIndexed(filtered, key = { _, f -> f.gid }) { _, friend ->
+                        AppleGroupedCard(contentPadding = PaddingValues(14.dp)) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable { selectedFriend = friend },
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                RemoteAssetImage(
+                                    url = friend.avatarUrl,
+                                    contentDescription = friend.name,
+                                    fallbackIcon = Icons.Rounded.Person,
+                                    contentScale = ContentScale.Crop,
+                                    modifier = Modifier
+                                        .size(44.dp)
+                                        .clip(CircleShape)
+                                        .background(apple.track),
+                                )
+                                Spacer(modifier = Modifier.width(12.dp))
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = friend.name,
+                                        style = MaterialTheme.typography.titleSmall,
+                                        color = apple.primaryText,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                    )
+                                    Spacer(modifier = Modifier.height(2.dp))
+                                    Text(
+                                        text = if (!refreshing && loadError.isBlank() && friend.hasActionableTag) {
+                                            "GID ${friend.gid}"
+                                        } else {
+                                            "GID ${friend.gid} · 点击拜访牧场"
+                                        },
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = apple.secondaryText,
+                                    )
+                                    if (!refreshing && loadError.isBlank() && friend.hasActionableTag) {
+                                        Spacer(modifier = Modifier.height(6.dp))
+                                        FlowRow(
+                                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                            verticalArrangement = Arrangement.spacedBy(4.dp),
+                                        ) {
+                                            if (friend.canMidwife) {
+                                                AppleStatusPill(
+                                                    text = if (friend.midwifeCount > 0) "可帮生产 ${friend.midwifeCount}" else "可帮生产",
+                                                    color = apple.blue,
+                                                    showDot = false,
+                                                )
+                                            }
+                                            if (friend.canSteal) {
+                                                AppleStatusPill(
+                                                    text = if (friend.stealLotCount > 0) "可偷取 ${friend.stealLotCount}" else "可偷取",
+                                                    color = apple.green,
+                                                    showDot = false,
+                                                )
+                                            }
+                                            if (friend.canHelp) {
+                                                AppleStatusPill(
+                                                    text = if (friend.helpCount > 0) "可清理 ${friend.helpCount}" else "可清理",
+                                                    color = apple.orange,
+                                                    showDot = false,
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
+                                Icon(
+                                    imageVector = Icons.Rounded.ChevronRight,
+                                    contentDescription = null,
+                                    tint = apple.secondaryText,
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    selectedFriend?.let { friend ->
+        RanchFriendDetailSheet(
+            accountId = accountId,
+            friend = friend,
+            apiClient = apiClient,
+            onDetailLoaded = { detail -> updateFriendSummaryFromDetail(friend.gid, detail) },
+            onRefreshOverview = onRefreshOverview,
+            onDismiss = {
+                selectedFriend = null
+                scope.launch { loadFriendsList(silent = true) }
+            },
+        )
+    }
+}
+
+private fun ranchFriendTimeText(epochMs: Long): String = com.qqfarm.mobile.platform.formatEpochLocal("MM-dd HH:mm", epochMs)
+
+@Composable
+private fun RanchFriendAnimalTimes(animal: RanchAnimal, nowMs: Long) {
+    if (animal.canHarvest) return
+    val deadlines = remember(animal) {
+        buildList {
+            if (animal.deliveringUntilMs > 0L) add("产出" to animal.deliveringUntilMs)
+            if (animal.nextAtMs > 0L && animal.nextAtMs != animal.deliveringUntilMs) {
+                add((if (animal.stage == 4) "预计可收获" else "下一阶段") to animal.nextAtMs)
+            }
+        }
+    }
+    val color = LocalAppleColors.current.secondaryText
+    deadlines.forEach { (label, deadline) ->
+        val time = remember(deadline) { ranchFriendTimeText(deadline) }
+        val remaining = deadline - nowMs
+        val status = if (remaining > 0L) "余 ${formatDurationSec((remaining + 999L) / 1000L)}" else "待刷新"
+        Text("$label $time · $status", style = MaterialTheme.typography.labelSmall, color = color)
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
+@Composable
+private fun RanchFriendDetailSheet(
+    accountId: String,
+    friend: RanchFriendSummary,
+    apiClient: FarmApiClient,
+    onDetailLoaded: (RanchFriendDetail) -> Unit = {},
+    onRefreshOverview: () -> Unit = {},
+    onDismiss: () -> Unit,
+) {
+    val apple = LocalAppleColors.current
+    val scope = rememberCoroutineScope()
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+
+    var loading by remember(accountId, friend.gid) { mutableStateOf(true) }
+    var busy by remember(accountId, friend.gid) { mutableStateOf(false) }
+    val ranchListState = rememberLazyListState()
+    var snapshot by remember(accountId, friend.gid) { mutableStateOf<RanchViewSnapshot?>(null) }
+    var errorMsg by remember(accountId, friend.gid) { mutableStateOf("") }
+    var actionMessage by remember(accountId, friend.gid) { mutableStateOf("") }
+    var pendingOp by remember(accountId, friend.gid) { mutableStateOf<PendingRanchFriendOp?>(null) }
+    var showGrassSheet by remember(accountId, friend.gid) { mutableStateOf(false) }
+
+    suspend fun loadDetail() {
+        loading = true
+        errorMsg = ""
+        try {
+            val loaded = apiClient.fetchRanchView(accountId, "friends", hostGid = friend.gid)
+            val detail = loaded.friendRanch ?: throw ApiException("未返回好友牧场数据")
+            snapshot = loaded
+            onDetailLoaded(detail)
+            if (detail.feedMachine == null) showGrassSheet = false
+        } catch (e: ApiException) {
+            snapshot = null
+            showGrassSheet = false
+            errorMsg = e.message
+        } finally {
+            loading = false
+        }
+    }
+
+    fun requestQuote(action: String, input: JSONObject) {
+        if (busy || loading || pendingOp != null || snapshot?.friendRanch?.sceneRestored != true) return
+        busy = true
+        actionMessage = "正在核对好友牧场…"
+        scope.launch {
+            try {
+                val quote = apiClient.quoteRanchAction(accountId, action, input)
+                if (quote.skipped) {
+                    actionMessage = quote.message.ifBlank { "当前没有可操作项目" }
+                    loadDetail()
+                } else {
+                    actionMessage = ""
+                    pendingOp = PendingRanchFriendOp(action, input, quote)
+                }
+            } catch (e: ApiException) {
+                actionMessage = e.message
+                loadDetail()
+            } finally {
+                busy = false
+            }
+        }
+    }
+
+    fun giftGrass(input: JSONObject) {
+        if (busy || loading || pendingOp != null || snapshot?.friendRanch?.sceneRestored != true) return
+        busy = true
+        showGrassSheet = false
+        actionMessage = "正在赠送牧草…"
+        scope.launch {
+            try {
+                val result = apiClient.executeQuotedRanchAction(accountId, "addGrass", input)
+                actionMessage = result.notice.ifBlank { if (result.status == "skipped") "当前没有可操作项目" else "已赠送牧草" }
+                if (result.status == "confirmed") onRefreshOverview()
+                loadDetail()
+            } catch (e: ApiException) {
+                actionMessage = e.message
+                loadDetail()
+            } finally {
+                busy = false
+            }
+        }
+    }
+
+    fun produceForFriend() {
+        if (busy || loading || pendingOp != null || snapshot?.friendRanch?.sceneRestored != true) return
+        busy = true
+        actionMessage = "正在帮好友生产…"
+        scope.launch {
+            try {
+                actionMessage = apiClient.operateRanchDirect(
+                    accountId,
+                    "produceFriend",
+                    mapOf("hostGid" to friend.gid),
+                )
+                onRefreshOverview()
+                loadDetail()
+            } catch (e: ApiException) {
+                actionMessage = if (e.message.contains("未知牧场操作") || e.message.contains("不支持的牧场操作")) {
+                    "当前服务端暂不支持帮好友生产，请先更新服务端"
+                } else {
+                    e.message
+                }
+                loadDetail()
+            } finally {
+                busy = false
+            }
+        }
+    }
+
+    LaunchedEffect(accountId, friend.gid) {
+        loadDetail()
+    }
+
+    val current = snapshot
+    val ranch = current?.friendRanch
+    var clockTickMs by remember { mutableLongStateOf(com.qqfarm.mobile.platform.monotonicMillis()) }
+    LaunchedEffect(ranch) {
+        if (ranch != null) {
+            while (true) {
+                clockTickMs = com.qqfarm.mobile.platform.monotonicMillis()
+                delay(1000L)
+            }
+        }
+    }
+    val actionsEnabled = !busy && !loading && pendingOp == null && ranch?.sceneRestored == true
+    ModalBottomSheet(
+        onDismissRequest = { if (!busy) onDismiss() },
+        sheetState = sheetState,
+        containerColor = apple.background,
+    ) {
+        FriendDetailPanel(actionMessage) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                RemoteAssetImage(
+                    url = friend.avatarUrl,
+                    contentDescription = friend.name,
+                    fallbackIcon = Icons.Rounded.Person,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier
+                        .size(42.dp)
+                        .clip(CircleShape)
+                        .background(apple.track),
+                )
+                Column(
+                    modifier = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(2.dp),
+                ) {
+                    Text(
+                        text = friend.name,
+                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                        color = apple.primaryText,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    Text(
+                        text = "GID ${friend.gid}",
+                        style = MaterialTheme.typography.bodySmall.copy(fontFeatureSettings = "tnum"),
+                        color = apple.secondaryText,
+                        maxLines = 1,
+                    )
+                }
+                IconButton(onClick = { scope.launch { actionMessage = ""; loadDetail() } }, enabled = !loading && !busy) {
+                    if (loading && ranch != null) {
+                        CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+                    } else {
+                        Icon(Icons.Rounded.Refresh, contentDescription = "刷新")
+                    }
+                }
+            }
+            ranch?.let { d ->
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    RanchFriendMetaChip("牧场 Lv.${d.level}", spaceAccent(GameSpace.RANCH), Modifier.weight(1f))
+                    RanchFriendMetaChip("可抚摸 ${d.strokeRemaining} 次", apple.blue, Modifier.weight(1f))
+                    RanchFriendMetaChip("可放蚊子 ${d.mosquitoRemaining} 次", apple.indigo, Modifier.weight(1f))
+                }
+            }
+
+            if (loading && ranch == null) {
+                AppleLoadingState(Modifier.fillMaxWidth().weight(1f))
+            } else if (errorMsg.isNotBlank()) {
+                AppleGroupedCard(contentPadding = PaddingValues(16.dp)) {
+                    Text(errorMsg, style = MaterialTheme.typography.bodyMedium, color = apple.red)
+                }
+            } else if (current != null && ranch != null) {
+                val d = ranch
+                val nowMs = current.base.serverNowMs + (clockTickMs - current.base.fetchedAtElapsedMs).coerceAtLeast(0L)
+                val producibleCount = d.ranches.sumOf { pen -> pen.animals.count { it.canProduce } }
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    OutlinedButton(
+                        onClick = {
+                            requestQuote("cleanFriend", JSONObject().put("hostGid", friend.gid))
+                        },
+                        enabled = actionsEnabled && d.cleanableHazards > 0,
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier.weight(1f),
+                    ) {
+                        Icon(Icons.Rounded.CleaningServices, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("清理 (${d.cleanableHazards})")
+                    }
+                    Button(
+                        onClick = {
+                            requestQuote("steal", JSONObject().put("hostGid", friend.gid))
+                        },
+                        enabled = actionsEnabled && d.canSteal,
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier.weight(1f),
+                    ) {
+                        Icon(Icons.Rounded.ShoppingBag, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text(if (d.canSteal) "偷取 (${d.stealableShelves})" else "暂无可偷")
+                    }
+                }
+                if (producibleCount > 0) {
+                    OutlinedButton(
+                        onClick = { produceForFriend() },
+                        enabled = actionsEnabled,
+                        shape = RoundedCornerShape(12.dp),
+                        colors = ButtonDefaults.outlinedButtonColors(
+                            containerColor = apple.blue.copy(alpha = 0.10f),
+                            contentColor = apple.blue,
+                        ),
+                        border = BorderStroke(0.8.dp, apple.blue.copy(alpha = 0.32f)),
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Icon(Icons.Rounded.AutoAwesome, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("一键帮忙生产（${producibleCount} 只）")
+                    }
+                }
+
+                LazyColumn(
+                    state = ranchListState,
+                    modifier = Modifier.weight(1f).fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    if (d.notice.isNotBlank()) {
+                        item {
+                            Surface(shape = RoundedCornerShape(12.dp), color = apple.orange.copy(alpha = 0.14f)) {
+                                Text(d.notice, Modifier.padding(12.dp), style = MaterialTheme.typography.bodySmall, color = apple.orange)
+                            }
+                        }
+                    }
+                    d.feedMachine?.let { fm ->
+                        item(key = "feed_machine") {
+                            val fillFraction = (fm.count.toFloat() / fm.capacity).coerceAtMost(1f)
+                            AppleGroupedCard(contentPadding = PaddingValues(14.dp)) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically,
+                                ) {
+                                    Row(
+                                        modifier = Modifier.weight(1f),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                    ) {
+                                        Icon(
+                                            Icons.Rounded.Grass,
+                                            contentDescription = null,
+                                            tint = apple.emerald,
+                                            modifier = Modifier.size(18.dp),
+                                        )
+                                        Column {
+                                            Text(
+                                                text = "牧草机 ${formatNumber(fm.count.toLong())} / ${formatNumber(fm.capacity.toLong())}",
+                                                style = MaterialTheme.typography.titleSmall.copy(fontFeatureSettings = "tnum"),
+                                                color = apple.primaryText,
+                                            )
+                                            Text(
+                                                text = d.grassAvailable?.let { "可用牧草 ${formatNumber(it)}" }
+                                                    ?: "可用牧草待确认",
+                                                style = MaterialTheme.typography.labelSmall.copy(fontFeatureSettings = "tnum"),
+                                                color = apple.secondaryText,
+                                            )
+                                        }
+                                    }
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    OutlinedButton(
+                                        onClick = { showGrassSheet = true },
+                                        enabled = actionsEnabled && d.grassGiftLimit > 0,
+                                        shape = RoundedCornerShape(10.dp),
+                                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
+                                        modifier = Modifier.height(32.dp),
+                                    ) {
+                                        Text(
+                                            text = when {
+                                                fm.remainingCapacity == 0 -> "牧草已满"
+                                                d.grassAvailable == null -> "库存待确认"
+                                                d.grassGiftLimit == 0 -> "牧草不足"
+                                                else -> "赠送牧草"
+                                            },
+                                            style = MaterialTheme.typography.labelMedium,
+                                        )
+                                    }
+                                }
+                                Spacer(modifier = Modifier.height(8.dp))
+                                AppleProgressBar(
+                                    progress = { fillFraction },
+                                    modifier = Modifier.fillMaxWidth().height(5.dp),
+                                    color = apple.emerald,
+                                    trackColor = apple.track,
+                                )
+                            }
+                        }
+                    }
+                    d.career?.let { career -> item { RanchCareerStatistics(career, embedded = true) } }
+                    items(d.ranches, key = { it.id }) { pen ->
+                        AppleGroupedCard(contentPadding = PaddingValues(14.dp)) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Row(
+                                    modifier = Modifier.weight(1f),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                ) {
+                                    Text(pen.name, style = MaterialTheme.typography.titleSmall, color = apple.primaryText)
+                                    AppleStatusPill(
+                                        "蚊子 ${pen.mosquitoes}/${pen.mosquitoLimit}",
+                                        if (pen.mosquitoes > 0) apple.indigo else apple.secondaryText,
+                                        showDot = false,
+                                    )
+                                    val stealable = pen.shelves.count { it.canSteal }
+                                    if (stealable > 0) AppleStatusPill("可偷 $stealable", apple.green, showDot = false)
+                                }
+                                Spacer(modifier = Modifier.width(8.dp))
+                                OutlinedButton(
+                                    onClick = {
+                                        requestQuote(
+                                            "putMosquito",
+                                            JSONObject().put("hostGid", friend.gid).put("ranchId", pen.id),
+                                        )
+                                    },
+                                    enabled = actionsEnabled && pen.mosquitoRoom > 0 && d.mosquitoRemaining > 0,
+                                    shape = RoundedCornerShape(10.dp),
+                                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
+                                    modifier = Modifier.height(32.dp),
+                                ) {
+                                    Icon(Icons.Rounded.BugReport, contentDescription = null, modifier = Modifier.size(15.dp))
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text("放蚊子", style = MaterialTheme.typography.labelMedium, maxLines = 1)
+                                }
+                            }
+
+                            if (pen.animals.isNotEmpty()) {
+                                Spacer(modifier = Modifier.height(10.dp))
+                                pen.animals.forEachIndexed { idx, animal ->
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(vertical = 6.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                                    ) {
+                                        RemoteAssetImage(
+                                            url = animal.image,
+                                            contentDescription = animal.name,
+                                            fallbackIcon = Icons.Rounded.Pets,
+                                            modifier = Modifier.size(34.dp),
+                                        )
+                                        Column(modifier = Modifier.weight(1f)) {
+                                            Text(animal.name, style = MaterialTheme.typography.bodyMedium, color = apple.primaryText)
+                                            Text(
+                                                text = listOf(animal.stageName, animal.weightKg).filter { it.isNotBlank() }.joinToString(" · "),
+                                                style = MaterialTheme.typography.labelSmall,
+                                                color = apple.secondaryText,
+                                            )
+                                            RanchFriendAnimalTimes(animal, nowMs)
+                                        }
+                                        if (animal.canStroke && !animal.stroked && d.strokeRemaining > 0) {
+                                            Button(
+                                                onClick = {
+                                                    requestQuote(
+                                                        "stroke",
+                                                        JSONObject()
+                                                            .put("hostGid", friend.gid)
+                                                            .put("ranchId", pen.id)
+                                                            .put("animalId", animal.id),
+                                                    )
+                                                },
+                                                enabled = actionsEnabled,
+                                                shape = RoundedCornerShape(10.dp),
+                                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                                                modifier = Modifier.height(30.dp),
+                                            ) { Text("抚摸", style = MaterialTheme.typography.labelSmall) }
+                                        } else if (animal.stroked) {
+                                            AppleStatusPill("已抚摸", apple.green, showDot = false)
+                                        }
+                                    }
+                                    if (idx < pen.animals.lastIndex) AppleHairlineDivider(startIndent = 44.dp)
+                                }
+                            }
+
+                            if (pen.shelves.isNotEmpty()) {
+                                Spacer(modifier = Modifier.height(10.dp))
+                                AppleHairlineDivider(startIndent = 0.dp)
+                                Spacer(modifier = Modifier.height(8.dp))
+                                Text("货架产物", style = MaterialTheme.typography.labelMedium, color = apple.secondaryText)
+                                Spacer(modifier = Modifier.height(6.dp))
+                                pen.shelves.forEach { shelf ->
+                                    val prodSummary = shelf.products.joinToString(" · ") { "${it.name}×${formatCompactCount(it.count)}" }
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(vertical = 4.dp),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically,
+                                    ) {
+                                        Text(
+                                            text = "货架 #${shelf.slot}: ${prodSummary.ifBlank { "空" }}",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = apple.primaryText,
+                                            modifier = Modifier.weight(1f),
+                                        )
+                                        AppleStatusPill(
+                                            text = if (shelf.canSteal) "可偷取" else "不可偷",
+                                            color = if (shelf.canSteal) apple.orange else apple.secondaryText,
+                                            showDot = false,
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    pendingOp?.let { pending ->
+        RanchQuoteConfirmSheet(
+            quote = pending.quote,
+            busy = busy,
+            onDismiss = { if (!busy) pendingOp = null },
+            onConfirm = {
+                if (busy) return@RanchQuoteConfirmSheet
+                busy = true
+                scope.launch {
+                    runCatching {
+                        apiClient.executeRanchAction(
+                            accountId = accountId,
+                            action = pending.action,
+                            input = pending.input,
+                            expectedSignature = pending.quote.signature,
+                        )
+                    }.onSuccess { res ->
+                        pendingOp = null
+                        actionMessage = res.notice.ifBlank { if (res.status == "skipped") "当前没有可操作项目" else "操作成功" }
+                        loadDetail()
+                        if (res.status != "skipped") {
+                            onRefreshOverview()
+                        }
+                    }.onFailure {
+                        if (it is CancellationException) throw it
+                        pendingOp = null
+                        actionMessage = it.message ?: "好友牧场操作失败"
+                        loadDetail()
+                    }
+                    busy = false
+                }
+            },
+        )
+    }
+
+    val feedMachine = ranch?.feedMachine
+    val grassAvailable = ranch?.grassAvailable
+    if (showGrassSheet && ranch != null && feedMachine != null && grassAvailable != null && ranch.grassGiftLimit > 0) {
+        RanchFriendGrassSheet(
+            friendName = friend.name,
+            grassAvailable = grassAvailable,
+            grassRoom = feedMachine.remainingCapacity,
+            maxCount = ranch.grassGiftLimit,
+            enabled = actionsEnabled,
+            onDismiss = { showGrassSheet = false },
+            onSubmit = { count ->
+                giftGrass(
+                    JSONObject()
+                        .put("hostGid", friend.gid)
+                        .put("facilityId", feedMachine.id)
+                        .put("count", count),
+                )
+            },
+        )
+    }
+}
+
+@Composable
+private fun RanchFriendMetaChip(
+    text: String,
+    color: Color,
+    modifier: Modifier = Modifier,
+) {
+    Surface(
+        modifier = modifier,
+        shape = RoundedCornerShape(10.dp),
+        color = color.copy(alpha = 0.13f),
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 6.dp, vertical = 6.dp),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(
+                text = text,
+                style = MaterialTheme.typography.labelSmall.copy(
+                    fontSize = 11.5.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    fontFeatureSettings = "tnum",
+                ),
+                color = color,
+                maxLines = 1,
+                softWrap = false,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
+@Composable
+private fun RanchFriendGrassSheet(
+    friendName: String,
+    grassAvailable: Long,
+    grassRoom: Int,
+    maxCount: Int,
+    enabled: Boolean,
+    onDismiss: () -> Unit,
+    onSubmit: (Int) -> Unit,
+) {
+    val apple = LocalAppleColors.current
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    var requestedCount by remember(friendName, maxCount) { mutableIntStateOf(1) }
+    val count = requestedCount.coerceIn(1, maxCount.coerceAtLeast(1))
+    val quickCounts = remember(maxCount, grassRoom) {
+        buildList {
+            if (maxCount > 10) add(10 to "10 份")
+            if (maxCount > 100) add(100 to "100 份")
+            val label = if (maxCount == grassRoom) "放满" else "最大"
+            add(maxCount to "$label ($maxCount)")
+        }
+    }
+
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = sheetState,
+        containerColor = apple.card,
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .navigationBarsPadding()
+                .heightIn(max = 560.dp)
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 20.dp, vertical = 8.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp),
+        ) {
+            Text(
+                text = "向 $friendName 赠送牧草",
+                style = MaterialTheme.typography.titleLarge,
+                color = apple.primaryText,
+            )
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                RemoteAssetImage(
+                    url = "/game-config/seed_images_named/seed_images/7001.png",
+                    contentDescription = "牧草",
+                    fallbackIcon = Icons.Rounded.Grass,
+                    modifier = Modifier
+                        .size(44.dp)
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(apple.elevated)
+                        .padding(4.dp),
+                )
+                Column(modifier = Modifier.weight(1f)) {
+                    Text("牧草", style = MaterialTheme.typography.titleSmall, color = apple.primaryText)
+                    Text(
+                        text = "可用牧草 ${formatNumber(grassAvailable)} · 还可放入 ${formatNumber(grassRoom.toLong())}",
+                        style = MaterialTheme.typography.bodySmall.copy(fontFeatureSettings = "tnum"),
+                        color = apple.secondaryText,
+                    )
+                }
+            }
+
+            if (quickCounts.isNotEmpty()) {
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    quickCounts.forEach { (preset, label) ->
+                        AppleFilterChip(
+                            selected = count == preset,
+                            onClick = { requestedCount = preset },
+                            label = { Text(label) },
+                        )
+                    }
+                }
+            }
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text("选择数量", style = MaterialTheme.typography.titleSmall, color = apple.primaryText)
+                AppleQuantityStepper(
+                    value = count,
+                    min = 1,
+                    max = maxCount,
+                    onChange = { requestedCount = it },
+                    enabled = enabled,
+                )
+            }
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                OutlinedButton(
+                    onClick = onDismiss,
+                    shape = RoundedCornerShape(14.dp),
+                    modifier = Modifier.weight(1f),
+                ) { Text("取消") }
+                Button(
+                    onClick = { onSubmit(count) },
+                    enabled = enabled && count > 0,
+                    shape = RoundedCornerShape(14.dp),
+                    modifier = Modifier.weight(1f),
+                ) { Text("赠送牧草") }
+            }
+            Spacer(modifier = Modifier.height(12.dp))
+        }
+    }
+}
