@@ -32,6 +32,7 @@ import androidx.compose.material.icons.rounded.Pets
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Schedule
 import androidx.compose.material.icons.rounded.Stars
+import androidx.compose.material.icons.rounded.Storefront
 import androidx.compose.material.icons.rounded.WaterDrop
 import androidx.compose.material.icons.rounded.WineBar
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -82,6 +83,7 @@ import java.util.Locale
 import java.util.TimeZone
 
 private val SUPPORTED_ACTIVITY_KEYS = setOf(
+    "maplemarket",
     "muge",
     "milk",
     "happy",
@@ -558,6 +560,7 @@ internal fun resolveGameplayKey(item: ActivityDirectoryItem): String? {
         val norm = raw.trim().lowercase(Locale.ROOT)
         when {
             norm in SUPPORTED_ACTIVITY_KEYS -> return norm
+            norm == "maple-market" || norm == "maple_market" -> return "maplemarket"
             norm == "pet" || norm == "pet-diary" -> return "pet"
             norm == "share-reward" -> return "happy"
             norm == "autumn-wish" -> return "wish"
@@ -570,6 +573,7 @@ internal fun resolveGameplayKey(item: ActivityDirectoryItem): String? {
     for (rawId in ids) {
         val id = rawId.trim()
         when (id) {
+            "2026111707", "2026111708", "2026111709" -> return "maplemarket"
             "2026111700", "2026111701", "2026111702", "2026111703", "2026111704", "2026111705", "2026111706" -> return "muge"
             "2026110100", "2026110101", "2026110102", "2026110103" -> return "milk"
             "2026092500", "2026092501", "2026110104" -> return "happy"
@@ -585,6 +589,7 @@ internal fun resolveGameplayKey(item: ActivityDirectoryItem): String? {
 
     val title = item.name
     return when {
+        "以薯换福" in title || "枫糖集市" in title || "红薯小铺" in title -> "maplemarket"
         "牧歌" in title -> "muge"
         "奶茶" in title -> "milk"
         "快乐" in title || "独享" in title -> "happy"
@@ -605,6 +610,7 @@ private fun resolveActivityIconUrl(item: ActivityDirectoryItem, key: String?): S
         return "/activity-assets/friend-recall/icon.png"
     }
     return when (key) {
+        "maplemarket" -> "/activity-assets/maple-market/icon.png"
         "muge" -> "/activity-assets/muge/icon.png"
         "milk" -> "/activity-assets/milk-tea/logo.png"
         "wish" -> "/activity-assets/autumn/wish.png"
@@ -623,6 +629,7 @@ private fun resolveActivityFallbackIcon(item: ActivityDirectoryItem, key: String
         return Icons.Rounded.People
     }
     return when (key) {
+        "maplemarket" -> Icons.Rounded.Storefront
         "muge" -> Icons.Rounded.Pets
         "milk" -> Icons.Rounded.LocalCafe
         "wish" -> Icons.Rounded.AutoAwesome
