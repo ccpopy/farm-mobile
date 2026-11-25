@@ -81,6 +81,10 @@ kotlin {
 }
 
 android {
+    lint {
+        // AGP 8.7.3 的 lint 内置 Kotlin 编译器(2.0) 与 stdlib 2.2 元数据不兼容，打包无需 lint
+        checkReleaseBuilds = false
+    }
     namespace = "com.qqfarm.mobile"
     compileSdk = 35
 
