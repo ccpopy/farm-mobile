@@ -27,6 +27,9 @@ targets:
         CFBundleShortVersionString: "0.1.5"
         CFBundleVersion: "15"
         UILaunchScreen: {}
+        NSLocalNetworkUsageDescription: 用于连接局域网内的 qq-farm-bot 自托管服务端。
+        NSAppTransportSecurity:
+          NSAllowsArbitraryLoads: true
         NSHighResolutionCapable: true
         UIApplicationSupportsIndirectInputEvents: true
         CADisableMinimumFrameDurationOnPhone: true
