@@ -2,7 +2,6 @@ package com.qqfarm.mobile.data.network
 
 import kotlin.concurrent.Volatile
 import com.qqfarm.mobile.data.model.AccountItem
-import com.qqfarm.mobile.data.model.AccountLogEvent
 import com.qqfarm.mobile.data.model.AccountSettingsModel
 import com.qqfarm.mobile.data.model.ActivityDirectoryResponse
 import com.qqfarm.mobile.data.model.AutumnWishState
@@ -26,7 +25,15 @@ import com.qqfarm.mobile.data.model.LoginResponse
 import com.qqfarm.mobile.data.model.MallCatalog
 import com.qqfarm.mobile.data.model.MallGoods
 import com.qqfarm.mobile.data.model.MallPurchaseResult
+import com.qqfarm.mobile.data.model.MapleMarketClaimCommissionResult
+import com.qqfarm.mobile.data.model.MapleMarketClaimSeedResult
+import com.qqfarm.mobile.data.model.MapleMarketComparison
+import com.qqfarm.mobile.data.model.MapleMarketExchangeResult
+import com.qqfarm.mobile.data.model.MapleMarketPurchaseRecord
+import com.qqfarm.mobile.data.model.MapleMarketSellResult
+import com.qqfarm.mobile.data.model.MapleMarketState
 import com.qqfarm.mobile.data.model.MilkTeaState
+import com.qqfarm.mobile.data.model.MobileOfflineEvent
 import com.qqfarm.mobile.data.model.MugeState
 import com.qqfarm.mobile.data.model.MutationCatalogSnapshot
 import com.qqfarm.mobile.data.model.MysteryPurchaseResult
@@ -34,16 +41,22 @@ import com.qqfarm.mobile.data.model.MysteryShopState
 import com.qqfarm.mobile.data.model.OfflineReminderConfig
 import com.qqfarm.mobile.data.model.PetSnapshot
 import com.qqfarm.mobile.data.model.PushChannelEntry
+import com.qqfarm.mobile.data.model.PluginAccountDetail
+import com.qqfarm.mobile.data.model.PluginDefinition
+import com.qqfarm.mobile.data.model.PluginListPayload
+import com.qqfarm.mobile.data.model.PluginLogEntry
+import com.qqfarm.mobile.data.model.PluginQuietWindow
+import com.qqfarm.mobile.data.model.PluginSaveResult
+import com.qqfarm.mobile.data.model.PluginSpendingPolicy
+import com.qqfarm.mobile.data.model.PluginSummary
+import com.qqfarm.mobile.data.model.SeedOption
 import com.qqfarm.mobile.data.model.QingMeiState
 import com.qqfarm.mobile.data.model.QixiState
 import com.qqfarm.mobile.data.model.QqQrTask
-import com.qqfarm.mobile.data.model.RanchAnimalOption
 import com.qqfarm.mobile.data.model.RanchOperateResult
 import com.qqfarm.mobile.data.model.RanchQuote
 import com.qqfarm.mobile.data.model.RanchViewSnapshot
 import com.qqfarm.mobile.data.model.RunLogEntry
-import com.qqfarm.mobile.data.model.SchedulerSummary
-import com.qqfarm.mobile.data.model.SeedOption
 import com.qqfarm.mobile.data.model.ServerVersionInfo
 import com.qqfarm.mobile.data.model.ShareRewardState
 import com.qqfarm.mobile.data.model.SolarActionResult
@@ -163,6 +176,7 @@ class FarmApiClient {
         overrideToken: String? = null,
         tier: TimeoutTier = TimeoutTier.NORMAL,
         requestSession: Session = session,
+        acceptUnconfirmedSave: Boolean = false,
     ): JSONObject {
         val targetBase = if (overrideBaseUrl == null) {
             requestSession.baseUrl
@@ -230,7 +244,9 @@ class FarmApiClient {
                 onUnauthorized?.invoke(targetBase, token)
             }
 
-            if (!response.status.isSuccess() || (json.has("ok") && !json.optBoolFlex("ok", true))) {
+            val savedPendingConfirmation = acceptUnconfirmedSave && response.status.value == 202 &&
+                json.optBoolean("saved") && json.optBoolean("unconfirmed")
+            if (!response.status.isSuccess() || (!savedPendingConfirmation && json.has("ok") && !json.optBoolFlex("ok", true))) {
                 val errMsg = normalizeMessage(
                     json.optStringClean("errorMessage")
                         .ifBlank { json.optStringClean("error") }
@@ -321,6 +337,21 @@ class FarmApiClient {
         )
         val data = json.optJSONObject("data") ?: JSONObject()
         return data.optStringClean("username")
+    }
+
+    suspend fun fetchApiToken(overrideBaseUrl: String? = null, tokenOverride: String? = null): String {
+        val json = executeJson(
+            method = "GET",
+            path = "/api/user/api-token",
+            overrideBaseUrl = overrideBaseUrl,
+            overrideToken = tokenOverride,
+        )
+        return json.optJSONObject("data")?.optStringClean("token").orEmpty()
+    }
+
+    suspend fun resetApiToken(): String {
+        val json = executeJson("POST", "/api/user/api-token/reset")
+        return json.optJSONObject("data")?.optStringClean("token").orEmpty()
     }
 
     suspend fun logout() {
@@ -678,16 +709,16 @@ class FarmApiClient {
         return JsonParsers.parseBlacklist(json.optJSONArray("data"))
     }
 
-    // ---- Automation, Strategy & Account Logs ----
+    // ---- Plugins ----
 
-    suspend fun fetchSchedulerStatus(accountId: String): SchedulerSummary {
-        val json = executeJson("GET", "/api/scheduler", accountIdOverride = accountId)
-        return JsonParsers.parseSchedulerSummary(json.optJSONObject("data") ?: JSONObject())
+    suspend fun fetchPlugins(): PluginListPayload {
+        val json = executeJson("GET", "/api/plugins")
+        return JsonParsers.parsePluginList(json.optJSONObject("data") ?: JSONObject())
     }
 
-    suspend fun fetchRanchAutomationOptions(): List<RanchAnimalOption> {
-        val json = executeJson("GET", "/api/ranch/automation-options")
-        return JsonParsers.parseRanchAutomationOptions(json.optJSONArray("data"))
+    suspend fun fetchPluginDefinition(pluginId: String): PluginDefinition {
+        val json = executeJson("GET", "/api/plugins/${encodeQuery(pluginId)}")
+        return JsonParsers.parsePluginDefinition(json.optJSONObject("data") ?: JSONObject())
     }
 
     suspend fun fetchBagSeeds(accountId: String): List<BagPriorityItem> {
@@ -707,15 +738,239 @@ class FarmApiClient {
 
     suspend fun fetchSeedCatalog(accountId: String): List<SeedOption> {
         val json = executeJson("GET", "/api/seeds", accountIdOverride = accountId)
-        return JsonParsers.parseSeedCatalog(json.optJSONArray("data"))
+        val arr = json.optJSONArray("data") ?: json.optJSONObject("data")?.optJSONArray("seeds")
+        return JsonParsers.parseSeedCatalog(arr)
     }
+
+    suspend fun setPluginEnabled(pluginId: String, enabled: Boolean): PluginSummary {
+        val json = executeJson(
+            "POST",
+            "/api/plugins/${encodeQuery(pluginId)}/enabled",
+            body = JSONObject().put("enabled", enabled),
+        )
+        val data = json.optJSONObject("data")
+        if (data == null || data.opt("enabled") !is Boolean || data.optStringClean("id") != pluginId) {
+            throw ApiException("服务器未确认插件状态，请刷新核对")
+        }
+        return JsonParsers.parsePluginSummary(data)
+    }
+
+    suspend fun fetchPluginAccountDetail(
+        pluginId: String,
+        accountId: String,
+        isBuiltin: Boolean,
+    ): PluginAccountDetail {
+        val viewJson = executeJson(
+            "GET",
+            "/api/plugins/${encodeQuery(pluginId)}/accounts/${encodeQuery(accountId)}",
+        )
+        val base = JsonParsers.parsePluginAccountDetail(viewJson.optJSONObject("data") ?: JSONObject(), isBuiltin)
+        val logs = if (isBuiltin) {
+            emptyList()
+        } else {
+            try {
+                fetchPluginLogs(pluginId, accountId)
+            } catch (_: ApiException) {
+                emptyList()
+            }
+        }
+        return base.copy(logs = logs)
+    }
+
+    /** 只读当前账号下官方模块是否暂停，用于列表外层开关；不拉日志，不触发游戏操作。 */
+    suspend fun fetchBuiltinPluginPaused(pluginId: String, accountId: String): Boolean {
+        val json = executeJson(
+            "GET",
+            "/api/plugins/${encodeQuery(pluginId)}/accounts/${encodeQuery(accountId)}",
+        )
+        return JsonParsers.parseBuiltinPluginPaused(json.optJSONObject("data"))
+    }
+
+    suspend fun setBuiltinPluginPaused(pluginId: String, accountId: String, paused: Boolean): Boolean {
+        val json = executeJson(
+            "POST",
+            "/api/plugins/${encodeQuery(pluginId)}/accounts/${encodeQuery(accountId)}/pause",
+            body = JSONObject().put("paused", paused),
+        )
+        return json.optJSONObject("data")?.opt("paused") as? Boolean
+            ?: throw ApiException("服务器未确认模块状态，请刷新核对")
+    }
+
+    suspend fun runPluginJob(pluginId: String, jobId: String, accountId: String?) {
+        val body = JSONObject()
+        if (!accountId.isNullOrBlank()) body.put("accountId", accountId)
+        executeJson(
+            "POST",
+            "/api/plugins/${encodeQuery(pluginId)}/jobs/${encodeQuery(jobId)}/run",
+            body = body,
+        )
+    }
+
+    suspend fun fetchPluginLogs(pluginId: String, accountId: String?): List<PluginLogEntry> {
+        val query = if (!accountId.isNullOrBlank()) "?accountId=${encodeQuery(accountId)}" else ""
+        val json = executeJson("GET", "/api/plugins/${encodeQuery(pluginId)}/logs$query")
+        return JsonParsers.parsePluginLogs(json.optJSONArray("data"))
+    }
+
+    suspend fun resolvePluginOperation(
+        pluginId: String,
+        operationId: String,
+        resolution: String,
+        isNative: Boolean,
+        accountId: String,
+    ) {
+        val path = if (isNative) {
+            "/api/plugins/accounts/${encodeQuery(accountId)}/native-operations/${encodeQuery(operationId)}/resolve"
+        } else {
+            "/api/plugins/${encodeQuery(pluginId)}/operations/${encodeQuery(operationId)}/resolve"
+        }
+        executeJson("POST", path, body = JSONObject().put("resolution", resolution))
+    }
+
+    suspend fun saveBuiltinPluginSettings(
+        pluginId: String,
+        accountId: String,
+        model: AccountSettingsModel,
+        baseline: AccountSettingsModel,
+        settingsRevision: String,
+    ): PluginSaveResult {
+        val settings = JSONObject()
+        val automation = JSONObject()
+        val intervals = JSONObject()
+        fun JSONObject.changed(key: String, before: Any?, after: Any?) {
+            if (before != after) put(key, if (after is List<*>) JSONArray(after) else after)
+        }
+
+        // 服务端合并局部设置。只提交用户编辑的字段，避免重写未展示的策略和旧配置。
+        for ((key, enabled) in model.automationBooleans) {
+            automation.changed(key, baseline.automationBooleans[key], enabled)
+        }
+        when (pluginId) {
+            "official.daily-farm" -> {
+                intervals.changed("farmMin", baseline.farmMinSec, model.farmMinSec)
+                intervals.changed("farmMax", baseline.farmMaxSec, model.farmMaxSec)
+                settings.changed("plantingStrategy", baseline.plantingStrategy, model.plantingStrategy)
+                settings.changed("preferredSeedId", baseline.preferredSeedId, model.preferredSeedId)
+                settings.changed("bagSeedMultiLandReservationEnabled", baseline.bagSeedMultiLandReservationEnabled, model.bagSeedMultiLandReservationEnabled)
+                settings.changed("bagSeedPriority", baseline.bagSeedPriority, model.bagSeedPriority)
+                settings.changed("bagSeedFallbackStrategy", baseline.bagSeedFallbackStrategy, model.bagSeedFallbackStrategy)
+                settings.changed("plantOrderRandom", baseline.plantOrderRandom, model.plantOrderRandom)
+                settings.changed("plantDelaySeconds", baseline.plantDelaySeconds, model.plantDelaySeconds)
+                settings.changed("emailClaimHour", baseline.emailClaimHour, model.emailClaimHour)
+            }
+            "official.daily-ranch" -> {
+                automation.changed("ranch_strategy", baseline.ranchStrategy, model.ranchStrategy)
+                automation.changed("ranch_bag_fallback", baseline.ranchBagFallback, model.ranchBagFallback)
+                automation.changed("ranch_coop_cub_priority", baseline.ranchCoopCubPriority, model.ranchCoopCubPriority)
+                automation.changed("ranch_shed_cub_priority", baseline.ranchShedCubPriority, model.ranchShedCubPriority)
+                automation.changed("ranch_coop_animal", baseline.ranchCoopAnimal, model.ranchCoopAnimal)
+                automation.changed("ranch_shed_animal", baseline.ranchShedAnimal, model.ranchShedAnimal)
+                automation.changed("ranch_grass_threshold_percent", baseline.ranchGrassThresholdPercent, model.ranchGrassThresholdPercent)
+                automation.changed("ranch_check_minutes", baseline.ranchCheckMinutes, model.ranchCheckMinutes)
+                automation.changed("ranch_feed_normal_stage", baseline.ranchFeedNormalStage, model.ranchFeedNormalStage)
+                automation.changed("ranch_feed_organic_stage", baseline.ranchFeedOrganicStage, model.ranchFeedOrganicStage)
+            }
+            "official.fertilizer" -> {
+                automation.changed("fertilizer", baseline.fertilizerMode, model.fertilizerMode)
+                automation.changed("fertilizer_smart_seconds", baseline.fertilizerSmartSeconds, model.fertilizerSmartSeconds)
+                automation.changed("fertilizer_land_types", baseline.fertilizerLandTypes, model.fertilizerLandTypes)
+                settings.changed("fertilizerBuyOrganicCount", baseline.fertilizerBuyOrganicCount, model.fertilizerBuyOrganicCount)
+                settings.changed("fertilizerBuyOrganicThresholdHours", baseline.fertilizerBuyOrganicThresholdHours, model.fertilizerBuyOrganicThresholdHours)
+                settings.changed("fertilizerBuyNormalCount", baseline.fertilizerBuyNormalCount, model.fertilizerBuyNormalCount)
+                settings.changed("fertilizerBuyNormalThresholdHours", baseline.fertilizerBuyNormalThresholdHours, model.fertilizerBuyNormalThresholdHours)
+                settings.changed("fertilizerBuyCheckIntervalMinutes", baseline.fertilizerBuyCheckIntervalMinutes, model.fertilizerBuyCheckIntervalMinutes)
+            }
+            "official.friends" -> {
+                intervals.changed("friendMin", baseline.friendMinSec, model.friendMinSec)
+                intervals.changed("friendMax", baseline.friendMaxSec, model.friendMaxSec)
+                settings.changed("stealDelaySeconds", baseline.stealDelaySeconds, model.stealDelaySeconds)
+                settings.changed("autoAcceptFriendMinLevel", baseline.autoAcceptFriendMinLevel, model.autoAcceptFriendMinLevel)
+                settings.changed("autoAcceptRequireOwnLevel", baseline.autoAcceptRequireOwnLevel, model.autoAcceptRequireOwnLevel)
+                settings.changed("autoAcceptHarvestStealEnabled", baseline.autoAcceptHarvestStealEnabled, model.autoAcceptHarvestStealEnabled)
+                settings.changed("autoAcceptHarvestStealHarvest", baseline.autoAcceptHarvestStealHarvest, model.autoAcceptHarvestStealHarvest)
+                settings.changed("autoAcceptHarvestStealSteal", baseline.autoAcceptHarvestStealSteal, model.autoAcceptHarvestStealSteal)
+                if (baseline.quietHoursEnabled != model.quietHoursEnabled || baseline.quietHoursStart != model.quietHoursStart ||
+                    baseline.quietHoursEnd != model.quietHoursEnd || baseline.quietContinueFarm != model.quietContinueFarm) {
+                    settings.put("friendQuietHours", JSONObject()
+                        .put("enabled", model.quietHoursEnabled).put("start", model.quietHoursStart)
+                        .put("end", model.quietHoursEnd).put("continueFarm", model.quietContinueFarm))
+                }
+            }
+        }
+        if (intervals.length() > 0) settings.put("intervals", intervals)
+        if (automation.length() > 0) settings.put("automation", automation)
+        val res = executeJson(
+            "PUT", "/api/plugins/${encodeQuery(pluginId)}/accounts/${encodeQuery(accountId)}",
+            body = JSONObject().put("settings", settings).put("settingsRevision", settingsRevision),
+            acceptUnconfirmedSave = true,
+        )
+        val view = res.optJSONObject("data")
+        if (!res.optBoolean("saved") || view == null) throw ApiException("服务器未确认保存，请重新加载核对")
+        return PluginSaveResult(
+            detail = JsonParsers.parsePluginAccountDetail(view, isBuiltin = true),
+            unconfirmed = res.optBoolean("unconfirmed"),
+            message = res.optStringClean("error"),
+        )
+    }
+
+    suspend fun saveExtensionPluginBinding(
+        pluginId: String,
+        accountId: String,
+        revision: Int,
+        enabled: Boolean,
+        settingsJson: String,
+        quietWindows: List<PluginQuietWindow>,
+        spending: PluginSpendingPolicy,
+        accountQuietWindows: List<PluginQuietWindow>?,
+    ): PluginAccountDetail {
+        fun windowsToJson(list: List<PluginQuietWindow>): JSONArray = JSONArray().apply {
+            list.forEach { w ->
+                put(JSONObject().put("start", w.start.trim()).put("end", w.end.trim()))
+            }
+        }
+        val spendingObj = JSONObject()
+            .put("autoSpend", spending.autoSpend)
+            .put("rules", JSONArray().apply {
+                spending.rules.forEach { r ->
+                    put(
+                        JSONObject()
+                            .put("resourceKey", r.resourceKey.trim())
+                            .put("perOperationMax", r.perOperationMax.ifBlank { "-1" })
+                            .put("dailyMax", r.dailyMax.ifBlank { "-1" })
+                            .put("minReserve", r.minReserve.ifBlank { "0" })
+                    )
+                }
+            })
+        val payload = JSONObject()
+            .put("revision", revision)
+            .put("enabled", enabled)
+            .put("settings", JSONObject(settingsJson))
+            .put("quietWindows", windowsToJson(quietWindows))
+            .put("spending", spendingObj)
+        if (accountQuietWindows != null) payload.put("accountQuietWindows", windowsToJson(accountQuietWindows))
+
+        val res = executeJson(
+            "PUT",
+            "/api/plugins/${encodeQuery(pluginId)}/accounts/${encodeQuery(accountId)}",
+            body = payload,
+        )
+        val parsed = JsonParsers.parsePluginAccountDetail(res.optJSONObject("data") ?: JSONObject(), isBuiltin = false)
+        val logs = try {
+            fetchPluginLogs(pluginId, accountId)
+        } catch (_: ApiException) {
+            emptyList()
+        }
+        return parsed.copy(logs = logs)
+    }
+
+    // ---- Account Settings ----
 
     suspend fun fetchAccountSettings(accountId: String): AccountSettingsModel {
         val json = executeJson("GET", "/api/settings", accountIdOverride = accountId)
         return JsonParsers.parseAccountSettings(json.optJSONObject("data") ?: JSONObject())
     }
 
-    suspend fun saveAccountSettings(accountId: String, model: AccountSettingsModel, baseline: AccountSettingsModel): Pair<Boolean, String> {
+    suspend fun saveAccountSettings(accountId: String, model: AccountSettingsModel): Pair<Boolean, String> {
         val farmMin = model.farmMinSec.coerceAtLeast(1)
         val farmMax = model.farmMaxSec.coerceAtLeast(farmMin)
         val friendMin = model.friendMinSec.coerceAtLeast(1)
@@ -730,29 +985,9 @@ class FarmApiClient {
 
         val automation = runCatching { JSONObject(model.rawAutomationJson) }.getOrDefault(JSONObject())
         automation.put("fertilizer", model.fertilizerMode)
-        automation.put("fertilizer_smart_seconds", model.fertilizerSmartSeconds.coerceIn(30, 3600))
-        automation.put("fertilizer_land_types", JSONArray().apply {
-            model.fertilizerLandTypes.forEach { put(it) }
-        })
-        automation.put("ranch_strategy", model.ranchStrategy)
-        automation.put("ranch_bag_fallback", model.ranchBagFallback)
-        fun putPriorityChange(key: String, before: List<Int>, after: List<Int>) {
-            if (before == after) automation.remove(key) else automation.put(key, JSONArray(after))
-        }
-        putPriorityChange("ranch_coop_cub_priority", baseline.ranchCoopCubPriority, model.ranchCoopCubPriority)
-        putPriorityChange("ranch_shed_cub_priority", baseline.ranchShedCubPriority, model.ranchShedCubPriority)
-        automation.put("ranch_coop_animal", model.ranchCoopAnimal)
-        automation.put("ranch_shed_animal", model.ranchShedAnimal)
-        automation.put("ranch_grass_threshold_percent", model.ranchGrassThresholdPercent.coerceIn(1, 100))
-        automation.put("ranch_check_minutes", model.ranchCheckMinutes.coerceIn(1, 60))
         for ((k, v) in model.automationBooleans) {
             automation.put(k, v)
         }
-        fun putCanStageChange(key: String, before: String?, after: String?) {
-            if (after == null || before == after) automation.remove(key) else automation.put(key, after)
-        }
-        putCanStageChange("ranch_feed_normal_stage", baseline.ranchFeedNormalStage, model.ranchFeedNormalStage)
-        putCanStageChange("ranch_feed_organic_stage", baseline.ranchFeedOrganicStage, model.ranchFeedOrganicStage)
 
         val quiet = JSONObject()
             .put("enabled", model.quietHoursEnabled)
@@ -765,22 +1000,7 @@ class FarmApiClient {
             .put("preferredSeedId", model.preferredSeedId)
             .put("intervals", intervals)
             .put("friendQuietHours", quiet)
-            .put("stealDelaySeconds", model.stealDelaySeconds.coerceIn(0, 300))
-            .put("plantOrderRandom", model.plantOrderRandom)
-            .put("plantDelaySeconds", model.plantDelaySeconds.coerceIn(0, 60))
-            .put("fertilizerBuyOrganicCount", model.fertilizerBuyOrganicCount.coerceIn(0, 10000))
-            .put("fertilizerBuyOrganicThresholdHours", model.fertilizerBuyOrganicThresholdHours.coerceIn(0, 990))
-            .put("fertilizerBuyNormalCount", model.fertilizerBuyNormalCount.coerceIn(0, 10000))
-            .put("fertilizerBuyNormalThresholdHours", model.fertilizerBuyNormalThresholdHours.coerceIn(0, 990))
-            .put("fertilizerBuyCheckIntervalMinutes", model.fertilizerBuyCheckIntervalMinutes.coerceIn(1, 1440))
-            .put("autoAcceptFriendMinLevel", model.autoAcceptFriendMinLevel.coerceIn(0, 200))
-            .put("autoAcceptRequireOwnLevel", model.autoAcceptRequireOwnLevel)
-            .put("autoAcceptHarvestStealEnabled", model.autoAcceptHarvestStealEnabled)
-            .put("autoAcceptHarvestStealHarvest", model.autoAcceptHarvestStealHarvest.coerceIn(0, 9999))
-            .put("autoAcceptHarvestStealSteal", model.autoAcceptHarvestStealSteal.coerceIn(1, 9999))
             .put("automation", automation)
-        if (model.bagSeedPriority != baseline.bagSeedPriority) payload.put("bagSeedPriority", JSONArray(model.bagSeedPriority))
-        model.emailClaimHour?.let { payload.put("emailClaimHour", it.coerceIn(0, 23)) }
 
         try {
             executeJson("POST", "/api/settings/save", body = payload, accountIdOverride = accountId)
@@ -788,13 +1008,24 @@ class FarmApiClient {
             if (e.httpCode == 202) return false to e.message
             throw e
         }
-        return true to "自动化设置已保存"
+        return true to "账号设置已保存"
     }
 
-    suspend fun fetchAccountLogs(limit: Int = 50): List<AccountLogEvent> {
-        val json = executeJson("GET", "/api/account-logs?limit=$limit")
-        val arr = json.optJSONArray("_array") ?: json.optJSONArray("data")
-        return JsonParsers.parseAccountLogs(arr)
+    // ---- Mobile Offline Events ----
+
+    suspend fun pollOfflineEvents(
+        afterCursor: String,
+        accountIds: List<String>,
+        waitSeconds: Int = 25,
+    ): Triple<String, Boolean, List<MobileOfflineEvent>> {
+        val accountsParam = encodeQuery(accountIds.joinToString(","))
+        val afterParam = encodeQuery(afterCursor)
+        val json = executeJson(
+            method = "GET",
+            path = "/api/mobile/offline-events?after=$afterParam&accounts=$accountsParam&wait=$waitSeconds",
+            tier = TimeoutTier.LONG_POLL,
+        )
+        return JsonParsers.parseOfflineEvents(json.optJSONObject("data") ?: JSONObject())
     }
 
     // ---- Solar Calendar ----
@@ -993,6 +1224,17 @@ class FarmApiClient {
         return executeRanchAction(accountId, action, input, quote.signature, requestSession)
     }
 
+    suspend fun clearRanchIllustratedNew(accountId: String): String {
+        val json = executeJson(
+            "POST",
+            "/api/ranch/illustrated/clear-new",
+            body = JSONObject(),
+            accountIdOverride = accountId,
+            tier = TimeoutTier.RANCH,
+        )
+        return json.optJSONObject("data")?.optStringClean("notice", "已全部标记为已读") ?: "已全部标记为已读"
+    }
+
     // ---- Activity Center ----
 
     suspend fun fetchActivityDirectory(accountId: String, isRanch: Boolean): ActivityDirectoryResponse {
@@ -1008,6 +1250,130 @@ class FarmApiClient {
     suspend fun fetchMuge(accountId: String): MugeState {
         val json = executeJson("GET", "/api/activities/muge", accountIdOverride = accountId)
         return FeatureJsonParsers.parseMugeState(json.optJSONObject("data") ?: JSONObject())
+    }
+
+    suspend fun fetchMapleMarket(accountId: String): MapleMarketState {
+        val json = executeJson("GET", "/api/activities/maple-market", accountIdOverride = accountId)
+        return FeatureJsonParsers.parseMapleMarketState(json.optJSONObject("data") ?: JSONObject())
+    }
+
+    suspend fun fetchMapleMarketPurchaseLog(accountId: String): List<MapleMarketPurchaseRecord> {
+        val json = executeJson("GET", "/api/activities/maple-market/purchase-log", accountIdOverride = accountId)
+        return FeatureJsonParsers.parseMapleMarketPurchaseRecords(json.optJSONObject("data")?.optJSONArray("records"))
+    }
+
+    suspend fun fetchMapleMarketComparison(accountId: String): MapleMarketComparison {
+        val json = executeJson("GET", "/api/activities/maple-market/friend-quotes", accountIdOverride = accountId)
+        return FeatureJsonParsers.parseMapleMarketComparison(json.optJSONObject("data") ?: JSONObject())
+    }
+
+    suspend fun startMapleMarketComparison(accountId: String): MapleMarketComparison {
+        val json = executeJson(
+            "POST",
+            "/api/activities/maple-market/friend-quotes",
+            body = JSONObject(),
+            accountIdOverride = accountId,
+        )
+        return FeatureJsonParsers.parseMapleMarketComparison(json.optJSONObject("data") ?: JSONObject())
+    }
+
+    suspend fun claimMapleMarketSeed(accountId: String): MapleMarketClaimSeedResult {
+        val json = executeJson(
+            "POST",
+            "/api/activities/maple-market/claim-seed",
+            body = JSONObject(),
+            accountIdOverride = accountId,
+        )
+        val data = json.optJSONObject("data") ?: JSONObject()
+        val seedObj = data.optJSONObject("data")?.optJSONObject("seed")
+        return MapleMarketClaimSeedResult(
+            status = data.optStringClean("status"),
+            count = seedObj?.optIntFlex("count") ?: 0,
+            message = data.optStringClean("message"),
+        )
+    }
+
+    suspend fun claimMapleMarketCommission(accountId: String): MapleMarketClaimCommissionResult {
+        val json = executeJson(
+            "POST",
+            "/api/activities/maple-market/claim-commission",
+            body = JSONObject(),
+            accountIdOverride = accountId,
+        )
+        val data = json.optJSONObject("data") ?: JSONObject()
+        val payload = data.optJSONObject("data") ?: JSONObject()
+        return MapleMarketClaimCommissionResult(
+            status = data.optStringClean("status"),
+            claimedCoin = payload.optLongFlex("claimedCoin"),
+            claimedCount = payload.optIntFlex("claimedCount"),
+            coinBalance = payload.optLongFlex("coinBalance"),
+            message = data.optStringClean("message"),
+        )
+    }
+
+    suspend fun sellMapleMarketCrop(
+        accountId: String,
+        count: Int,
+        expectedUnitPrice: Int,
+    ): MapleMarketSellResult {
+        val body = JSONObject()
+            .put("count", count)
+            .put("expectedUnitPrice", expectedUnitPrice)
+        val json = executeJson("POST", "/api/activities/maple-market/sell", body = body, accountIdOverride = accountId)
+        val data = json.optJSONObject("data") ?: JSONObject()
+        return MapleMarketSellResult(
+            sold = data.optIntFlex("sold"),
+            unitPrice = data.optIntFlex("unitPrice"),
+            income = data.optLongFlex("income"),
+            coinBalance = data.optLongFlex("coinBalance"),
+            remainingQuota = if (data.has("remainingQuota") && !data.isNull("remainingQuota")) data.optIntFlex("remainingQuota") else null,
+        )
+    }
+
+    suspend fun sellMapleMarketToFriend(
+        accountId: String,
+        gid: Long,
+        count: Int,
+        expectedUnitPrice: Int,
+    ): MapleMarketSellResult {
+        val body = JSONObject()
+            .put("gid", gid)
+            .put("count", count)
+            .put("expectedUnitPrice", expectedUnitPrice)
+        val json = executeJson(
+            "POST",
+            "/api/activities/maple-market/friend-quotes/sell",
+            body = body,
+            accountIdOverride = accountId,
+        )
+        val data = json.optJSONObject("data") ?: JSONObject()
+        return MapleMarketSellResult(
+            sold = data.optIntFlex("sold"),
+            unitPrice = data.optIntFlex("unitPrice"),
+            income = data.optLongFlex("income"),
+            coinBalance = data.optLongFlex("coinBalance"),
+            remainingQuota = if (data.has("remainingQuota") && !data.isNull("remainingQuota")) data.optIntFlex("remainingQuota") else null,
+        )
+    }
+
+    suspend fun exchangeMapleMarketGoods(
+        accountId: String,
+        goodsId: Int,
+        count: Int,
+        expectedUnitPrice: Int,
+    ): MapleMarketExchangeResult {
+        val body = JSONObject()
+            .put("goodsId", goodsId)
+            .put("count", count)
+            .put("expectedUnitPrice", expectedUnitPrice)
+        val json = executeJson("POST", "/api/activities/maple-market/exchange", body = body, accountIdOverride = accountId)
+        val data = json.optJSONObject("data") ?: JSONObject()
+        return MapleMarketExchangeResult(
+            goodsId = data.optIntFlex("goodsId"),
+            count = data.optIntFlex("count"),
+            cost = data.optLongFlex("cost"),
+            coinBalance = data.optLongFlex("coinBalance"),
+        )
     }
 
     suspend fun operateMuge(
@@ -1190,11 +1556,11 @@ class FarmApiClient {
         return FeatureJsonParsers.parseCharityState(json.optJSONObject("data") ?: JSONObject())
     }
 
-    suspend fun operateCharity(accountId: String, actionPath: String, body: JSONObject = JSONObject()): String {
+    suspend fun operateCharity(accountId: String, actionPath: String): String {
         val json = executeJson(
             "POST",
             "/api/activity-center/charity-red-flower/$actionPath",
-            body = body,
+            body = JSONObject(),
             accountIdOverride = accountId,
         )
         val rewards = FeatureJsonParsers.parseCommerceItems(json.optJSONObject("data")?.optJSONArray("rewards"))

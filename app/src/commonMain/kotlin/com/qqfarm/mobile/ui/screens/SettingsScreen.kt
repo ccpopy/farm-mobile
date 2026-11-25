@@ -1,8 +1,8 @@
 package com.qqfarm.mobile.ui.screens
 
-import com.qqfarm.mobile.platform.appVersionName
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -20,8 +20,11 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.Send
+import androidx.compose.material.icons.rounded.ContentCopy
+import androidx.compose.material.icons.rounded.DeleteSweep
 import androidx.compose.material.icons.rounded.Dns
 import androidx.compose.material.icons.rounded.Eco
+import androidx.compose.material.icons.rounded.Extension
 import androidx.compose.material.icons.rounded.FilterList
 import androidx.compose.material.icons.rounded.Group
 import androidx.compose.material.icons.rounded.Key
@@ -34,18 +37,22 @@ import androidx.compose.material.icons.rounded.Paid
 import androidx.compose.material.icons.rounded.Palette
 import androidx.compose.material.icons.rounded.Person
 import androidx.compose.material.icons.rounded.Pets
+import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.Speed
 import androidx.compose.material.icons.rounded.Star
-import androidx.compose.material.icons.rounded.DeleteSweep
 import androidx.compose.material.icons.rounded.SystemUpdateAlt
 import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.material.icons.rounded.Update
+import androidx.compose.material.icons.rounded.Visibility
+import androidx.compose.material.icons.rounded.VisibilityOff
 import androidx.compose.material.icons.rounded.VolumeOff
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
@@ -59,12 +66,14 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
@@ -78,8 +87,6 @@ import com.qqfarm.mobile.data.network.ApiException
 import com.qqfarm.mobile.data.network.FarmApiClient
 import com.qqfarm.mobile.data.network.PROJECT_GITHUB_URL
 import com.qqfarm.mobile.data.prefs.StoredConfig
-import com.qqfarm.mobile.ui.components.AppleAlertDialog
-import com.qqfarm.mobile.ui.components.AppleFilterChip
 import com.qqfarm.mobile.ui.components.AppleGroupedCard
 import com.qqfarm.mobile.ui.components.AppleHairlineDivider
 import com.qqfarm.mobile.ui.components.AppleSectionHeader
@@ -87,15 +94,19 @@ import com.qqfarm.mobile.ui.components.AppleSettingRow
 import com.qqfarm.mobile.ui.components.AppleSwitchRow
 import com.qqfarm.mobile.ui.components.PushChannelSheet
 import com.qqfarm.mobile.ui.components.ScrollToTopOnTabReselect
-import com.qqfarm.mobile.ui.components.ServerSwitcherSheet
-import com.qqfarm.mobile.ui.components.ServerUpdateSheet
+import com.qqfarm.mobile.ui.state.SessionUiState
 import com.qqfarm.mobile.ui.state.AppUpdateViewModel
 import com.qqfarm.mobile.ui.state.rememberAppUpdateViewModel
-import com.qqfarm.mobile.ui.state.SessionUiState
 import com.qqfarm.mobile.ui.theme.CustomAppearanceConfig
 import com.qqfarm.mobile.ui.theme.LocalAppleColors
 import com.qqfarm.mobile.ui.theme.SoilGold
+import kotlinx.coroutines.launch
+import com.qqfarm.mobile.ui.components.AppleFilterChip
+import com.qqfarm.mobile.ui.components.AppleAlertDialog
+import com.qqfarm.mobile.ui.components.ServerSwitcherSheet
+import com.qqfarm.mobile.ui.components.ServerUpdateSheet
 import kotlinx.coroutines.delay
+import com.qqfarm.mobile.platform.appVersionName
 
 @Composable
 fun SettingsScreen(
@@ -107,7 +118,7 @@ fun SettingsScreen(
     onRenameServer: (String, String) -> Unit,
     onRemoveServer: (String) -> Unit,
     onOpenAccountSwitcher: () -> Unit,
-    onOpenAutomation: () -> Unit,
+    onOpenPlugins: () -> Unit,
     onOpenIllustrated: () -> Unit,
     onDisconnect: () -> Unit,
     onUpdateThemeMode: (String) -> Unit,
@@ -122,14 +133,16 @@ fun SettingsScreen(
     onApplyNotifyTypes: (Set<String>) -> Unit,
     onSendTestNotification: () -> Boolean,
     onClearLogs: suspend (String) -> Unit,
+    onFetchApiToken: suspend () -> Result<String>,
+    onRotateApiToken: suspend () -> Result<String>,
     onServerUpdated: () -> Unit,
     onMessage: (String) -> Unit,
 ) {
     val apple = LocalAppleColors.current
-    val clipboard = LocalClipboardManager.current
     val lifecycleOwner = LocalLifecycleOwner.current
     val updateModel: AppUpdateViewModel = rememberAppUpdateViewModel()
 
+    var showTokenSheet by remember { mutableStateOf(false) }
     var showNotifySheet by remember { mutableStateOf(false) }
     var showLogoutConfirm by remember { mutableStateOf(false) }
     var showDownloadEditor by rememberSaveable { mutableStateOf(false) }
@@ -230,18 +243,18 @@ fun SettingsScreen(
         contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 32.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        // 0. Extensions & Official Upstream Automation Entry
+        // 0. Extensions & Plugins
         item {
             AppleSectionHeader(title = "扩展与自动化")
             Spacer(modifier = Modifier.height(4.dp))
             AppleGroupedCard {
                 AppleSettingRow(
-                    icon = Icons.Rounded.Tune,
+                    icon = Icons.Rounded.Extension,
                     iconTint = apple.indigo,
-                    title = "自动化设置",
+                    title = "插件管理",
                     trailingText = session.currentAccount?.name?.takeIf { it.isNotBlank() },
                     showChevron = true,
-                    onClick = onOpenAutomation,
+                    onClick = onOpenPlugins,
                 )
                 AppleHairlineDivider()
                 AppleSettingRow(
@@ -254,210 +267,203 @@ fun SettingsScreen(
             }
         }
 
-        // 1. Server & Auth
-        item {
-            AppleSectionHeader(title = "服务器与授权")
-            Spacer(modifier = Modifier.height(4.dp))
-            AppleGroupedCard {
-                val activeServer = session.config.activeProfile
-                val otherCount = (session.config.serverProfiles.size - 1).coerceAtLeast(0)
-                AppleSettingRow(
-                    icon = Icons.Rounded.Dns,
-                    iconTint = apple.blue,
-                    title = "远程服务器",
-                    subtitle = activeServer?.displayName?.let { "$it · ${session.config.serverUrl}" }
-                        ?: session.config.serverUrl.ifBlank { "未配置" },
-                    trailingText = when {
-                        otherCount > 0 -> "切换 (${session.config.serverProfiles.size})"
-                        session.realtimeConnected -> "实时在线"
-                        else -> "切换 / 添加"
-                    },
-                    trailingColor = if (session.realtimeConnected) apple.green else apple.secondaryText,
-                    showChevron = true,
-                    onClick = { showServerSheet = true },
-                )
-                AppleHairlineDivider()
-                AppleSettingRow(
-                    icon = Icons.Rounded.Key,
-                    iconTint = apple.orange,
-                    title = "当前登录凭证",
-                    trailingText = "复制 Token",
-                    onClick = {
-                        val token = session.config.authToken.trim()
-                        if (token.isNotEmpty()) {
-                            clipboard.setText(AnnotatedString(token))
-                            onMessage("已复制当前会话 Token")
-                        }
-                    },
-                )
-                AppleHairlineDivider()
-                AppleSettingRow(
-                    icon = Icons.Rounded.Person,
-                    iconTint = apple.emerald,
-                    title = "农场账号管理",
-                    trailingText = onlineCount?.let { "$it 在线" } ?: "—",
-                    trailingColor = if ((onlineCount ?: 0) > 0) apple.green else apple.secondaryText,
-                    showChevron = true,
-                    onClick = onOpenAccountSwitcher,
-                )
-                AppleHairlineDivider()
-                AppleSettingRow(
-                    icon = Icons.Rounded.Logout,
-                    iconTint = apple.red,
-                    title = "退出当前服务器登录",
-                    onClick = { showLogoutConfirm = true },
-                )
-            }
-        }
-
-        // 2. Push Notifications (Default OFF)
-        item {
-            AppleSectionHeader(title = "消息推送与通知")
-            Spacer(modifier = Modifier.height(4.dp))
-            val enabledCount = session.config.enabledNotifyTypes.size
-            val pushStatusText = when {
-                !session.config.activityPushEnabled -> "已关闭（默认）"
-                enabledCount == 0 -> "已开启 · 未选类型"
-                else -> "已开启 · $enabledCount 项"
-            }
-            AppleGroupedCard {
-                AppleSettingRow(
-                    icon = if (notificationsGranted) Icons.Rounded.NotificationsActive else Icons.Rounded.NotificationsOff,
-                    iconTint = if (notificationsGranted) apple.green else apple.orange,
-                    title = "系统通知权限",
-                    trailingText = if (notificationsGranted) "已授权" else "去授权",
-                    trailingColor = if (notificationsGranted) apple.green else apple.orange,
-                    showChevron = true,
-                    onClick = {
-                        if (notificationsGranted) {
-                            com.qqfarm.mobile.platform.NotificationsGate.openSystemSettings()
-                        } else {
-                            requestNotificationPermissionAndEnable("permission_only")
-                        }
-                    },
-                )
-                AppleHairlineDivider()
-                AppleSettingRow(
-                    icon = Icons.Rounded.Notifications,
-                    iconTint = apple.emerald,
-                    title = "农牧动态推送",
-                    trailingText = pushStatusText,
-                    trailingColor = if (session.config.activityPushEnabled) apple.emerald else apple.secondaryText,
-                    showChevron = true,
-                    onClick = { showNotifySheet = true },
-                )
-                AppleHairlineDivider()
-                AppleSwitchRow(
-                    icon = Icons.Rounded.NotificationsActive,
-                    iconTint = apple.red,
-                    title = "账号掉线重登提醒",
-                    checked = session.config.offlineAlertsEnabled,
-                    onCheckedChange = { wantEnable ->
-                        if (!wantEnable) {
-                            onToggleOfflineAlerts(false)
-                        } else {
-                            requestNotificationPermissionAndEnable("offline")
-                        }
-                    },
-                )
-                AppleHairlineDivider()
-                AppleSettingRow(
-                    icon = Icons.AutoMirrored.Rounded.Send,
-                    iconTint = apple.blue,
-                    title = "推送渠道",
-                    trailingText = offlineReminder?.summaryText ?: "—",
-                    trailingColor = if (offlineReminder?.hasActiveChannel == true) apple.green else apple.secondaryText,
-                    showChevron = true,
-                    onClick = { showPushChannelSheet = true },
-                )
-            }
-        }
-
-        // 3. Appearance & Updates
-        item {
-            AppleSectionHeader(title = "外观与通用")
-            Spacer(modifier = Modifier.height(4.dp))
-            val themeModeLabel = when (session.config.themeMode) {
-                StoredConfig.THEME_LIGHT -> "浅色"
-                StoredConfig.THEME_DARK -> "深色"
-                StoredConfig.THEME_CUSTOM -> "自定义"
-                else -> "跟随系统"
-            }
-            AppleGroupedCard {
-                AppleSettingRow(
-                    icon = Icons.Rounded.Tune,
-                    iconTint = apple.emerald,
-                    title = "主题外观",
-                    trailingText = themeModeLabel,
-                    showChevron = true,
-                    onClick = { showCustomAppearanceSheet = true },
-                )
-                AppleHairlineDivider()
-                if (com.qqfarm.mobile.platform.supportsDynamicColor()) {
-                    AppleSwitchRow(
-                        icon = Icons.Rounded.Palette,
-                        iconTint = apple.indigo,
-                        title = "动态壁纸取色",
-                        checked = session.config.dynamicColor,
-                        onCheckedChange = onUpdateDynamicColor,
+            // 1. Server & Auth
+            item {
+                AppleSectionHeader(title = "服务器与授权")
+                Spacer(modifier = Modifier.height(4.dp))
+                AppleGroupedCard {
+                    val profiles = session.config.serverProfiles
+                    val active = session.config.activeProfile
+                    AppleSettingRow(
+                        icon = Icons.Rounded.Dns,
+                        iconTint = apple.blue,
+                        title = active?.displayName ?: "远程服务器",
+                        subtitle = session.config.serverUrl.ifBlank { "未配置" },
+                        trailingText = when {
+                            profiles.size > 1 -> "${profiles.size} 台 · 切换"
+                            session.realtimeConnected -> "实时在线"
+                            else -> "管理"
+                        },
+                        trailingColor = if (profiles.size <= 1 && session.realtimeConnected) apple.green else apple.secondaryText,
+                        showChevron = true,
+                        onClick = { showServerSheet = true },
                     )
                     AppleHairlineDivider()
+                    AppleSettingRow(
+                        icon = Icons.Rounded.Key,
+                        iconTint = apple.orange,
+                        title = "API Token 管理",
+                        showChevron = true,
+                        onClick = { showTokenSheet = true },
+                    )
+                    AppleHairlineDivider()
+                    AppleSettingRow(
+                        icon = Icons.Rounded.Person,
+                        iconTint = apple.emerald,
+                        title = "农场账号管理",
+                        trailingText = onlineCount?.let { "$it 在线" } ?: "—",
+                        trailingColor = if ((onlineCount ?: 0) > 0) apple.green else apple.secondaryText,
+                        showChevron = true,
+                        onClick = onOpenAccountSwitcher,
+                    )
+                    AppleHairlineDivider()
+                    AppleSettingRow(
+                        icon = Icons.Rounded.Logout,
+                        iconTint = apple.red,
+                        title = "退出当前服务器登录",
+                        onClick = { showLogoutConfirm = true },
+                    )
                 }
-                AppleSettingRow(
-                    icon = Icons.Rounded.SystemUpdateAlt,
-                    iconTint = apple.blue,
-                    title = "客户端更新",
-                    trailingText = "v${appVersionName()}",
-                    showChevron = true,
-                    onClick = { updateModel.check(session.config) },
-                )
-                AppleHairlineDivider()
-                AppleSettingRow(
-                    icon = Icons.Rounded.Update,
-                    iconTint = apple.emerald,
-                    title = "服务端更新",
-                    showChevron = true,
-                    onClick = { showServerUpdateSheet = true },
-                )
-                AppleHairlineDivider()
-                AppleSettingRow(
-                    icon = Icons.Rounded.Key,
-                    iconTint = apple.indigo,
-                    title = "GitHub 授权",
-                    trailingText = if (session.config.githubToken.isBlank()) "未设置" else "已保存",
-                    trailingColor = if (session.config.githubToken.isBlank()) apple.secondaryText else apple.green,
-                    showChevron = true,
-                    onClick = { showGithubTokenEditor = true },
-                )
-                AppleHairlineDivider()
-                AppleSettingRow(
-                    icon = Icons.Rounded.Speed,
-                    iconTint = apple.emerald,
-                    title = "下载方式",
-                    trailingText = session.config.updateDownload.mode.label,
-                    showChevron = true,
-                    onClick = { showDownloadEditor = true },
-                )
-                AppleHairlineDivider()
-                AppleSettingRow(
-                    icon = Icons.Rounded.DeleteSweep,
-                    iconTint = apple.orange,
-                    title = "日志清理",
-                    trailingText = "保留 $RUN_LOG_RETENTION_DAYS 天",
-                    showChevron = true,
-                    onClick = { showLogCleanup = true },
-                )
-                AppleHairlineDivider()
-                AppleSettingRow(
-                    icon = Icons.Rounded.Star,
-                    iconTint = SoilGold,
-                    title = "仓库地址",
-                    trailingText = "GitHub",
-                    showChevron = true,
-                    onClick = { openGithubRepository(PROJECT_GITHUB_URL, onMessage) },
-                )
             }
-        }
+
+            // 2. Push Notifications (Default OFF)
+            item {
+                AppleSectionHeader(title = "消息推送与通知")
+                Spacer(modifier = Modifier.height(4.dp))
+                val enabledCount = session.config.enabledNotifyTypes.size
+                val pushStatusText = when {
+                    !session.config.activityPushEnabled -> "已关闭（默认）"
+                    enabledCount == 0 -> "已开启 · 未选类型"
+                    else -> "已开启 · $enabledCount 项"
+                }
+                AppleGroupedCard {
+                    AppleSettingRow(
+                        icon = if (notificationsGranted) Icons.Rounded.NotificationsActive else Icons.Rounded.NotificationsOff,
+                        iconTint = if (notificationsGranted) apple.green else apple.orange,
+                        title = "系统通知权限",
+                        trailingText = if (notificationsGranted) "已授权" else "去授权",
+                        trailingColor = if (notificationsGranted) apple.green else apple.orange,
+                        showChevron = true,
+                        onClick = {
+                            if (notificationsGranted) {
+                                com.qqfarm.mobile.platform.NotificationsGate.openSystemSettings()
+                            } else {
+                                requestNotificationPermissionAndEnable("permission_only")
+                            }
+                        },
+                    )
+                    AppleHairlineDivider()
+                    AppleSettingRow(
+                        icon = Icons.Rounded.Notifications,
+                        iconTint = apple.emerald,
+                        title = "农牧动态推送",
+                        trailingText = pushStatusText,
+                        trailingColor = if (session.config.activityPushEnabled) apple.emerald else apple.secondaryText,
+                        showChevron = true,
+                        onClick = { showNotifySheet = true },
+                    )
+                    AppleHairlineDivider()
+                    AppleSwitchRow(
+                        icon = Icons.Rounded.NotificationsActive,
+                        iconTint = apple.red,
+                        title = "账号掉线重登提醒",
+                        checked = session.config.offlineAlertsEnabled,
+                        onCheckedChange = { wantEnable ->
+                            if (!wantEnable) {
+                                onToggleOfflineAlerts(false)
+                            } else {
+                                requestNotificationPermissionAndEnable("offline")
+                            }
+                        },
+                    )
+                    AppleHairlineDivider()
+                    AppleSettingRow(
+                        icon = Icons.AutoMirrored.Rounded.Send,
+                        iconTint = apple.blue,
+                        title = "推送渠道",
+                        trailingText = offlineReminder?.summaryText ?: "—",
+                        trailingColor = if (offlineReminder?.hasActiveChannel == true) apple.green else apple.secondaryText,
+                        showChevron = true,
+                        onClick = { showPushChannelSheet = true },
+                    )
+                }
+            }
+
+            // 3. Appearance & About
+            item {
+                AppleSectionHeader(title = "外观与通用")
+                Spacer(modifier = Modifier.height(4.dp))
+                val themeModeLabel = when (session.config.themeMode) {
+                    StoredConfig.THEME_LIGHT -> "浅色"
+                    StoredConfig.THEME_DARK -> "深色"
+                    StoredConfig.THEME_CUSTOM -> "自定义"
+                    else -> "跟随系统"
+                }
+                AppleGroupedCard {
+                    AppleSettingRow(
+                        icon = Icons.Rounded.Tune,
+                        iconTint = apple.emerald,
+                        title = "主题外观",
+                        trailingText = themeModeLabel,
+                        showChevron = true,
+                        onClick = { showCustomAppearanceSheet = true },
+                    )
+                    AppleHairlineDivider()
+                    if (com.qqfarm.mobile.platform.supportsDynamicColor()) {
+                        AppleSwitchRow(
+                            icon = Icons.Rounded.Palette,
+                            iconTint = apple.indigo,
+                            title = "动态壁纸取色",
+                            checked = session.config.dynamicColor,
+                            onCheckedChange = onUpdateDynamicColor,
+                        )
+                        AppleHairlineDivider()
+                    }
+                    AppleSettingRow(
+                        icon = Icons.Rounded.SystemUpdateAlt,
+                        iconTint = apple.blue,
+                        title = "客户端更新",
+                        trailingText = "v${appVersionName()}",
+                        showChevron = true,
+                        onClick = { updateModel.check(session.config) },
+                    )
+                    AppleHairlineDivider()
+                    AppleSettingRow(
+                        icon = Icons.Rounded.Update,
+                        iconTint = apple.emerald,
+                        title = "服务端更新",
+                            showChevron = true,
+                        onClick = { showServerUpdateSheet = true },
+                    )
+                    AppleHairlineDivider()
+                    AppleSettingRow(
+                        icon = Icons.Rounded.Key,
+                        iconTint = apple.indigo,
+                        title = "GitHub 授权",
+                        trailingText = if (session.config.githubToken.isBlank()) "未设置" else "已保存",
+                        trailingColor = if (session.config.githubToken.isBlank()) apple.secondaryText else apple.green,
+                        showChevron = true,
+                        onClick = { showGithubTokenEditor = true },
+                    )
+                    AppleHairlineDivider()
+                    AppleSettingRow(
+                        icon = Icons.Rounded.Speed,
+                        iconTint = apple.emerald,
+                        title = "下载方式",
+                        trailingText = session.config.updateDownload.mode.label,
+                        showChevron = true,
+                        onClick = { showDownloadEditor = true },
+                    )
+                    AppleHairlineDivider()
+                    AppleSettingRow(
+                        icon = Icons.Rounded.DeleteSweep,
+                        iconTint = apple.orange,
+                        title = "日志清理",
+                        trailingText = "保留 $RUN_LOG_RETENTION_DAYS 天",
+                        showChevron = true,
+                        onClick = { showLogCleanup = true },
+                    )
+                    AppleHairlineDivider()
+                    AppleSettingRow(
+                        icon = Icons.Rounded.Star,
+                        iconTint = SoilGold,
+                        title = "仓库地址",
+                        trailingText = "GitHub",
+                        showChevron = true,
+                        onClick = { openGithubRepository(PROJECT_GITHUB_URL, onMessage) },
+                    )
+                }
+            }
     }
 
     if (showServerSheet) {
@@ -524,6 +530,15 @@ fun SettingsScreen(
         )
     }
 
+    if (showTokenSheet) {
+        ApiTokenManageSheet(
+            onFetch = onFetchApiToken,
+            onRotate = onRotateApiToken,
+            onMessage = onMessage,
+            onDismiss = { showTokenSheet = false },
+        )
+    }
+
     if (showNotifySheet) {
         NotificationSettingsSheet(
             config = session.config,
@@ -581,6 +596,149 @@ fun SettingsScreen(
             },
             dismissButton = {
                 TextButton(onClick = { showLogoutConfirm = false }) { Text("取消") }
+            },
+        )
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun ApiTokenManageSheet(
+    onFetch: suspend () -> Result<String>,
+    onRotate: suspend () -> Result<String>,
+    onMessage: (String) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val apple = LocalAppleColors.current
+    val clipboard = LocalClipboardManager.current
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val scope = rememberCoroutineScope()
+
+    var token by remember { mutableStateOf("") }
+    var loading by remember { mutableStateOf(true) }
+    var revealed by remember { mutableStateOf(false) }
+    var confirmRotate by remember { mutableStateOf(false) }
+
+    LaunchedEffect(Unit) {
+        onFetch()
+            .onSuccess { token = it }
+            .onFailure { onMessage(it.message ?: "获取 API Token 失败") }
+        loading = false
+    }
+
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = sheetState,
+        containerColor = apple.background,
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .navigationBarsPadding()
+                .padding(horizontal = 16.dp)
+                .padding(bottom = 24.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp),
+        ) {
+            Text("服务端 API Token", style = MaterialTheme.typography.titleLarge, color = apple.primaryText)
+            Text(
+                text = "该持久 Token 可用于所有外部客户端与手机 App 直接鉴权调用后端接口。",
+                style = MaterialTheme.typography.bodySmall,
+                color = apple.secondaryText,
+            )
+
+            AppleGroupedCard(contentPadding = PaddingValues(16.dp)) {
+                if (loading) {
+                    Box(modifier = Modifier.fillMaxWidth().padding(16.dp), contentAlignment = Alignment.Center) {
+                        CircularProgressIndicator(modifier = Modifier.size(24.dp))
+                    }
+                } else {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(
+                            text = if (token.isBlank()) "未获取到 Token" else if (revealed) token else "••••••••••••••••••••••••••••••••",
+                            style = MaterialTheme.typography.bodyMedium.copy(fontFamily = FontFamily.Monospace),
+                            color = apple.primaryText,
+                            modifier = Modifier.weight(1f),
+                        )
+                        IconButton(onClick = { revealed = !revealed }) {
+                            Icon(
+                                imageVector = if (revealed) Icons.Rounded.VisibilityOff else Icons.Rounded.Visibility,
+                                contentDescription = "显示/隐藏",
+                            )
+                        }
+                        IconButton(
+                            onClick = {
+                                if (token.isNotBlank()) {
+                                    clipboard.setText(AnnotatedString(token))
+                                    onMessage("已复制 API Token")
+                                }
+                            },
+                        ) {
+                            Icon(Icons.Rounded.ContentCopy, contentDescription = "复制")
+                        }
+                    }
+                }
+            }
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                OutlinedButton(
+                    onClick = { confirmRotate = true },
+                    enabled = !loading,
+                    shape = RoundedCornerShape(14.dp),
+                    modifier = Modifier.weight(1f).height(48.dp),
+                ) {
+                    Icon(Icons.Rounded.Refresh, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text("重置 Token")
+                }
+                Button(
+                    onClick = {
+                        if (token.isNotBlank()) {
+                            clipboard.setText(AnnotatedString(token))
+                            onMessage("已复制 API Token")
+                        }
+                    },
+                    enabled = token.isNotBlank(),
+                    shape = RoundedCornerShape(14.dp),
+                    modifier = Modifier.weight(1f).height(48.dp),
+                ) {
+                    Text("复制 Token")
+                }
+            }
+        }
+    }
+
+    if (confirmRotate) {
+        AppleAlertDialog(
+            onDismissRequest = { confirmRotate = false },
+            title = { Text("重置 API Token") },
+            text = { Text("重置后旧 API Token 将立即失效；若本机正在使用 API Token 模式，App 会自动同步更新为新 Token。") },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        confirmRotate = false
+                        loading = true
+                        scope.launch {
+                            onRotate()
+                                .onSuccess { next ->
+                                    token = next
+                                    revealed = true
+                                    onMessage("已生成新的 API Token")
+                                }
+                                .onFailure { onMessage(it.message ?: "重置失败") }
+                            loading = false
+                        }
+                    },
+                    colors = ButtonDefaults.textButtonColors(contentColor = apple.red),
+                ) { Text("确认重置") }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmRotate = false }) { Text("取消") }
             },
         )
     }

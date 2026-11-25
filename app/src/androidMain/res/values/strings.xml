@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">农场助手</string>
+    <string name="app_name">QQ农场助手</string>
     <string name="relogin_channel_name">账号重连提醒</string>
     <string name="relogin_channel_desc">当农场账号掉线需要重新扫码或更新凭证时推送提醒</string>
     <string name="activity_channel_name">农牧动态推送</string>

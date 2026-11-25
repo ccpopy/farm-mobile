@@ -123,7 +123,7 @@ fun GithubTokenDialog(
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(
-                    if (savedToken.isBlank()) "可选配置：用于避免 GitHub API 限流或访问受限发行版，保存后检查更新时自动使用。"
+                    if (savedToken.isBlank()) "检查更新需要访问私有仓库时使用，保存后无需每次输入。"
                     else "已保存 Token，检查更新时自动使用。"
                 )
                 OutlinedTextField(

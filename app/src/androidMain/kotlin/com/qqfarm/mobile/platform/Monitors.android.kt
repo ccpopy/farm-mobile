@@ -23,7 +23,6 @@ actual fun createActivityNotifier(apiClient: FarmApiClient): ActivityNotifier =
 
 internal class OfflineEventsMonitorAdapter(private val impl: com.qqfarm.mobile.data.network.OfflineEventMonitor) :
     OfflineEventsMonitor {
-    override fun onAccountLog(ev: com.qqfarm.mobile.data.model.AccountLogEvent) = impl.onAccountLog(ev)
     override fun stop() = impl.stop()
     override fun updateSubscription(enabled: Boolean, accountIds: List<String>) =
         impl.updateSubscription(enabled, accountIds)

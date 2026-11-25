@@ -1,7 +1,6 @@
 package com.qqfarm.mobile.ui.navigation
 
 import androidx.compose.animation.AnimatedContent
-import com.qqfarm.mobile.platform.rememberAppHaptics
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.Spring
@@ -38,6 +37,7 @@ import androidx.compose.material.icons.rounded.UnfoldMore
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.semantics.Role
 import com.qqfarm.mobile.ui.components.pressable
+import com.qqfarm.mobile.platform.rememberAppHaptics
 import com.qqfarm.mobile.ui.components.spaceAccent
 import com.qqfarm.mobile.ui.components.spaceIcon
 import androidx.compose.foundation.BorderStroke
@@ -53,6 +53,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.shape.CircleShape
+import com.qqfarm.mobile.platform.PlatformBackHandler
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Explore
 import com.qqfarm.mobile.data.model.GameSpace
@@ -91,17 +92,18 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.qqfarm.mobile.ui.components.AccountSwitcherSheet
-import com.qqfarm.mobile.ui.screens.AutomationScreen
 import com.qqfarm.mobile.ui.screens.FarmRanchScreen
 import com.qqfarm.mobile.ui.screens.FriendsScreen
 import com.qqfarm.mobile.ui.screens.IllustratedScreen
 import com.qqfarm.mobile.ui.screens.OverviewScreen
+import com.qqfarm.mobile.ui.screens.PluginsScreen
 import com.qqfarm.mobile.ui.screens.ServerSetupScreen
 import com.qqfarm.mobile.ui.screens.SettingsScreen
 import com.qqfarm.mobile.ui.state.AppSessionViewModel
 import com.qqfarm.mobile.ui.theme.LocalAppleColors
 import androidx.compose.foundation.layout.WindowInsets
 import com.qqfarm.mobile.data.prefs.StoredConfig
+import com.qqfarm.mobile.platform.rememberAppHaptics
 
 private data class NavDestination(
     val title: String,
@@ -125,7 +127,7 @@ fun FarmNavHost(viewModel: AppSessionViewModel) {
     var discoverSubTab by rememberSaveable { mutableIntStateOf(0) }
     var mallSubTab by rememberSaveable { mutableIntStateOf(0) }
     var ranchSubTab by rememberSaveable { mutableIntStateOf(0) }
-    var showAutomationPage by rememberSaveable { mutableStateOf(false) }
+    var showPluginsPage by rememberSaveable { mutableStateOf(false) }
     var showIllustratedPage by rememberSaveable { mutableStateOf(false) }
     var hideMainChrome by remember { mutableStateOf(false) }
     var showAccountSwitcher by remember { mutableStateOf(false) }
@@ -142,8 +144,8 @@ fun FarmNavHost(viewModel: AppSessionViewModel) {
         }
     }
 
-    LaunchedEffect(selectedTab, showAutomationPage, showIllustratedPage) {
-        if (selectedTab != 2 || showAutomationPage || showIllustratedPage) {
+    LaunchedEffect(selectedTab, showPluginsPage, showIllustratedPage) {
+        if (selectedTab != 2 || showPluginsPage || showIllustratedPage) {
             hideMainChrome = false
         }
     }
@@ -178,7 +180,7 @@ fun FarmNavHost(viewModel: AppSessionViewModel) {
 
     if (!session.config.isAuthenticated || session.showReconfigureServer) {
         val isReconfiguring = session.config.isAuthenticated && session.showReconfigureServer
-        com.qqfarm.mobile.platform.PlatformBackHandler(enabled = isReconfiguring, onBack = viewModel::closeReconfigureServer)
+        PlatformBackHandler(enabled = isReconfiguring, onBack = viewModel::closeReconfigureServer)
         key(session.config.activeProfileId, session.addingServer) {
             ServerSetupScreen(
                 // 添加服务器时从空白表单开始，不带出当前服务器的地址与凭证。
@@ -190,8 +192,8 @@ fun FarmNavHost(viewModel: AppSessionViewModel) {
                 onBack = { viewModel.closeReconfigureServer() },
                 onTestConnection = { url -> viewModel.testServerConnection(url) },
                 onConnectWithToken = { url, token -> viewModel.connectWithApiToken(url, token) },
-                onConnectWithPassword = { url, user, pass, remember ->
-                    viewModel.connectWithPassword(url, user, pass, remember)
+                onConnectWithPassword = { url, user, pass, exchange, remember ->
+                    viewModel.connectWithPassword(url, user, pass, exchange, remember)
                 },
                 onForgetPassword = viewModel::forgetPassword,
                 onSuccessMessage = { msg -> viewModel.emitMessage(msg) },
@@ -200,22 +202,22 @@ fun FarmNavHost(viewModel: AppSessionViewModel) {
         return
     }
 
-    com.qqfarm.mobile.platform.PlatformBackHandler(enabled = showAutomationPage) {
-        showAutomationPage = false
+    PlatformBackHandler(enabled = showPluginsPage) {
+        showPluginsPage = false
     }
 
-    com.qqfarm.mobile.platform.PlatformBackHandler(enabled = showIllustratedPage) {
+    PlatformBackHandler(enabled = showIllustratedPage) {
         showIllustratedPage = false
     }
 
-    com.qqfarm.mobile.platform.PlatformBackHandler(enabled = !showAutomationPage && !showIllustratedPage && selectedTab != 0) {
+    PlatformBackHandler(enabled = !showPluginsPage && !showIllustratedPage && selectedTab != 0) {
         selectedTab = 0
     }
 
     val currentDest = destinations.getOrElse(selectedTab) { destinations.first() }
     val activeAccount = session.currentAccount
 
-    val bottomBarVisible = !showAutomationPage && !showIllustratedPage && !hideMainChrome
+    val bottomBarVisible = !showPluginsPage && !showIllustratedPage && !hideMainChrome
     Scaffold(
         containerColor = apple.background,
         // 系统栏留白由各层自己处理：顶栏/子页头部自带状态栏留白，底栏自带导航栏留白。
@@ -223,11 +225,11 @@ fun FarmNavHost(viewModel: AppSessionViewModel) {
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
         snackbarHost = { SnackbarHost(hostState = snackbarHostState) },
         topBar = {
-            if (showAutomationPage) {
+            if (showPluginsPage) {
                 AppleSubPageHeader(
-                    title = "自动化设置",
+                    title = "插件与调度",
                     subtitle = activeAccount?.name?.ifBlank { activeAccount.displayTitle },
-                    onBack = { showAutomationPage = false },
+                    onBack = { showPluginsPage = false },
                 )
             } else if (showIllustratedPage) {
                 AppleSubPageHeader(
@@ -342,8 +344,8 @@ fun FarmNavHost(viewModel: AppSessionViewModel) {
                 }
             }
             key(session.config.activeProfileId, session.config.serverUrl, session.config.currentAccountId) {
-                if (showAutomationPage) {
-                    AutomationScreen(
+                if (showPluginsPage) {
+                    PluginsScreen(
                         session = session,
                         apiClient = viewModel.apiClient,
                         onMessage = { msg -> viewModel.emitMessage(msg) },
@@ -408,9 +410,9 @@ fun FarmNavHost(viewModel: AppSessionViewModel) {
                                         ranchSubTab = subIdx
                                         selectedTab = 1
                                     },
-                                    onOpenAutomation = {
+                                    onOpenPlugins = {
                                         showIllustratedPage = false
-                                        showAutomationPage = true
+                                        showPluginsPage = true
                                     },
                                 )
 
@@ -472,12 +474,12 @@ fun FarmNavHost(viewModel: AppSessionViewModel) {
                                         viewModel.refreshAccounts()
                                         showAccountSwitcher = true
                                     },
-                                    onOpenAutomation = {
+                                    onOpenPlugins = {
                                         showIllustratedPage = false
-                                        showAutomationPage = true
+                                        showPluginsPage = true
                                     },
                                     onOpenIllustrated = {
-                                        showAutomationPage = false
+                                        showPluginsPage = false
                                         showIllustratedPage = true
                                     },
                                     onDisconnect = { viewModel.disconnect() },
@@ -493,6 +495,8 @@ fun FarmNavHost(viewModel: AppSessionViewModel) {
                                     onApplyNotifyTypes = { keys -> viewModel.applyNotifyTypes(keys) },
                                     onSendTestNotification = { viewModel.sendTestActivityNotification() },
                                     onClearLogs = viewModel::clearLogs,
+                                    onFetchApiToken = { viewModel.fetchCurrentApiToken() },
+                                    onRotateApiToken = { viewModel.rotateAndPersistApiToken() },
                                     onServerUpdated = {
                                         viewModel.refreshAccounts()
                                         viewModel.refreshOverview(silent = true)

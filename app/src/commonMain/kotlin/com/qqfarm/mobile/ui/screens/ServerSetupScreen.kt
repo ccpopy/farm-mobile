@@ -50,6 +50,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
@@ -57,22 +58,22 @@ import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import com.qqfarm.mobile.data.network.FarmApiClient
 import com.qqfarm.mobile.data.model.ServerVersionInfo
-import com.qqfarm.mobile.data.prefs.ServerProfile
 import com.qqfarm.mobile.data.prefs.StoredConfig
 import com.qqfarm.mobile.ui.components.AppleGroupedCard
-import com.qqfarm.mobile.ui.components.AppleHairlineDivider
 import com.qqfarm.mobile.ui.components.AppleIconBadge
 import com.qqfarm.mobile.ui.components.AppleSegmentedControl
-import com.qqfarm.mobile.ui.components.AppleSettingRow
 import com.qqfarm.mobile.ui.components.AppleStatusPill
-import com.qqfarm.mobile.ui.components.AppleSwitch
 import com.qqfarm.mobile.ui.theme.LocalAppleColors
 import kotlinx.coroutines.launch
+import com.qqfarm.mobile.ui.components.AppleSwitch
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.draw.clip
 import androidx.compose.material.icons.rounded.Eco
+import com.qqfarm.mobile.data.prefs.ServerProfile
+import com.qqfarm.mobile.ui.components.AppleHairlineDivider
+import com.qqfarm.mobile.ui.components.AppleSettingRow
 
 @Composable
 fun ServerSetupScreen(
@@ -81,7 +82,7 @@ fun ServerSetupScreen(
     onBack: () -> Unit,
     onTestConnection: suspend (String) -> Result<ServerVersionInfo>,
     onConnectWithToken: suspend (String, String) -> Result<Unit>,
-    onConnectWithPassword: suspend (String, String, String, Boolean) -> Result<String>,
+    onConnectWithPassword: suspend (String, String, String, Boolean, Boolean) -> Result<String>,
     onForgetPassword: (String) -> Unit,
     onSuccessMessage: (String) -> Unit,
     isAddingServer: Boolean = false,
@@ -97,7 +98,7 @@ fun ServerSetupScreen(
     }
     var authTabIndex by remember(initialConfig.authMode) {
         mutableIntStateOf(
-            if (initialConfig.authMode == StoredConfig.AUTH_MODE_API_TOKEN && (initialConfig.authToken.isNotBlank() || initialConfig.savedPassword.isEmpty())) 1 else 0
+            if (initialConfig.authMode == StoredConfig.AUTH_MODE_PASSWORD || (initialConfig.authToken.isBlank() && initialConfig.savedPassword.isNotEmpty())) 1 else 0
         )
     }
     var apiToken by remember(initialConfig.authToken) {
@@ -120,6 +121,7 @@ fun ServerSetupScreen(
         }
     }
     var showPassword by remember { mutableStateOf(false) }
+    var exchangeApiToken by remember { mutableStateOf(true) }
 
     var testing by remember { mutableStateOf(false) }
     var submitting by remember { mutableStateOf(false) }
@@ -318,7 +320,7 @@ fun ServerSetupScreen(
         }
 
         AppleSegmentedControl(
-            options = listOf("账号密码登录", "会话 Token"),
+            options = listOf("API Token 授权", "账号密码登录"),
             selectedIndex = authTabIndex,
             onSelect = {
                 authTabIndex = it
@@ -328,6 +330,64 @@ fun ServerSetupScreen(
 
         AppleGroupedCard(contentPadding = PaddingValues(16.dp)) {
             if (authTabIndex == 0) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    AppleIconBadge(icon = Icons.Rounded.Key, tint = apple.orange, size = 30.dp)
+                    Column {
+                        Text(
+                            text = "持久 API Token",
+                            style = MaterialTheme.typography.titleSmall,
+                            color = apple.primaryText,
+                        )
+                        Text(
+                            text = "后端重启后依然有效，推荐手机端长期使用",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = apple.secondaryText,
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                OutlinedTextField(
+                    value = apiToken,
+                    onValueChange = { apiToken = it },
+                    label = { Text("x-admin-token") },
+                    placeholder = { Text("粘贴 64 位 API Token") },
+                    singleLine = true,
+                    visualTransformation = if (showToken) VisualTransformation.None else PasswordVisualTransformation(),
+                    trailingIcon = {
+                        Row {
+                            IconButton(
+                                onClick = {
+                                    clipboard.getText()?.text?.let { pasted ->
+                                        apiToken = pasted.trim()
+                                    }
+                                },
+                            ) {
+                                Icon(Icons.Rounded.ContentPaste, contentDescription = "粘贴")
+                            }
+                            IconButton(onClick = { showToken = !showToken }) {
+                                Icon(
+                                    imageVector = if (showToken) Icons.Rounded.VisibilityOff else Icons.Rounded.Visibility,
+                                    contentDescription = "显示/隐藏",
+                                )
+                            }
+                        }
+                    },
+                    shape = RoundedCornerShape(14.dp),
+                    modifier = Modifier.fillMaxWidth(),
+                )
+
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    text = "可在 Web 端左下角管理员菜单中查看或重置 API Token。",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = apple.secondaryText,
+                )
+            } else {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(10.dp),
@@ -407,80 +467,43 @@ fun ServerSetupScreen(
                 ) {
                     Text(
                         text = "记住密码",
-                        style = MaterialTheme.typography.bodyMedium,
+                        style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Medium),
                         color = apple.primaryText,
                     )
                     AppleSwitch(
                         checked = rememberPassword,
                         onCheckedChange = null,
                         enabled = !submitting,
+                        checkedTrackColor = apple.green,
                     )
                 }
 
-                Spacer(modifier = Modifier.height(8.dp))
-                Text(
-                    text = "适配上游 liyangpengs/qq-farm-bot：会话由服务端内存维护，服务端重启后重新登录即可。",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = apple.secondaryText,
-                )
-            } else {
+                Spacer(modifier = Modifier.height(6.dp))
+
                 Row(
+                    modifier = Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
                 ) {
-                    AppleIconBadge(icon = Icons.Rounded.Key, tint = apple.orange, size = 30.dp)
-                    Column {
+                    Column(modifier = Modifier.weight(1f)) {
                         Text(
-                            text = "会话 Token 授权",
-                            style = MaterialTheme.typography.titleSmall,
+                            text = "自动换取持久 API Token",
+                            style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Medium),
                             color = apple.primaryText,
                         )
                         Text(
-                            text = "粘贴已登录 Web 管理面板的 x-admin-token 会话凭证",
+                            text = "服务端重启后无需重新输入密码",
                             style = MaterialTheme.typography.bodySmall,
                             color = apple.secondaryText,
                         )
                     }
+                    Spacer(modifier = Modifier.width(8.dp))
+                    AppleSwitch(
+                        checked = exchangeApiToken,
+                        onCheckedChange = { exchangeApiToken = it },
+                        checkedTrackColor = apple.green,
+                    )
                 }
-
-                Spacer(modifier = Modifier.height(12.dp))
-
-                OutlinedTextField(
-                    value = apiToken,
-                    onValueChange = { apiToken = it },
-                    label = { Text("x-admin-token") },
-                    placeholder = { Text("粘贴 48 位会话 Token") },
-                    singleLine = true,
-                    visualTransformation = if (showToken) VisualTransformation.None else PasswordVisualTransformation(),
-                    trailingIcon = {
-                        Row {
-                            IconButton(
-                                onClick = {
-                                    clipboard.getText()?.text?.let { pasted ->
-                                        apiToken = pasted.trim()
-                                    }
-                                },
-                            ) {
-                                Icon(Icons.Rounded.ContentPaste, contentDescription = "粘贴")
-                            }
-                            IconButton(onClick = { showToken = !showToken }) {
-                                Icon(
-                                    imageVector = if (showToken) Icons.Rounded.VisibilityOff else Icons.Rounded.Visibility,
-                                    contentDescription = "显示/隐藏",
-                                )
-                            }
-                        }
-                    },
-                    shape = RoundedCornerShape(14.dp),
-                    modifier = Modifier.fillMaxWidth(),
-                )
-
-                Spacer(modifier = Modifier.height(8.dp))
-                Text(
-                    text = "可在浏览器开发者工具请求头或本地会话存储中获取当前有效的 x-admin-token。",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = apple.secondaryText,
-                )
             }
         }
 
@@ -505,18 +528,18 @@ fun ServerSetupScreen(
                 submitting = true
                 scope.launch {
                     if (authTabIndex == 0) {
-                        val res = onConnectWithPassword(serverUrl, username, password, rememberPassword)
-                        res.onSuccess { note ->
-                            onSuccessMessage(note.ifBlank { "登录成功，已连接远程服务器" })
-                        }.onFailure { err ->
-                            errorMsg = err.message ?: "登录失败"
-                        }
-                    } else {
                         val res = onConnectWithToken(serverUrl, apiToken)
                         res.onSuccess {
                             onSuccessMessage("已连接远程服务器")
                         }.onFailure { err ->
                             errorMsg = err.message ?: "Token 验证失败"
+                        }
+                    } else {
+                        val res = onConnectWithPassword(serverUrl, username, password, exchangeApiToken, rememberPassword)
+                        res.onSuccess { note ->
+                            onSuccessMessage(note.ifBlank { "登录成功，已连接远程服务器" })
+                        }.onFailure { err ->
+                            errorMsg = err.message ?: "登录失败"
                         }
                     }
                     submitting = false

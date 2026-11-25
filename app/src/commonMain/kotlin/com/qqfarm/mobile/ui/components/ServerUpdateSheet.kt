@@ -554,7 +554,6 @@ fun ServerUpdateSheet(
                                 }
 
                                 cur != null -> {
-                                    // Version & Repo Card
                                     AppleGroupedCard(contentPadding = PaddingValues(14.dp)) {
                                         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                                             Row(
@@ -652,7 +651,6 @@ fun ServerUpdateSheet(
                                         }
                                     }
 
-                                    // Server GitHub Token Card
                                     if (cur.githubTokenConfigured != null) {
                                         val configured = cur.githubTokenConfigured
                                         AppleGroupedCard(contentPadding = PaddingValues(14.dp)) {
@@ -813,7 +811,6 @@ fun ServerUpdateSheet(
                                         }
                                     }
 
-                                    // Incoming Commits
                                     if (cur.incomingCommits.isNotEmpty()) {
                                         AppleGroupedCard(contentPadding = PaddingValues(14.dp)) {
                                             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {

@@ -1710,6 +1710,12 @@ internal fun RanchBookPage(
                         }
                     }
                 },
+                    onMarkAllRead = {
+                        runAction {
+                            onMessage(apiClient.clearRanchIllustratedNew(accountId))
+                            loadBook()
+                        }
+                    },
             )
         }
     }
@@ -1741,6 +1747,7 @@ private fun RanchBookTab(
     book: RanchBookData,
     busy: Boolean,
     onClaimIllustrated: (String) -> Unit,
+    onMarkAllRead: () -> Unit,
 ) {
     val apple = LocalAppleColors.current
     var kindIdx by remember { mutableIntStateOf(0) }
@@ -1754,6 +1761,7 @@ private fun RanchBookTab(
     }
     val ownedFun: (RanchBookAnimal) -> Boolean = { a -> if (isGiant) a.giantUnlocked else a.unlocked }
     val ownedCount = list.count(ownedFun)
+    val hasUnread = isGiant && list.any { it.giantIsNew }
     val claimable = if (isGiant) book.giantLevels.any { it.canClaim } else book.normalCanClaim
 
     val filtered = remember(list, isGiant, filterIdx, search) {
@@ -1829,14 +1837,26 @@ private fun RanchBookTab(
                     trackColor = apple.track,
                 )
 
-                if (claimable) {
+                if (claimable || hasUnread) {
                     Spacer(modifier = Modifier.height(10.dp))
-                    Button(
-                        onClick = { onClaimIllustrated(if (isGiant) "giant" else "normal") },
-                        enabled = !busy,
-                        shape = RoundedCornerShape(10.dp),
-                        modifier = Modifier.fillMaxWidth(),
-                    ) { Text("领取图鉴奖励") }
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        if (claimable) {
+                            Button(
+                                onClick = { onClaimIllustrated(if (isGiant) "giant" else "normal") },
+                                enabled = !busy,
+                                shape = RoundedCornerShape(10.dp),
+                                modifier = Modifier.weight(1f),
+                            ) { Text("领取图鉴奖励") }
+                        }
+                        if (hasUnread) {
+                            OutlinedButton(
+                                onClick = onMarkAllRead,
+                                enabled = !busy,
+                                shape = RoundedCornerShape(10.dp),
+                                modifier = Modifier.weight(1f),
+                            ) { Text("全部已读") }
+                        }
+                    }
                 }
             }
         }

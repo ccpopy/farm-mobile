@@ -26,4 +26,4 @@ actual class PlatformIOException : Exception {
  * Long 型 KBigInt（iOS actual）：价格乘法场景下数值有限，
  * 溢出时饱和到 Long.MAX/MIN，保证比较语义仍成立。
  */
-actual fun appVersionName(): String = "0.1.5"
+actual fun appVersionName(): String = "0.2.0"

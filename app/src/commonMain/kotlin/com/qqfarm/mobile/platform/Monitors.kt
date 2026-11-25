@@ -1,14 +1,13 @@
 package com.qqfarm.mobile.platform
 
 import com.qqfarm.mobile.data.model.AccountItem
-import com.qqfarm.mobile.data.model.AccountLogEvent
+import com.qqfarm.mobile.data.model.MobileOfflineEvent
 import com.qqfarm.mobile.data.model.RunLogEntry
 import com.qqfarm.mobile.data.network.FarmApiClient
 import com.qqfarm.mobile.data.prefs.StoredConfig
 
 /** 离线提醒监控门面（Android: 系统通知；iOS: 空实现） */
 interface OfflineEventsMonitor {
-    fun onAccountLog(ev: AccountLogEvent)
     fun stop()
     fun updateSubscription(enabled: Boolean, accountIds: List<String>)
 }

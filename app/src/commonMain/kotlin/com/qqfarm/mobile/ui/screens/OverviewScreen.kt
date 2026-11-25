@@ -41,6 +41,7 @@ import androidx.compose.material.icons.rounded.ClearAll
 import androidx.compose.material.icons.rounded.ConfirmationNumber
 import androidx.compose.material.icons.rounded.Diamond
 import androidx.compose.material.icons.rounded.Eco
+import androidx.compose.material.icons.rounded.Extension
 import androidx.compose.material.icons.rounded.Grass
 import androidx.compose.material.icons.rounded.Group
 import androidx.compose.material.icons.rounded.Inventory2
@@ -55,7 +56,6 @@ import androidx.compose.material.icons.rounded.ShoppingBag
 import androidx.compose.material.icons.rounded.Star
 import androidx.compose.material.icons.rounded.Storefront
 import androidx.compose.material.icons.rounded.Terminal
-import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.material.icons.rounded.WarningAmber
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -106,8 +106,8 @@ import com.qqfarm.mobile.ui.components.AppleIconBadge
 import com.qqfarm.mobile.ui.components.AppleMetricTile
 import com.qqfarm.mobile.ui.components.AppleProgressBar
 import com.qqfarm.mobile.ui.components.AppleQuickEntryRow
-import com.qqfarm.mobile.ui.components.AppleRadius
 import com.qqfarm.mobile.ui.components.AppleSectionHeader
+import com.qqfarm.mobile.ui.components.AppleRadius
 import com.qqfarm.mobile.ui.components.AppleSegmentedControl
 import com.qqfarm.mobile.ui.components.AppleStatusPill
 import com.qqfarm.mobile.ui.components.QuickEntryItem
@@ -164,7 +164,7 @@ fun OverviewScreen(
     onSwitchSpace: (GameSpace) -> Unit,
     onOpenDiscover: (Int, Int) -> Unit,
     onOpenWorkspace: (Int) -> Unit,
-    onOpenAutomation: () -> Unit,
+    onOpenPlugins: () -> Unit,
 ) {
     val apple = LocalAppleColors.current
     var clockTickMs by remember { mutableLongStateOf(com.qqfarm.mobile.platform.monotonicMillis()) }
@@ -495,8 +495,8 @@ fun OverviewScreen(
                             QuickEntryItem("节令日历", Icons.Rounded.CalendarMonth, apple.red) {
                                 onOpenDiscover(2, 0)
                             },
-                            QuickEntryItem("自动化设置", Icons.Rounded.Tune, apple.indigo) {
-                                onOpenAutomation()
+                            QuickEntryItem("插件管理", Icons.Rounded.Extension, apple.indigo) {
+                                onOpenPlugins()
                             },
                         ),
                     )
@@ -988,6 +988,7 @@ internal fun LogCleanupDialog(
     val target = accountName.ifBlank { "当前账号" }
     AppleAlertDialog(
         onDismissRequest = { if (!clearing) onDismiss() },
+        shape = RoundedCornerShape(AppleRadius.card),
         title = { Text("日志清理") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {

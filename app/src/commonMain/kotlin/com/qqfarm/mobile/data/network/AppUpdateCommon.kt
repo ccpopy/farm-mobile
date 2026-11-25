@@ -4,7 +4,7 @@ package com.qqfarm.mobile.data.network
 internal const val DEFAULT_UPDATE_ACCELERATOR = "https://ghfast.top"
 internal fun isValidGithubToken(token: String): Boolean = token.isNotEmpty() && token.all { it in '!'..'~' }
 
-internal const val PROJECT_GITHUB_URL = "https://github.com/ccpopy/farm-mobile"
+internal const val PROJECT_GITHUB_URL = "https://github.com/ccpopy/qq-farm-bot"
 
 internal fun normalizeUpdateAccelerator(value: String): String? {
     val trimmed = value.trim()

@@ -11,7 +11,7 @@ import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
 import com.qqfarm.mobile.MainActivity
 import com.qqfarm.mobile.R
-import com.qqfarm.mobile.data.model.AccountLogEvent
+import com.qqfarm.mobile.data.model.MobileOfflineEvent
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -27,26 +27,20 @@ class OfflineEventMonitor(
 ) {
     companion object {
         const val CHANNEL_ID = "relogin_alerts"
-        private val OFFLINE_ACTIONS = setOf("ws_400", "kickout_stop", "disconnect_stop", "offline_delete")
     }
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private var pollJob: Job? = null
-    private val seenLock = Any()
-    private val seenKeys = LinkedHashSet<String>()
 
     @Volatile
-    private var baselineInitialized: Boolean = false
-
-    @Volatile
-    private var trackedAccountIds: Set<String> = emptySet()
+    private var trackedAccountIds: List<String> = emptyList()
 
     @Volatile
     private var running: Boolean = false
 
     fun updateSubscription(enabled: Boolean, accountIds: List<String>) {
-        trackedAccountIds = accountIds.filter { it.isNotBlank() }.toSet()
-        if (!enabled) {
+        trackedAccountIds = accountIds.filter { it.isNotBlank() }
+        if (!enabled || trackedAccountIds.isEmpty()) {
             stop()
             return
         }
@@ -55,41 +49,44 @@ class OfflineEventMonitor(
         }
     }
 
-    fun onAccountLog(event: AccountLogEvent) {
-        if (!running || !baselineInitialized) return
-        if (event.action !in OFFLINE_ACTIONS) return
-        val ids = trackedAccountIds
-        if (ids.isNotEmpty() && event.accountId.isNotBlank() && event.accountId !in ids) return
-        if (markSeen(event.eventKey)) {
-            postNotification(event)
-        }
-    }
-
     @Synchronized
     private fun start() {
         if (running) return
         running = true
-        baselineInitialized = false
-        synchronized(seenLock) { seenKeys.clear() }
         pollJob = scope.launch {
+            var cursor = ""
+            val seenEventIds = LinkedHashSet<String>()
             while (isActive && running) {
+                val ids = trackedAccountIds
+                if (ids.isEmpty()) {
+                    delay(5000L)
+                    continue
+                }
                 try {
-                    val events = apiClient.fetchAccountLogs(limit = 40)
-                    if (!baselineInitialized) {
-                        for (ev in events) {
-                            markSeen(ev.eventKey)
-                        }
-                        baselineInitialized = true
-                    } else {
-                        for (ev in events) {
-                            onAccountLog(ev)
+                    val (nextCursor, reset, events) = apiClient.pollOfflineEvents(cursor, ids, 25)
+                    if (reset) {
+                        seenEventIds.clear()
+                    }
+                    cursor = nextCursor
+                    for (ev in events) {
+                        if (ev.eventId.isNotBlank() && seenEventIds.add(ev.eventId)) {
+                            if (seenEventIds.size > 200) {
+                                val first = seenEventIds.firstOrNull()
+                                if (first != null) seenEventIds.remove(first)
+                            }
+                            postNotification(ev)
                         }
                     }
-                    delay(25_000L)
                 } catch (e: CancellationException) {
                     throw e
+                } catch (e: ApiException) {
+                    if (e.errorCode == "MOBILE_ASSISTANT_DISABLED" || e.httpCode == 401 || e.httpCode == 409) {
+                        delay(15000L)
+                    } else {
+                        delay(6000L)
+                    }
                 } catch (_: Exception) {
-                    delay(12_000L)
+                    delay(6000L)
                 }
             }
         }
@@ -98,24 +95,11 @@ class OfflineEventMonitor(
     @Synchronized
     fun stop() {
         running = false
-        baselineInitialized = false
         pollJob?.cancel()
         pollJob = null
     }
 
-    private fun markSeen(key: String): Boolean {
-        if (key.isBlank()) return false
-        synchronized(seenLock) {
-            if (!seenKeys.add(key)) return false
-            while (seenKeys.size > 300) {
-                val first = seenKeys.firstOrNull() ?: break
-                seenKeys.remove(first)
-            }
-            return true
-        }
-    }
-
-    private fun postNotification(event: AccountLogEvent) {
+    private fun postNotification(event: MobileOfflineEvent) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             val granted = ContextCompat.checkSelfPermission(
                 context,
@@ -124,37 +108,28 @@ class OfflineEventMonitor(
             if (!granted) return
         }
 
-        val title = when (event.action) {
-            "ws_400" -> "登录凭证已失效"
-            "kickout_stop" -> "账号被踢下线"
-            "offline_delete" -> "账号持续离线已移除"
-            else -> "账号连接已断开"
-        }
-        val bodyText = event.msg.ifBlank {
-            "${event.accountName.ifBlank { event.accountId }} 需要重新扫码或更新登录凭证"
-        }
+        val platformText = if (event.platform == "qq") "QQ" else "微信"
         val intent = Intent(context, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
         }
-        val requestCode = (event.accountId.ifBlank { event.eventKey }).hashCode()
         val pendingIntent = PendingIntent.getActivity(
             context,
-            requestCode,
+            event.accountId.hashCode(),
             intent,
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
         )
 
         val notification = NotificationCompat.Builder(context, CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_stat_sprout)
-            .setContentTitle(title)
-            .setContentText(bodyText)
+            .setContentTitle("账号需要重新登录")
+            .setContentText("[$platformText] ${event.accountName} 已掉线，点击打开手机端处理")
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setAutoCancel(true)
             .setContentIntent(pendingIntent)
             .build()
 
         runCatching {
-            NotificationManagerCompat.from(context).notify(requestCode, notification)
+            NotificationManagerCompat.from(context).notify(event.accountId.hashCode(), notification)
         }
     }
 }

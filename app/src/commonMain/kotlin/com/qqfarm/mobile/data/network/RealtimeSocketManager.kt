@@ -1,7 +1,6 @@
 package com.qqfarm.mobile.data.network
 
 import kotlin.concurrent.Volatile
-import com.qqfarm.mobile.data.model.AccountLogEvent
 import com.qqfarm.mobile.data.model.RunLogEntry
 import com.qqfarm.mobile.data.model.StatusSnapshot
 import com.qqfarm.mobile.data.network.json.JSONObject
@@ -40,9 +39,6 @@ class RealtimeSocketManager {
 
     private val _logSnapshots = MutableSharedFlow<Pair<SocketHandle, Pair<String, List<RunLogEntry>>>>(extraBufferCapacity = 16)
     val logSnapshots: Flow<Pair<String, List<RunLogEntry>>> = _logSnapshots.fromCurrentSocket()
-
-    private val _accountLogs = MutableSharedFlow<Pair<SocketHandle, AccountLogEvent>>(extraBufferCapacity = 32)
-    val accountLogs: Flow<AccountLogEvent> = _accountLogs.fromCurrentSocket()
 
         fun connect(serverUrl: String, token: String, accountId: String) {
         val cleanUrl = FarmApiClient.normalizeBaseUrl(serverUrl).orEmpty()
@@ -125,9 +121,6 @@ class RealtimeSocketManager {
                 val accId = obj.optStringClean("accountId")
                 val logs = JsonParsers.parseRunLogs(obj.optJSONArray("logs"))
                 _logSnapshots.tryEmit(source to (accId to logs))
-            }
-            "account-log:new" -> {
-                _accountLogs.tryEmit(source to JsonParsers.parseAccountLogEvent(obj))
             }
         }
     }

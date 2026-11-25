@@ -43,7 +43,7 @@ data class ServerProfile(
     val name: String = "",
     val serverUrl: String,
     val authToken: String = "",
-    val authMode: String = StoredConfig.AUTH_MODE_PASSWORD,
+    val authMode: String = StoredConfig.AUTH_MODE_API_TOKEN,
     val username: String = "",
     val sealedPassword: String = "",
     val currentAccountId: String = "",
@@ -60,7 +60,7 @@ data class ServerProfile(
 data class StoredConfig(
     val serverUrl: String = "",
     val authToken: String = "",
-    val authMode: String = AUTH_MODE_PASSWORD,
+    val authMode: String = AUTH_MODE_API_TOKEN,
     val username: String = "",
     val savedPassword: String = "",
     val currentAccountId: String = "",
@@ -137,7 +137,7 @@ class AppPreferences(private val dataStore: DataStore<Preferences>) {
                             name = o.optString("name"),
                             serverUrl = url,
                             authToken = o.optString("authToken"),
-                            authMode = o.optString("authMode").ifBlank { StoredConfig.AUTH_MODE_PASSWORD },
+                            authMode = o.optString("authMode").ifBlank { StoredConfig.AUTH_MODE_API_TOKEN },
                             username = o.optString("username"),
                             sealedPassword = o.optString("sealedPassword"),
                             currentAccountId = o.optString("currentAccountId"),
@@ -177,7 +177,7 @@ class AppPreferences(private val dataStore: DataStore<Preferences>) {
             id = activeId,
             serverUrl = url,
             authToken = prefs[Keys.AUTH_TOKEN].orEmpty(),
-            authMode = prefs[Keys.AUTH_MODE] ?: StoredConfig.AUTH_MODE_PASSWORD,
+            authMode = prefs[Keys.AUTH_MODE] ?: StoredConfig.AUTH_MODE_API_TOKEN,
             username = prefs[Keys.USERNAME].orEmpty(),
             currentAccountId = prefs[Keys.CURRENT_ACCOUNT_ID].orEmpty(),
         )
@@ -205,7 +205,7 @@ class AppPreferences(private val dataStore: DataStore<Preferences>) {
         StoredConfig(
             serverUrl = prefs[Keys.SERVER_URL].orEmpty(),
             authToken = prefs[Keys.AUTH_TOKEN].orEmpty(),
-            authMode = prefs[Keys.AUTH_MODE] ?: StoredConfig.AUTH_MODE_PASSWORD,
+            authMode = prefs[Keys.AUTH_MODE] ?: StoredConfig.AUTH_MODE_API_TOKEN,
             username = prefs[Keys.USERNAME].orEmpty(),
             savedPassword = active?.let { com.qqfarm.mobile.platform.PasswordVault.open(it.sealedPassword, it.id) }.orEmpty(),
             currentAccountId = prefs[Keys.CURRENT_ACCOUNT_ID].orEmpty(),
@@ -241,6 +241,7 @@ class AppPreferences(private val dataStore: DataStore<Preferences>) {
         username: String,
         from: StoredConfig,
         asNewProfile: Boolean = false,
+        rotatingCurrentToken: Boolean = false,
         passwordToRemember: String? = null,
     ): Boolean {
         var saved = false
@@ -257,7 +258,7 @@ class AppPreferences(private val dataStore: DataStore<Preferences>) {
             }
             val base = existing ?: ServerProfile(id = com.qqfarm.mobile.platform.randomUuid(), serverUrl = serverUrl)
             val sameToken = base.serverUrl == serverUrl && base.authToken == token
-            val sameUser = base.serverUrl == serverUrl && (sameToken || (username.isNotBlank() && base.username == username))
+            val sameUser = base.serverUrl == serverUrl && (sameToken || (username.isNotBlank() && base.username == username) || rotatingCurrentToken)
             val sealedPassword = when {
                 passwordToRemember == null -> if (sameUser) base.sealedPassword else ""
                 passwordToRemember.isEmpty() -> ""

@@ -1,7 +1,6 @@
 package com.qqfarm.mobile.platform
 
 import com.qqfarm.mobile.data.model.AccountItem
-import com.qqfarm.mobile.data.model.AccountLogEvent
 import com.qqfarm.mobile.data.network.FarmApiClient
 import com.qqfarm.mobile.data.prefs.StoredConfig
 
@@ -10,7 +9,6 @@ actual fun createOfflineMonitor(apiClient: FarmApiClient): OfflineEventsMonitor 
 actual fun createActivityNotifier(apiClient: FarmApiClient): ActivityNotifier = NoopActivityNotifier
 
 private object NoopOfflineMonitor : OfflineEventsMonitor {
-    override fun onAccountLog(ev: AccountLogEvent) {}
     override fun stop() {}
     override fun updateSubscription(enabled: Boolean, accountIds: List<String>) {}
 }

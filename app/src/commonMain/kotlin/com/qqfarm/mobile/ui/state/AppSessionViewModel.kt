@@ -134,12 +134,6 @@ class AppSessionViewModel(val container: com.qqfarm.mobile.platform.AppContainer
                 }
             }
         }
-
-        viewModelScope.launch {
-            socketManager.accountLogs.collect { ev ->
-                offlineMonitor.onAccountLog(ev)
-            }
-        }
         viewModelScope.launch {
             while (true) {
                 delay(60_000L)
@@ -318,6 +312,7 @@ class AppSessionViewModel(val container: com.qqfarm.mobile.platform.AppContainer
         rawUrl: String,
         username: String,
         password: String,
+        exchangeApiToken: Boolean,
         rememberPassword: Boolean,
     ): Result<String> {
         val normalized = FarmApiClient.normalizeBaseUrl(rawUrl)
@@ -343,15 +338,27 @@ class AppSessionViewModel(val container: com.qqfarm.mobile.platform.AppContainer
             return Result.failure(IllegalArgumentException(detail))
         }
 
-        val note = if (loginRes.mustChangePassword) {
-            "登录成功，建议在网页端修改默认密码"
-        } else ""
+        var finalToken = loginRes.token
+        var finalMode = StoredConfig.AUTH_MODE_PASSWORD
+        var note = ""
+        if (exchangeApiToken) {
+            val persistent = runCatching { apiClient.fetchApiToken(normalized, loginRes.token) }.getOrNull()
+            if (!persistent.isNullOrBlank()) {
+                finalToken = persistent
+                finalMode = StoredConfig.AUTH_MODE_API_TOKEN
+            } else {
+                note = "（持久 Token 获取失败，已使用临时会话）"
+            }
+        }
+        if (loginRes.mustChangePassword) {
+            note = "登录成功，建议在网页端修改默认密码$note"
+        }
 
         val saved = try {
             prefs.saveConnection(
                 serverUrl = normalized,
-                token = loginRes.token,
-                authMode = StoredConfig.AUTH_MODE_PASSWORD,
+                token = finalToken,
+                authMode = finalMode,
                 username = loginRes.username.ifBlank { username.trim() },
                 from = from,
                 asNewProfile = asNew,
@@ -642,6 +649,16 @@ class AppSessionViewModel(val container: com.qqfarm.mobile.platform.AppContainer
 
     fun setOfflineAlertsEnabled(enabled: Boolean) {
         viewModelScope.launch {
+            if (enabled) {
+                val loginConfig = runCatching { apiClient.fetchLoginConfig() }.getOrElse {
+                    emitMessage(it.message ?: "读取服务端手机助手设置失败")
+                    return@launch
+                }
+                if (!loginConfig.mobileAssistant) {
+                    emitMessage("请先在网页端开启手机助手")
+                    return@launch
+                }
+            }
             prefs.updateOfflineAlertsEnabled(enabled)
             if (enabled) emitMessage("已开启掉线重登提醒")
         }
@@ -676,6 +693,21 @@ class AppSessionViewModel(val container: com.qqfarm.mobile.platform.AppContainer
     }
 
     fun sendTestActivityNotification(): Boolean = activityNotifier.sendTestNotification()
+
+    suspend fun fetchCurrentApiToken(): Result<String> = runCatching {
+        apiClient.fetchApiToken()
+    }
+
+    suspend fun rotateAndPersistApiToken(): Result<String> = runCatching {
+        tokenUpdates.withLock {
+            val cfg = _uiState.value.config
+            val nextToken = apiClient.resetApiToken()
+            if (nextToken.isNotBlank() && cfg.authMode == StoredConfig.AUTH_MODE_API_TOKEN && isActiveConnection(cfg)) {
+                check(prefs.saveConnection(cfg.serverUrl, nextToken, cfg.authMode, cfg.username, cfg, rotatingCurrentToken = true)) { "当前连接已切换" }
+            }
+            nextToken
+        }
+    }
 
     override fun onCleared() {
         super.onCleared()

@@ -21,10 +21,10 @@ import java.security.MessageDigest
 import java.util.Locale
 import java.util.concurrent.TimeUnit
 
-private const val UPDATE_REPOSITORY = "ccpopy/farm-mobile"
+private const val UPDATE_REPOSITORY = "ccpopy/qq-farm-bot"
 private const val GITHUB_API = "https://api.github.com/repos/$UPDATE_REPOSITORY"
 private const val GITHUB_RELEASES = "https://github.com/$UPDATE_REPOSITORY/releases"
-private const val TAG_PREFIX = "v"
+private const val TAG_PREFIX = "android-v"
 
 data class AndroidRelease(
     val version: String,
@@ -34,8 +34,8 @@ data class AndroidRelease(
     val sha256: String,
     val requiresAuthorization: Boolean,
 ) {
-    val apkUrl: String get() = "$GITHUB_RELEASES/download/$TAG_PREFIX$version/farm-mobile-$version-release.apk"
-    val canAccelerate: Boolean get() = !requiresAuthorization
+    val apkUrl: String get() = "$GITHUB_RELEASES/download/$TAG_PREFIX$version/qq-farm-mobile-$version-release.apk"
+    val canAccelerate: Boolean get() = !requiresAuthorization && sha256.isNotEmpty()
 }
 
 internal class UpdateException(message: String, val authorizationRequired: Boolean = false) : IOException(message)
@@ -70,7 +70,7 @@ internal fun selectAndroidUpdate(
         if (parsedVersion <= newestVersion) continue
         val assets = release.optJSONArray("assets") ?: continue
         val asset = (0 until assets.length()).asSequence().mapNotNull(assets::optJSONObject).firstOrNull {
-            it.optString("name") == "farm-mobile-$version-release.apk" && it.optString("state") == "uploaded"
+            it.optString("name") == "qq-farm-mobile-$version-release.apk" && it.optString("state") == "uploaded"
         } ?: continue
 
         val rawDigest = if (asset.isNull("digest")) "" else asset.optString("digest").trim()

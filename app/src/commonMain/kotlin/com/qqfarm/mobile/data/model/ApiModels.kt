@@ -491,11 +491,32 @@ data class FriendsPayload(
     val error: String = "",
 )
 
-data class SchedulerSummary(
-    val workerRunning: Boolean = false,
-    val workerTaskCount: Int = 0,
-    val runningTasks: List<String> = emptyList(),
-    val workerError: String = "",
+data class PluginOpCost(
+    val resourceKey: String,
+    val amount: String,
+    val name: String = "",
+)
+
+data class PluginQuietWindow(
+    val start: String = "00:00",
+    val end: String = "08:00",
+)
+
+data class PluginSpendingRule(
+    val resourceKey: String,
+    val perOperationMax: String = "-1",
+    val dailyMax: String = "-1",
+    val minReserve: String = "0",
+)
+
+data class PluginSpendingUsage(
+    val resourceKey: String,
+    val usedToday: String = "0",
+)
+
+data class PluginSpendingPolicy(
+    val autoSpend: Boolean = false,
+    val rules: List<PluginSpendingRule> = emptyList(),
 )
 
 data class RanchAnimalOption(
@@ -511,32 +532,113 @@ data class SeedOption(
     val requiresUnlockCard: Boolean = false,
 )
 
+data class PluginDefinition(
+    val id: String,
+    val name: String,
+    val version: String = "",
+    val description: String = "",
+    val author: String = "",
+    val origin: String = "extension",
+    val badge: String = "",
+    val animalOptions: List<RanchAnimalOption> = emptyList(),
+    val settingsSchemaJson: String = "{}",
+    val uiSchemaJson: String = "{}",
+    val resourceNames: Map<String, String> = emptyMap(),
+    val operationNames: Map<String, String> = emptyMap(),
+)
+
+data class PluginJob(
+    val id: String,
+    val title: String,
+    val triggerText: String,
+    val stateLabel: String = "",
+    val stateKey: String = "",
+    val message: String = "",
+    val nextRunAtMs: Long = 0L,
+    val lastRunAtMs: Long = 0L,
+    val errorCode: String = "",
+    val errorMessage: String = "",
+    val blockedReason: String = "",
+)
+
+data class PluginPendingOp(
+    val operationId: String,
+    val kind: String,
+    val status: String,
+    val message: String,
+    val createdAtMs: Long,
+    val isNative: Boolean,
+    val costs: List<PluginOpCost> = emptyList(),
+)
+
+data class PluginLogEntry(
+    val ts: Long,
+    val level: String,
+    val accountName: String,
+    val jobId: String,
+    val message: String,
+)
+
+data class PluginSummary(
+    val id: String,
+    val name: String,
+    val version: String,
+    val description: String,
+    val author: String,
+    val origin: String,
+    val badge: String = "",
+    val enabled: Boolean = false,
+    val accountsBound: Int = 0,
+    val accountsEnabled: Int = 0,
+    val pausedAccounts: Int = 0,
+    val pendingConfirmations: Int = 0,
+    val executionState: String = "",
+    val executionLabel: String = "",
+    val executionMessage: String = "",
+    val lastFinishedAtMs: Long = 0L,
+    val nextRunAtMs: Long = 0L,
+    val canDisable: Boolean = true,
+    val canPause: Boolean = false,
+) {
+    val isBuiltin: Boolean
+        get() = origin == "builtin"
+}
+
+data class PluginListPayload(
+    val hostApiVersion: String = "",
+    val runtimeAvailable: Boolean = true,
+    val runtimeReason: String = "",
+    val plugins: List<PluginSummary> = emptyList(),
+)
+
 data class AccountSettingsModel(
     val plantingStrategy: String = "max_exp",
     val preferredSeedId: Long = 0L,
     val bagSeedPriority: List<Int> = emptyList(),
     val ranchCoopCubPriority: List<Int> = emptyList(),
     val ranchShedCubPriority: List<Int> = emptyList(),
+    val bagSeedFallbackStrategy: String = "level",
+    val bagSeedMultiLandReservationEnabled: Boolean = false,
     val farmMinSec: Int = 20,
     val farmMaxSec: Int = 25,
     val friendMinSec: Int = 20,
     val friendMaxSec: Int = 25,
     val quietHoursEnabled: Boolean = false,
-    val quietHoursStart: String = "01:00",
-    val quietHoursEnd: String = "07:30",
+    val quietHoursStart: String = "23:00",
+    val quietHoursEnd: String = "07:00",
     val quietContinueFarm: Boolean = true,
-    val stealDelaySeconds: Int = 1,
-    val plantOrderRandom: Boolean = true,
-    val plantDelaySeconds: Int = 2,
-    val fertilizerMode: String = "smart",
+    val stealDelaySeconds: Int = 0,
+    val plantOrderRandom: Boolean = false,
+    val plantDelaySeconds: Int = 0,
+    val fertilizerMode: String = "none",
     val fertilizerSmartSeconds: Int = 300,
-    val fertilizerLandTypes: List<String> = listOf("purple-gold", "gold", "black", "red", "normal"),
-    val fertilizerBuyOrganicCount: Int = 1,
+    val fertilizerLandTypes: List<String> = listOf("blue-crystal", "purple-gold", "gold", "black", "red", "normal"),
+    val fertilizerBuyOrganicCount: Int = 10,
     val fertilizerBuyOrganicThresholdHours: Int = 10,
-    val fertilizerBuyNormalCount: Int = 1,
+    val fertilizerBuyNormalCount: Int = 10,
     val fertilizerBuyNormalThresholdHours: Int = 10,
-    val fertilizerBuyCheckIntervalMinutes: Int = 60,
-    val emailClaimHour: Int? = null,
+    val fertilizerBuyCheckIntervalMinutes: Int = 30,
+    val emailClaimHour: Int = 10,
     val autoAcceptFriendMinLevel: Int = 0,
     val autoAcceptRequireOwnLevel: Boolean = false,
     val autoAcceptHarvestStealEnabled: Boolean = true,
@@ -555,9 +657,49 @@ data class AccountSettingsModel(
     val rawAutomationJson: String = "{}",
 )
 
+data class PluginAccountDetail(
+    val isBuiltin: Boolean = false,
+    val accountId: String = "",
+    val accountName: String = "",
+    val timeZone: String = "",
+    val paused: Boolean = false,
+    val running: Boolean = false,
+    val connected: Boolean = false,
+    val enabledFeatures: List<String> = emptyList(),
+    val settingsRevision: String = "",
+    val builtinSettings: AccountSettingsModel = AccountSettingsModel(),
+    val nativeOperationsError: String = "",
+    val bindingExists: Boolean = false,
+    val bindingEnabled: Boolean = false,
+    val bindingRevision: Int = 0,
+    val bindingSettingsJson: String = "{}",
+    val quietWindows: List<PluginQuietWindow> = emptyList(),
+    val accountQuietWindows: List<PluginQuietWindow> = emptyList(),
+    val spendingPolicy: PluginSpendingPolicy = PluginSpendingPolicy(),
+    val spendingUsage: List<PluginSpendingUsage> = emptyList(),
+    val conflicts: List<String> = emptyList(),
+    val decisionAllowed: Boolean = true,
+    val decisionReason: String = "",
+    val nextAllowedAtMs: Long = 0L,
+    val executionState: String = "",
+    val executionLabel: String = "",
+    val executionMessage: String = "",
+    val jobs: List<PluginJob> = emptyList(),
+    val operations: List<PluginPendingOp> = emptyList(),
+    val logs: List<PluginLogEntry> = emptyList(),
+)
+
+data class PluginSaveResult(
+    val detail: PluginAccountDetail,
+    val unconfirmed: Boolean,
+    val message: String,
+)
+
 data class LoginConfigModel(
     val wechatQrLogin: Boolean = true,
     val qqQrLogin: Boolean = false,
+    val phoneCaptureLogin: Boolean = false,
+    val mobileAssistant: Boolean = false,
 )
 
 data class WxQrTask(
@@ -574,13 +716,10 @@ data class QqQrTask(
     val expiresAt: Long,
 )
 
-data class AccountLogEvent(
-    val time: String,
-    val action: String,
-    val msg: String,
+data class MobileOfflineEvent(
+    val eventId: String,
     val accountId: String,
     val accountName: String,
-) {
-    val eventKey: String
-        get() = "$time|$accountId|$action|$msg"
-}
+    val platform: String,
+    val createdAt: Long,
+)

@@ -1242,3 +1242,128 @@ data class OfflineReminderConfig(
         return channels.firstOrNull { it.normalizedChannel == key } ?: PushChannelEntry(channel = key)
     }
 }
+
+// ---- Maple Market (以薯换福) ----
+
+data class MapleMarketQuote(
+    val basePrice: Int = 0,
+    val boost: Int = 0,
+    val unitPrice: Int = 0,
+    val complete: Boolean = false,
+    val tier: String = "",
+    val canSell: Boolean = false,
+    val remainingQuota: Int = 0,
+    val ownerName: String = "",
+)
+
+data class MapleMarketGoodsItem(
+    val id: Int = 0,
+    val count: Int = 0,
+    val name: String = "",
+    val image: String = "",
+)
+
+data class MapleMarketGoods(
+    val id: Int = 0,
+    val name: String = "",
+    val items: List<MapleMarketGoodsItem> = emptyList(),
+    val price: Int = 0,
+    val limitType: Int = 0,
+    val limitTimes: Int? = null,
+    val remaining: Int? = null,
+    val exchangeable: Boolean = false,
+) {
+    val limitLabel: String
+        get() = when (limitType) {
+            1 -> "每日限购"
+            2 -> "活动限购"
+            else -> "限购"
+        }
+}
+
+data class MapleMarketState(
+    val activityId: String = "2026111707",
+    val serverTimeMs: Long = 0L,
+    val receivedAtElapsedMs: Long = 0L,
+    val startTimeMs: Long = 0L,
+    val endTimeMs: Long = 0L,
+    val phase: String = "unavailable",
+    val seedClaimed: Boolean = false,
+    val canClaimSeed: Boolean = false,
+    val seedItemId: Int = 20307,
+    val cropItemId: Int = 1032,
+    val coinItemId: Int = 1033,
+    val shared: Boolean = false,
+    val coinBalance: Long = 0L,
+    val pendingCommissionCoin: Long = 0L,
+    val pendingCommissionCount: Int = 0,
+    val canClaimCommission: Boolean = false,
+    val purchaseLogUnread: Boolean = false,
+    val rules: List<String> = emptyList(),
+    val quote: MapleMarketQuote? = null,
+    val goods: List<MapleMarketGoods> = emptyList(),
+    val seedStock: Long = 0L,
+    val cropStock: Long = 0L,
+    val sellableCropStock: Long = 0L,
+)
+
+data class MapleMarketPurchaseRecord(
+    val timestampMs: Long = 0L,
+    val sellerGid: Long = 0L,
+    val sellerName: String = "",
+    val sellerAvatar: String = "",
+    val sellerLevel: Int = 0,
+    val soldCount: Int = 0,
+    val income: Long = 0L,
+    val commission: Long = 0L,
+)
+
+data class MapleMarketFriendQuoteRow(
+    val gid: Long = 0L,
+    val name: String = "",
+    val quote: MapleMarketQuote? = null,
+    val failed: Boolean = false,
+    val reused: Boolean = false,
+)
+
+data class MapleMarketComparison(
+    val status: String = "idle",
+    val dayKey: String = "",
+    val total: Int = 0,
+    val checked: Int = 0,
+    val reused: Int = 0,
+    val queried: Int = 0,
+    val partial: Boolean = false,
+    val updatedAtMs: Long = 0L,
+    val rows: List<MapleMarketFriendQuoteRow> = emptyList(),
+    val error: String = "",
+)
+
+data class MapleMarketClaimSeedResult(
+    val status: String = "",
+    val count: Int = 0,
+    val message: String = "",
+)
+
+data class MapleMarketClaimCommissionResult(
+    val status: String = "",
+    val claimedCoin: Long = 0L,
+    val claimedCount: Int = 0,
+    val coinBalance: Long = 0L,
+    val message: String = "",
+)
+
+data class MapleMarketSellResult(
+    val sold: Int = 0,
+    val unitPrice: Int = 0,
+    val income: Long = 0L,
+    val coinBalance: Long = 0L,
+    val remainingQuota: Int? = null,
+)
+
+data class MapleMarketExchangeResult(
+    val goodsId: Int = 0,
+    val count: Int = 0,
+    val cost: Long = 0L,
+    val coinBalance: Long = 0L,
+)

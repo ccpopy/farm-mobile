@@ -92,8 +92,8 @@ android {
         applicationId = "io.github.ccpopy.farmmobile"
         minSdk = 26
         targetSdk = 35
-        versionCode = 15
-        versionName = "0.1.5"
+        versionCode = 21
+        versionName = "0.2.0"
 
         vectorDrawables {
             useSupportLibrary = true

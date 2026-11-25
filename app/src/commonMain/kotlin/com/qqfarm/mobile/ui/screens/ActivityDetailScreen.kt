@@ -181,6 +181,16 @@ fun ActivityDetailScreen(
 
         Box(modifier = Modifier.weight(1f)) {
             when (gameplayKey) {
+                "maplemarket" -> MapleMarketDetailContent(
+                    accountId = accountId,
+                    apiClient = apiClient,
+                    clockTickMs = clockTickMs,
+                    refreshTrigger = refreshTrigger,
+                    onSubtitle = { headerSubtitle = it },
+                    onRules = { activeRules = it },
+                    onMessage = onMessage,
+                )
+
                 "muge" -> MugeDetailContent(
                     accountId = accountId,
                     apiClient = apiClient,
@@ -3658,11 +3668,11 @@ private fun CharityDetailContent(
         }
     }
 
-    fun op(actionPath: String, body: JSONObject = JSONObject()) {
+    fun op(actionPath: String) {
         if (busy) return
         scope.launch {
             busy = true
-            runCatching { apiClient.operateCharity(accountId, actionPath, body) }
+            runCatching { apiClient.operateCharity(accountId, actionPath) }
                 .onSuccess { onMessage(it); load() }
                 .onFailure { onMessage(it.message ?: "操作失败") }
             busy = false
@@ -3685,6 +3695,24 @@ private fun CharityDetailContent(
             contentPadding = PaddingValues(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
+            if (!current.agreementAccepted) {
+                item {
+                    AppleGroupedCard(contentPadding = PaddingValues(16.dp), containerColor = apple.red.copy(alpha = 0.08f)) {
+                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Text("需先同意公益活动协议", style = MaterialTheme.typography.titleSmall, color = apple.red)
+                            Button(
+                                onClick = { op("agreement/accept") },
+                                enabled = !busy,
+                                shape = RoundedCornerShape(12.dp),
+                                modifier = Modifier.fillMaxWidth(),
+                            ) {
+                                Text("同意并参与公益小红花")
+                            }
+                        }
+                    }
+                }
+            }
+
             item {
                 AppleGroupedCard(contentPadding = PaddingValues(16.dp)) {
                     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -3698,18 +3726,28 @@ private fun CharityDetailContent(
                                 Text(current.donatedLove, style = MaterialTheme.typography.titleLarge, color = apple.emerald)
                             }
                         }
-                        OutlinedButton(
-                            onClick = { op("seeds/claim") },
-                            enabled = !busy && current.canClaimSeeds,
-                            shape = RoundedCornerShape(12.dp),
-                            modifier = Modifier.fillMaxWidth(),
-                        ) {
-                            Text("领取今日种子")
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            OutlinedButton(
+                                onClick = { op("seeds/claim") },
+                                enabled = !busy && current.canClaimSeeds,
+                                shape = RoundedCornerShape(12.dp),
+                                modifier = Modifier.weight(1f),
+                            ) {
+                                Text("领种子")
+                            }
+                            OutlinedButton(
+                                onClick = { op("share") },
+                                enabled = !busy && current.canShare,
+                                shape = RoundedCornerShape(12.dp),
+                                modifier = Modifier.weight(1f),
+                            ) {
+                                Text("每日分享")
+                            }
                         }
                         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             Button(
                                 onClick = { confirmDonate = true },
-                                enabled = !busy && current.canDonateLove,
+                                enabled = !busy && current.agreementAccepted && current.canDonateLove,
                                 shape = RoundedCornerShape(12.dp),
                                 modifier = Modifier.weight(1f),
                             ) {
@@ -3734,7 +3772,7 @@ private fun CharityDetailContent(
                     SimpleStageCard(
                         stage = stage,
                         actionLabel = if (stage.claimable) "领取里程碑" else null,
-                        onAction = { op("progress/claim", JSONObject().put("target", stage.id)) },
+                        onAction = { op("progress/${stage.id}/claim") },
                         busy = busy,
                     )
                 }

@@ -1,7 +1,6 @@
 package com.qqfarm.mobile.data.network
 
 import com.qqfarm.mobile.data.model.AccountItem
-import com.qqfarm.mobile.data.model.AccountLogEvent
 import com.qqfarm.mobile.data.model.AccountSettingsModel
 import com.qqfarm.mobile.data.model.BagItem
 import com.qqfarm.mobile.data.model.BagPayload
@@ -23,11 +22,25 @@ import com.qqfarm.mobile.data.model.LandUpgradeInfo
 import com.qqfarm.mobile.data.model.LandsPayload
 import com.qqfarm.mobile.data.model.LevelProgress
 import com.qqfarm.mobile.data.model.LoginConfigModel
+import com.qqfarm.mobile.data.model.MobileOfflineEvent
 import com.qqfarm.mobile.data.model.PetDog
 import com.qqfarm.mobile.data.model.PetSnapshot
+import com.qqfarm.mobile.data.model.PluginAccountDetail
+import com.qqfarm.mobile.data.model.PluginDefinition
+import com.qqfarm.mobile.data.model.PluginJob
+import com.qqfarm.mobile.data.model.PluginListPayload
+import com.qqfarm.mobile.data.model.PluginLogEntry
+import com.qqfarm.mobile.data.model.PluginOpCost
+import com.qqfarm.mobile.data.model.PluginPendingOp
+import com.qqfarm.mobile.data.model.PluginQuietWindow
+import com.qqfarm.mobile.data.model.PluginSpendingPolicy
+import com.qqfarm.mobile.data.model.PluginSpendingRule
+import com.qqfarm.mobile.data.model.PluginSpendingUsage
+import com.qqfarm.mobile.data.model.PluginSummary
+import com.qqfarm.mobile.data.model.RanchAnimalOption
+import com.qqfarm.mobile.data.model.SeedOption
 import com.qqfarm.mobile.data.model.QqQrTask
 import com.qqfarm.mobile.data.model.RanchAnimal
-import com.qqfarm.mobile.data.model.RanchAnimalOption
 import com.qqfarm.mobile.data.model.RanchBucket
 import com.qqfarm.mobile.data.model.RanchCurrency
 import com.qqfarm.mobile.data.model.RanchFacility
@@ -36,8 +49,6 @@ import com.qqfarm.mobile.data.model.RanchCareer
 import com.qqfarm.mobile.data.model.RanchPayload
 import com.qqfarm.mobile.data.model.RanchPenGroup
 import com.qqfarm.mobile.data.model.RunLogEntry
-import com.qqfarm.mobile.data.model.SchedulerSummary
-import com.qqfarm.mobile.data.model.SeedOption
 import com.qqfarm.mobile.data.model.ServerVersionInfo
 import com.qqfarm.mobile.data.model.StatusSnapshot
 import com.qqfarm.mobile.data.model.WxQrTask
@@ -795,33 +806,50 @@ object JsonParsers {
         }
     }
 
-    fun parseSchedulerSummary(obj: JSONObject): SchedulerSummary {
-        val workerError = obj.optStringClean("workerError")
-        val worker = obj.optJSONObject("worker")
-        val schedulersArr = worker?.optJSONArray("schedulers") ?: JSONArray()
-        val taskNames = mutableListOf<String>()
-        var taskCount = 0
-        for (i in 0 until schedulersArr.length()) {
-            val s = schedulersArr.optJSONObject(i) ?: continue
-            val tasks = s.optJSONArray("tasks") ?: continue
-            taskCount += tasks.length()
-            for (j in 0 until tasks.length()) {
-                val t = tasks.optJSONObject(j) ?: continue
-                if (t.optBoolFlex("running")) {
-                    val name = t.optStringClean("name")
-                    if (name.isNotBlank()) taskNames.add(name)
-                }
+    fun parsePluginList(obj: JSONObject): PluginListPayload {
+        val runtime = obj.optJSONObject("runtime")
+        val arr = obj.optJSONArray("plugins") ?: JSONArray()
+        val list = buildList(arr.length()) {
+            for (i in 0 until arr.length()) {
+                val plugin = arr.optJSONObject(i) ?: continue
+                add(parsePluginSummary(plugin))
             }
         }
-        return SchedulerSummary(
-            workerRunning = worker != null,
-            workerTaskCount = taskCount,
-            runningTasks = taskNames,
-            workerError = workerError,
+        return PluginListPayload(
+            hostApiVersion = obj.optStringClean("hostApiVersion"),
+            runtimeAvailable = runtime?.optBoolFlex("available", true) ?: true,
+            runtimeReason = runtime?.optStringClean("reason").orEmpty(),
+            plugins = list,
         )
     }
 
-    fun parseRanchAutomationOptions(arr: JSONArray?): List<RanchAnimalOption> {
+    fun parsePluginSummary(plugin: JSONObject): PluginSummary {
+        val execution = plugin.optJSONObject("executionStatus")
+        val management = plugin.optJSONObject("management")
+        return PluginSummary(
+            id = plugin.optStringClean("id"),
+            name = plugin.optStringClean("name"),
+            version = plugin.optStringClean("version"),
+            description = plugin.optStringClean("description"),
+            author = plugin.optStringClean("author"),
+            origin = plugin.optStringClean("origin", "extension"),
+            badge = plugin.optStringClean("badge"),
+            enabled = plugin.optBoolFlex("enabled"),
+            accountsBound = plugin.optIntFlex("accountsBound"),
+            accountsEnabled = plugin.optIntFlex("accountsEnabled"),
+            pausedAccounts = plugin.optIntFlex("pausedAccounts"),
+            pendingConfirmations = plugin.optIntFlex("pendingConfirmations"),
+            executionState = execution?.optStringClean("state").orEmpty(),
+            executionLabel = execution?.optStringClean("label").orEmpty(),
+            executionMessage = execution?.optStringClean("message").orEmpty(),
+            lastFinishedAtMs = plugin.optLongFlex("lastFinishedAt"),
+            nextRunAtMs = plugin.optLongFlex("nextRunAt"),
+            canDisable = management?.optBoolFlex("disable", true) ?: true,
+            canPause = management?.optBoolFlex("pause", false) ?: false,
+        )
+    }
+
+    fun parseRanchAnimalOptions(arr: JSONArray?): List<RanchAnimalOption> {
         if (arr == null) return emptyList()
         return buildList(arr.length()) {
             for (i in 0 until arr.length()) {
@@ -857,6 +885,242 @@ object JsonParsers {
         }
     }
 
+    private fun parseStringMap(obj: JSONObject?): Map<String, String> {
+        if (obj == null) return emptyMap()
+        return buildMap {
+            for (key in obj.keys()) {
+                val v = obj.optStringClean(key)
+                if (v.isNotBlank()) put(key, v)
+            }
+        }
+    }
+
+    fun parsePluginDefinition(obj: JSONObject): PluginDefinition = PluginDefinition(
+        id = obj.optStringClean("id"),
+        name = obj.optStringClean("name"),
+        version = obj.optStringClean("version"),
+        description = obj.optStringClean("description"),
+        author = obj.optStringClean("author"),
+        origin = obj.optStringClean("origin", "extension"),
+        badge = obj.optStringClean("badge"),
+        animalOptions = parseRanchAnimalOptions(obj.optJSONArray("animalOptions")),
+        settingsSchemaJson = obj.optJSONObject("settingsSchema")?.toString() ?: "{}",
+        uiSchemaJson = obj.optJSONObject("uiSchema")?.toString() ?: "{}",
+        resourceNames = parseStringMap(obj.optJSONObject("resourceNames")),
+        operationNames = parseStringMap(obj.optJSONObject("operationNames")),
+    )
+
+    private fun parseOpCosts(arr: JSONArray?): List<PluginOpCost> {
+        if (arr == null) return emptyList()
+        return buildList(arr.length()) {
+            for (i in 0 until arr.length()) {
+                val c = arr.optJSONObject(i) ?: continue
+                val key = c.optStringClean("resourceKey")
+                val amount = c.optStringClean("amount", c.optLongFlex("amount").toString())
+                if (key.isNotBlank()) {
+                    add(PluginOpCost(resourceKey = key, amount = amount, name = c.optStringClean("name")))
+                }
+            }
+        }
+    }
+
+    private fun parseQuietWindows(arr: JSONArray?): List<PluginQuietWindow> {
+        if (arr == null) return emptyList()
+        return buildList(arr.length()) {
+            for (i in 0 until arr.length()) {
+                val w = arr.optJSONObject(i) ?: continue
+                val start = w.optStringClean("start", "00:00")
+                val end = w.optStringClean("end", "08:00")
+                add(PluginQuietWindow(start = start, end = end))
+            }
+        }
+    }
+
+    private fun parseSpendingPolicy(obj: JSONObject?): PluginSpendingPolicy {
+        if (obj == null) return PluginSpendingPolicy()
+        val rulesArr = obj.optJSONArray("rules") ?: JSONArray()
+        val rules = buildList(rulesArr.length()) {
+            for (i in 0 until rulesArr.length()) {
+                val r = rulesArr.optJSONObject(i) ?: continue
+                val key = r.optStringClean("resourceKey")
+                add(
+                    PluginSpendingRule(
+                        resourceKey = key,
+                        perOperationMax = r.optStringClean("perOperationMax", "-1"),
+                        dailyMax = r.optStringClean("dailyMax", "-1"),
+                        minReserve = r.optStringClean("minReserve", "0"),
+                    )
+                )
+            }
+        }
+        return PluginSpendingPolicy(autoSpend = obj.optBoolFlex("autoSpend"), rules = rules)
+    }
+
+    fun parseBuiltinPluginPaused(obj: JSONObject?): Boolean =
+        obj?.optJSONObject("status")?.opt("paused") as? Boolean
+            ?: throw ApiException("服务器未返回当前账号的模块状态")
+
+    fun parsePluginAccountDetail(obj: JSONObject, isBuiltin: Boolean): PluginAccountDetail {
+        val statusObj = obj.optJSONObject("status")
+        val paused = isBuiltin && parseBuiltinPluginPaused(obj)
+        val enabledFeaturesArr = statusObj?.optJSONArray("enabledFeatures") ?: JSONArray()
+        val enabledFeatures = buildList(enabledFeaturesArr.length()) {
+            for (i in 0 until enabledFeaturesArr.length()) {
+                val f = enabledFeaturesArr.optString(i).trim()
+                if (f.isNotEmpty()) add(f)
+            }
+        }
+
+        val jobsArr = obj.optJSONArray("jobs") ?: JSONArray()
+        val jobs = buildList(jobsArr.length()) {
+            for (i in 0 until jobsArr.length()) {
+                val j = jobsArr.optJSONObject(i) ?: continue
+                val trigger = j.optJSONObject("trigger")
+                val exec = j.optJSONObject("executionStatus")
+                val stateObj = j.optJSONObject("state")
+                val errObj = exec?.optJSONObject("error")
+                add(
+                    PluginJob(
+                        id = j.optStringClean("id"),
+                        title = j.optStringClean("title"),
+                        triggerText = describeTrigger(trigger),
+                        stateLabel = exec?.optStringClean("label").orEmpty(),
+                        stateKey = exec?.optStringClean("state").orEmpty(),
+                        message = exec?.optStringClean("message").orEmpty(),
+                        nextRunAtMs = j.optLongFlex("nextRunAt"),
+                        lastRunAtMs = stateObj?.optLongFlex("lastRunAt") ?: 0L,
+                        errorCode = errObj?.optStringClean("code").orEmpty(),
+                        errorMessage = errObj?.optStringClean("message").orEmpty(),
+                        blockedReason = stateObj?.optStringClean("blockedReason").orEmpty(),
+                    )
+                )
+            }
+        }
+
+        val ops = mutableListOf<PluginPendingOp>()
+        val nativeArr = obj.optJSONArray("nativeOperations")
+        if (nativeArr != null) {
+            for (i in 0 until nativeArr.length()) {
+                val op = nativeArr.optJSONObject(i) ?: continue
+                ops.add(
+                    PluginPendingOp(
+                        operationId = op.optStringClean("operationId"),
+                        kind = op.optStringClean("label", "待核对操作"),
+                        status = "unknown",
+                        message = op.optStringClean("message"),
+                        createdAtMs = op.optLongFlex("createdAt"),
+                        isNative = true,
+                        costs = parseOpCosts(op.optJSONArray("costs")),
+                    )
+                )
+            }
+        }
+        val extArr = obj.optJSONArray("operations")
+        if (extArr != null) {
+            for (i in 0 until extArr.length()) {
+                val op = extArr.optJSONObject(i) ?: continue
+                ops.add(
+                    PluginPendingOp(
+                        operationId = op.optStringClean("operationId"),
+                        kind = op.optStringClean("kind", "操作记录"),
+                        status = op.optStringClean("status", "confirmed"),
+                        message = op.optStringClean("message"),
+                        createdAtMs = op.optLongFlex("createdAtMs"),
+                        isNative = false,
+                        costs = parseOpCosts(op.optJSONArray("costs")),
+                    )
+                )
+            }
+        }
+
+        val bindingObj = obj.optJSONObject("binding")
+        val decisionObj = obj.optJSONObject("decision")
+        val execStatusObj = obj.optJSONObject("executionStatus")
+        val conflictsArr = obj.optJSONArray("conflicts") ?: JSONArray()
+        val conflicts = buildList(conflictsArr.length()) {
+            for (i in 0 until conflictsArr.length()) {
+                val text = conflictsArr.optString(i).trim()
+                if (text.isNotEmpty()) add(text)
+            }
+        }
+        val usageArr = obj.optJSONObject("spendingSummary")?.optJSONArray("usage") ?: JSONArray()
+        val usageList = buildList(usageArr.length()) {
+            for (i in 0 until usageArr.length()) {
+                val u = usageArr.optJSONObject(i) ?: continue
+                val key = u.optStringClean("resourceKey")
+                if (key.isNotBlank()) {
+                    add(PluginSpendingUsage(resourceKey = key, usedToday = u.optStringClean("usedToday", "0")))
+                }
+            }
+        }
+
+        return PluginAccountDetail(
+            isBuiltin = isBuiltin,
+            accountId = obj.optStringClean("accountId"),
+            accountName = obj.optStringClean("accountName"),
+            timeZone = obj.optStringClean("timeZone"),
+            paused = paused,
+            running = statusObj?.optBoolFlex("running") ?: false,
+            connected = statusObj?.optBoolFlex("connected") ?: false,
+            enabledFeatures = enabledFeatures,
+            settingsRevision = obj.optStringClean("settingsRevision"),
+            builtinSettings = if (isBuiltin) {
+                parseAccountSettings(obj.optJSONObject("settings") ?: JSONObject())
+            } else {
+                AccountSettingsModel()
+            },
+            nativeOperationsError = obj.optStringClean("nativeOperationsError"),
+            bindingExists = obj.optBoolFlex("exists"),
+            bindingEnabled = bindingObj?.optBoolFlex("enabled") ?: false,
+            bindingRevision = bindingObj?.optIntFlex("revision") ?: 0,
+            bindingSettingsJson = bindingObj?.optJSONObject("settings")?.toString() ?: "{}",
+            quietWindows = parseQuietWindows(bindingObj?.optJSONArray("quietWindows")),
+            accountQuietWindows = parseQuietWindows(obj.optJSONArray("accountQuietWindows")),
+            spendingPolicy = parseSpendingPolicy(bindingObj?.optJSONObject("spending")),
+            spendingUsage = usageList,
+            conflicts = conflicts,
+            decisionAllowed = decisionObj?.optBoolFlex("allowed", true) ?: true,
+            decisionReason = decisionObj?.optStringClean("reason").orEmpty(),
+            nextAllowedAtMs = decisionObj?.optLongFlex("nextAllowedAtMs") ?: 0L,
+            executionState = execStatusObj?.optStringClean("state").orEmpty(),
+            executionLabel = execStatusObj?.optStringClean("label").orEmpty(),
+            executionMessage = execStatusObj?.optStringClean("message").orEmpty(),
+            jobs = jobs,
+            operations = ops,
+        )
+    }
+
+    private fun describeTrigger(trigger: JSONObject?): String {
+        if (trigger == null) return "手动"
+        return when (trigger.optStringClean("type")) {
+            "interval" -> {
+                val mins = (trigger.optLongFlex("everyMs") / 60000L).coerceAtLeast(1L)
+                if (mins >= 60L && mins % 60L == 0L) "每 ${mins / 60L} 小时" else "每 $mins 分钟"
+            }
+            "daily" -> "每天 ${trigger.optStringClean("at")}"
+            "event" -> "事件 ${trigger.optStringClean("event")}"
+            else -> "手动"
+        }
+    }
+
+    fun parsePluginLogs(arr: JSONArray?): List<PluginLogEntry> {
+        if (arr == null) return emptyList()
+        return buildList(arr.length()) {
+            for (i in 0 until arr.length()) {
+                val l = arr.optJSONObject(i) ?: continue
+                add(
+                    PluginLogEntry(
+                        ts = l.optLongFlex("ts"),
+                        level = l.optStringClean("level", "info"),
+                        accountName = l.optStringClean("accountName"),
+                        jobId = l.optStringClean("jobId"),
+                        message = l.optStringClean("message"),
+                    )
+                )
+            }
+        }
+    }
+
     fun parseAccountSettings(obj: JSONObject): AccountSettingsModel {
         val intervals = obj.optJSONObject("intervals") ?: JSONObject()
         val quiet = obj.optJSONObject("friendQuietHours") ?: JSONObject()
@@ -874,12 +1138,12 @@ object JsonParsers {
         val friendMin = intervals.optIntFlex("friendMin", intervals.optIntFlex("friend", 20)).coerceAtLeast(1)
         val friendMax = intervals.optIntFlex("friendMax", friendMin).coerceAtLeast(friendMin)
 
-        val defaultLandTypes = listOf("purple-gold", "gold", "black", "red", "normal")
+        val defaultLandTypes = listOf("blue-crystal", "purple-gold", "gold", "black", "red", "normal")
         val landTypesArr = automation.optJSONArray("fertilizer_land_types")
         val landTypes = if (landTypesArr != null) {
             buildList(landTypesArr.length()) {
                 for (i in 0 until landTypesArr.length()) {
-                    val v = landTypesArr.optString(i).trim()
+                    val v = landTypesArr.optString(i).trim().lowercase()
                     if (v.isNotEmpty() && v !in this) add(v)
                 }
             }
@@ -888,30 +1152,30 @@ object JsonParsers {
         }
 
         return AccountSettingsModel(
-            plantingStrategy = obj.optStringClean("strategy", "max_exp"),
-            preferredSeedId = obj.optLongFlex("preferredSeed"),
+            plantingStrategy = obj.optStringClean("strategy", obj.optStringClean("plantingStrategy", "max_exp")),
+            preferredSeedId = obj.optLongFlex("preferredSeed", obj.optLongFlex("preferredSeedId")),
+            bagSeedFallbackStrategy = obj.optStringClean("bagSeedFallbackStrategy", "level"),
+            bagSeedMultiLandReservationEnabled = obj.optBoolFlex("bagSeedMultiLandReservationEnabled", false),
             farmMinSec = farmMin,
             farmMaxSec = farmMax,
             friendMinSec = friendMin,
             friendMaxSec = friendMax,
-            quietHoursEnabled = quiet.optBoolFlex("enabled"),
-            quietHoursStart = quiet.optStringClean("start", "01:00"),
-            quietHoursEnd = quiet.optStringClean("end", "07:30"),
+            quietHoursEnabled = quiet.optBoolFlex("enabled", false),
+            quietHoursStart = quiet.optStringClean("start", "23:00"),
+            quietHoursEnd = quiet.optStringClean("end", "07:00"),
             quietContinueFarm = quiet.optBoolFlex("continueFarm", true),
-            stealDelaySeconds = obj.optIntFlex("stealDelaySeconds", 1).coerceIn(0, 300),
-            plantOrderRandom = obj.optBoolFlex("plantOrderRandom", true),
-            plantDelaySeconds = obj.optIntFlex("plantDelaySeconds", 2).coerceIn(0, 60),
-            fertilizerMode = automation.optStringClean("fertilizer", "smart"),
+            stealDelaySeconds = obj.optIntFlex("stealDelaySeconds", 0).coerceIn(0, 300),
+            plantOrderRandom = obj.optBoolFlex("plantOrderRandom", false),
+            plantDelaySeconds = obj.optIntFlex("plantDelaySeconds", 0).coerceIn(0, 60),
+            fertilizerMode = automation.optStringClean("fertilizer", "none"),
             fertilizerSmartSeconds = automation.optIntFlex("fertilizer_smart_seconds", 300).coerceIn(30, 3600),
             fertilizerLandTypes = landTypes,
-            fertilizerBuyOrganicCount = obj.optIntFlex("fertilizerBuyOrganicCount", 1).coerceIn(0, 10000),
+            fertilizerBuyOrganicCount = obj.optIntFlex("fertilizerBuyOrganicCount", 0).coerceIn(0, 10000),
             fertilizerBuyOrganicThresholdHours = obj.optIntFlex("fertilizerBuyOrganicThresholdHours", 10).coerceIn(0, 990),
-            fertilizerBuyNormalCount = obj.optIntFlex("fertilizerBuyNormalCount", 1).coerceIn(0, 10000),
+            fertilizerBuyNormalCount = obj.optIntFlex("fertilizerBuyNormalCount", 0).coerceIn(0, 10000),
             fertilizerBuyNormalThresholdHours = obj.optIntFlex("fertilizerBuyNormalThresholdHours", 10).coerceIn(0, 990),
-            fertilizerBuyCheckIntervalMinutes = obj.optIntFlex("fertilizerBuyCheckIntervalMinutes", 60).coerceIn(1, 1440),
-            emailClaimHour = if (obj.has("emailClaimHour") && !obj.isNull("emailClaimHour")) {
-                obj.optIntFlex("emailClaimHour", 10).coerceIn(0, 23)
-            } else null,
+            fertilizerBuyCheckIntervalMinutes = obj.optIntFlex("fertilizerBuyCheckIntervalMinutes", 30).coerceIn(1, 1440),
+            emailClaimHour = obj.optIntFlex("emailClaimHour", 10).coerceIn(0, 23),
             autoAcceptFriendMinLevel = obj.optIntFlex("autoAcceptFriendMinLevel", 0).coerceIn(0, 200),
             autoAcceptRequireOwnLevel = obj.optBoolFlex("autoAcceptRequireOwnLevel", false),
             autoAcceptHarvestStealEnabled = obj.optBoolFlex("autoAcceptHarvestStealEnabled", true),
@@ -942,6 +1206,8 @@ object JsonParsers {
     fun parseLoginConfig(obj: JSONObject): LoginConfigModel = LoginConfigModel(
         wechatQrLogin = obj.optBoolFlex("wechatQrLogin", true),
         qqQrLogin = obj.optBoolFlex("qqQrLogin", false),
+        phoneCaptureLogin = obj.optBoolFlex("phoneCaptureLogin", false),
+        mobileAssistant = obj.optBoolFlex("mobileAssistant", false),
     )
 
     fun parseWxQrTask(obj: JSONObject): WxQrTask = WxQrTask(
@@ -958,21 +1224,24 @@ object JsonParsers {
         expiresAt = obj.optLongFlex("expires_at"),
     )
 
-    fun parseAccountLogEvent(obj: JSONObject): AccountLogEvent = AccountLogEvent(
-        time = obj.optStringClean("time"),
-        action = obj.optStringClean("action"),
-        msg = obj.optStringClean("msg"),
-        accountId = obj.optStringClean("accountId"),
-        accountName = obj.optStringClean("accountName"),
-    )
-
-    fun parseAccountLogs(arr: JSONArray?): List<AccountLogEvent> {
-        if (arr == null) return emptyList()
-        return buildList(arr.length()) {
+    fun parseOfflineEvents(obj: JSONObject): Triple<String, Boolean, List<MobileOfflineEvent>> {
+        val cursor = obj.optStringClean("cursor")
+        val reset = obj.optBoolFlex("reset")
+        val arr = obj.optJSONArray("events") ?: JSONArray()
+        val events = buildList(arr.length()) {
             for (i in 0 until arr.length()) {
                 val e = arr.optJSONObject(i) ?: continue
-                add(parseAccountLogEvent(e))
+                add(
+                    MobileOfflineEvent(
+                        eventId = e.optStringClean("eventId"),
+                        accountId = e.optStringClean("accountId"),
+                        accountName = e.optStringClean("accountName"),
+                        platform = e.optStringClean("platform", "wx"),
+                        createdAt = e.optLongFlex("createdAt"),
+                    )
+                )
             }
         }
+        return Triple(cursor, reset, events)
     }
 }

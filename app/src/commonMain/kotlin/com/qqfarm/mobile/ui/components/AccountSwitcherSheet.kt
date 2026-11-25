@@ -344,6 +344,7 @@ private fun EditAccountDialog(
 
     AppleAlertDialog(
         onDismissRequest = { if (!saving) onDismiss() },
+        shape = RoundedCornerShape(AppleRadius.card),
         title = { Text("编辑账号") },
         text = {
             Column(

@@ -25,7 +25,6 @@ import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.MoreHoriz
 import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -44,7 +43,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.qqfarm.mobile.data.prefs.ServerProfile
@@ -52,8 +50,8 @@ import com.qqfarm.mobile.data.prefs.StoredConfig
 import com.qqfarm.mobile.ui.theme.LocalAppleColors
 
 /**
- * 「我的 → 远程服务器」抽屉：列出已保存的远程服务器，点一下即切换；
- * 顶部标题固定，仅服务器列表与操作区纵向滚动。
+ * 「我的 → 服务器」抽屉：列出已保存的远程服务器，点一下即切换；
+ * 每项可重命名、删除（当前服务器不可删），底部可添加新服务器或修改当前连接。
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -194,9 +192,9 @@ fun ServerSwitcherSheet(
                         onRemove(profile.id)
                         removing = null
                     },
-                    colors = ButtonDefaults.buttonColors(
+                    colors = androidx.compose.material3.ButtonDefaults.buttonColors(
                         containerColor = apple.red,
-                        contentColor = Color.White,
+                        contentColor = androidx.compose.ui.graphics.Color.White,
                     ),
                 ) { Text("删除") }
             },
@@ -257,7 +255,7 @@ private fun ServerProfileRow(
                 active -> "当前使用"
                 !profile.isAuthenticated -> "需要重新授权"
                 profile.authMode == StoredConfig.AUTH_MODE_PASSWORD -> "管理员会话 · ${profile.username}"
-                else -> "会话 Token"
+                else -> "API Token"
             }
             Text(
                 text = status,
