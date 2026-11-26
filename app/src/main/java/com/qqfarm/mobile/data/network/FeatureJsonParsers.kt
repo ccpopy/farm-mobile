@@ -26,6 +26,18 @@ import com.qqfarm.mobile.data.model.MallGoods
 import com.qqfarm.mobile.data.model.MallLimit
 import com.qqfarm.mobile.data.model.MallMembership
 import com.qqfarm.mobile.data.model.MallPurchaseResult
+import com.qqfarm.mobile.data.model.MapleMarketCommissionResult
+import com.qqfarm.mobile.data.model.MapleMarketExchangeResult
+import com.qqfarm.mobile.data.model.MapleMarketFriendQuoteRow
+import com.qqfarm.mobile.data.model.MapleMarketFriendQuotesState
+import com.qqfarm.mobile.data.model.MapleMarketGoodsItem
+import com.qqfarm.mobile.data.model.MapleMarketGoodsReward
+import com.qqfarm.mobile.data.model.MapleMarketPurchaseLogItem
+import com.qqfarm.mobile.data.model.MapleMarketQuote
+import com.qqfarm.mobile.data.model.MapleMarketSeedResult
+import com.qqfarm.mobile.data.model.MapleMarketSellResult
+import com.qqfarm.mobile.data.model.MapleMarketShareBoostResult
+import com.qqfarm.mobile.data.model.MapleMarketState
 import com.qqfarm.mobile.data.model.MilkTeaCandidate
 import com.qqfarm.mobile.data.model.MilkTeaFruit
 import com.qqfarm.mobile.data.model.MilkTeaFundTier
@@ -1452,6 +1464,204 @@ object FeatureJsonParsers {
             canSummonRain = actions?.optJSONObject("summonThunderstorm")?.optBoolFlex("enabled") ?: false,
             nextResearchNodeId = actions?.optJSONObject("advanceResearch")?.optStringClean("nodeId").orEmpty(),
             canAdvanceResearch = actions?.optJSONObject("advanceResearch")?.optBoolFlex("enabled") ?: false,
+        )
+    }
+
+    private fun parseMapleMarketQuote(obj: JSONObject?): MapleMarketQuote? {
+        if (obj == null) return null
+        val basePrice = obj.optLongFlex("basePrice")
+        val boost = obj.optLongFlex("boost")
+        val unitPrice = obj.optLongFlex("unitPrice", basePrice + boost)
+        return MapleMarketQuote(
+            basePrice = basePrice,
+            boost = boost,
+            unitPrice = unitPrice,
+            priceRateBp = obj.optIntFlex("priceRateBp"),
+            complete = obj.optBoolFlex("complete", basePrice > 0L && boost > 0L),
+            tier = obj.optStringClean("tier").ifBlank { null },
+            canSell = obj.optBoolFlex("canSell"),
+            remainingQuota = obj.optLongFlex("remainingQuota"),
+            ownerName = obj.optStringClean("ownerName"),
+        )
+    }
+
+    private fun parseMapleMarketGoodsRewards(arr: JSONArray?): List<MapleMarketGoodsReward> {
+        if (arr == null) return emptyList()
+        return buildList(arr.length()) {
+            for (i in 0 until arr.length()) {
+                val item = arr.optJSONObject(i) ?: continue
+                add(
+                    MapleMarketGoodsReward(
+                        id = item.optIntFlex("id"),
+                        count = item.optLongFlex("count"),
+                        name = item.optStringClean("name"),
+                        image = item.optStringClean("image"),
+                    )
+                )
+            }
+        }
+    }
+
+    fun parseMapleMarketState(obj: JSONObject): MapleMarketState {
+        val fetchedAt = SystemClock.elapsedRealtime()
+        val goodsArr = obj.optJSONArray("goods") ?: JSONArray()
+        val goods = buildList(goodsArr.length()) {
+            for (i in 0 until goodsArr.length()) {
+                val g = goodsArr.optJSONObject(i) ?: continue
+                val limitTimes = if (g.has("limitTimes") && !g.isNull("limitTimes")) g.optIntFlex("limitTimes") else null
+                val remaining = if (g.has("remaining") && !g.isNull("remaining")) g.optIntFlex("remaining") else null
+                add(
+                    MapleMarketGoodsItem(
+                        id = g.optIntFlex("id"),
+                        name = g.optStringClean("name"),
+                        items = parseMapleMarketGoodsRewards(g.optJSONArray("items")),
+                        price = g.optLongFlex("price"),
+                        limitType = g.optIntFlex("limitType"),
+                        limitTimes = limitTimes,
+                        remaining = remaining,
+                        exchangeable = g.optBoolFlex("exchangeable"),
+                    )
+                )
+            }
+        }
+        return MapleMarketState(
+            activityId = obj.optStringClean("activityId"),
+            serverTimeMs = normalizeTimestampMs(obj.optLongFlex("serverTime", System.currentTimeMillis())),
+            receivedAtElapsedMs = fetchedAt,
+            startTimeMs = normalizeTimestampMs(obj.optLongFlex("startTime")),
+            endTimeMs = normalizeTimestampMs(obj.optLongFlex("endTime")),
+            phase = obj.optStringClean("phase", "unavailable").ifBlank { "unavailable" },
+            seedClaimed = obj.optBoolFlex("seedClaimed"),
+            canClaimSeed = obj.optBoolFlex("canClaimSeed"),
+            seedItemId = obj.optIntFlex("seedItemId", 20307),
+            cropItemId = obj.optIntFlex("cropItemId", 1032),
+            coinItemId = obj.optIntFlex("coinItemId", 1033),
+            shared = obj.optBoolFlex("shared"),
+            canShare = obj.optBoolFlex("canShare"),
+            coinBalance = obj.optLongFlex("coinBalance"),
+            pendingCommissionCoin = obj.optLongFlex("pendingCommissionCoin"),
+            pendingCommissionCount = obj.optIntFlex("pendingCommissionCount"),
+            canClaimCommission = obj.optBoolFlex("canClaimCommission"),
+            purchaseLogUnread = obj.optBoolFlex("purchaseLogUnread"),
+            rules = parseStringList(obj.optJSONArray("rules")).map { cleanHtml(it) }.filter { it.isNotEmpty() },
+            quote = parseMapleMarketQuote(obj.optJSONObject("quote")),
+            goods = goods,
+            seedStock = obj.optLongFlex("seedStock"),
+            cropStock = obj.optLongFlex("cropStock"),
+            sellableCropStock = obj.optLongFlex("sellableCropStock"),
+        )
+    }
+
+    fun parseMapleMarketPurchaseLog(obj: JSONObject): List<MapleMarketPurchaseLogItem> {
+        val arr = obj.optJSONArray("records") ?: JSONArray()
+        return buildList(arr.length()) {
+            for (i in 0 until arr.length()) {
+                val r = arr.optJSONObject(i) ?: continue
+                val sellerGid = r.optLongFlex("sellerGid")
+                add(
+                    MapleMarketPurchaseLogItem(
+                        timestampMs = normalizeTimestampMs(r.optLongFlex("timestamp")),
+                        sellerGid = sellerGid,
+                        sellerName = r.optStringClean("sellerName").ifBlank { "GID:$sellerGid" },
+                        sellerAvatar = r.optStringClean("sellerAvatar"),
+                        sellerLevel = r.optIntFlex("sellerLevel"),
+                        soldCount = r.optLongFlex("soldCount"),
+                        income = r.optLongFlex("income"),
+                        commission = r.optLongFlex("commission"),
+                    )
+                )
+            }
+        }
+    }
+
+    fun parseMapleMarketFriendQuotes(obj: JSONObject): MapleMarketFriendQuotesState {
+        val rowsArr = obj.optJSONArray("rows") ?: JSONArray()
+        val rows = buildList(rowsArr.length()) {
+            for (i in 0 until rowsArr.length()) {
+                val r = rowsArr.optJSONObject(i) ?: continue
+                val gid = r.optLongFlex("gid")
+                add(
+                    MapleMarketFriendQuoteRow(
+                        gid = gid,
+                        name = r.optStringClean("name").ifBlank { "GID:$gid" },
+                        quote = parseMapleMarketQuote(r.optJSONObject("quote")),
+                        failed = r.optBoolFlex("failed"),
+                        reused = r.optBoolFlex("reused"),
+                    )
+                )
+            }
+        }
+        return MapleMarketFriendQuotesState(
+            status = obj.optStringClean("status", "idle").ifBlank { "idle" },
+            dayKey = obj.optStringClean("dayKey"),
+            total = obj.optIntFlex("total"),
+            checked = obj.optIntFlex("checked"),
+            reused = obj.optIntFlex("reused"),
+            queried = obj.optIntFlex("queried"),
+            partial = obj.optBoolFlex("partial"),
+            updatedAtMs = normalizeTimestampMs(obj.optLongFlex("updatedAt")),
+            rows = rows,
+            error = obj.optStringClean("error"),
+        )
+    }
+
+    fun parseMapleMarketSeedResult(obj: JSONObject): MapleMarketSeedResult {
+        val dataObj = obj.optJSONObject("data")
+        val seedObj = dataObj?.optJSONObject("seed")
+        return MapleMarketSeedResult(
+            status = obj.optStringClean("status"),
+            message = obj.optStringClean("message"),
+            seedId = seedObj?.optIntFlex("id") ?: 0,
+            seedCount = seedObj?.optLongFlex("count") ?: 0L,
+            seedName = seedObj?.optStringClean("name", "红薯种子").orEmpty().ifBlank { "红薯种子" },
+        )
+    }
+
+    fun parseMapleMarketShareBoostResult(obj: JSONObject): MapleMarketShareBoostResult {
+        val dataObj = obj.optJSONObject("data")
+        val seedObj = dataObj?.optJSONObject("seed")
+        return MapleMarketShareBoostResult(
+            status = obj.optStringClean("status"),
+            message = obj.optStringClean("message"),
+            boost = dataObj?.optLongFlex("boost") ?: 0L,
+            finalPrice = dataObj?.optLongFlex("finalPrice") ?: 0L,
+            priceRateBp = dataObj?.optIntFlex("priceRateBp") ?: 0,
+            seedCount = seedObj?.optLongFlex("count") ?: 0L,
+            seedName = seedObj?.optStringClean("name", "红薯种子").orEmpty().ifBlank { "红薯种子" },
+        )
+    }
+
+    fun parseMapleMarketCommissionResult(obj: JSONObject): MapleMarketCommissionResult {
+        val dataObj = obj.optJSONObject("data")
+        return MapleMarketCommissionResult(
+            status = obj.optStringClean("status"),
+            message = obj.optStringClean("message"),
+            claimedCoin = dataObj?.optLongFlex("claimedCoin") ?: 0L,
+            claimedCount = dataObj?.optIntFlex("claimedCount") ?: 0,
+            coinBalance = dataObj?.optLongFlex("coinBalance") ?: 0L,
+        )
+    }
+
+    fun parseMapleMarketSellResult(obj: JSONObject): MapleMarketSellResult {
+        val rem = if (obj.has("remainingQuota") && !obj.isNull("remainingQuota")) {
+            obj.optLongFlex("remainingQuota")
+        } else null
+        return MapleMarketSellResult(
+            sold = obj.optLongFlex("sold"),
+            unitPrice = obj.optLongFlex("unitPrice"),
+            income = obj.optLongFlex("income"),
+            coinBalance = obj.optLongFlex("coinBalance"),
+            remainingQuota = rem,
+        )
+    }
+
+    fun parseMapleMarketExchangeResult(obj: JSONObject): MapleMarketExchangeResult {
+        return MapleMarketExchangeResult(
+            goodsId = obj.optIntFlex("goodsId"),
+            count = obj.optIntFlex("count"),
+            cost = obj.optLongFlex("cost"),
+            coinBalance = obj.optLongFlex("coinBalance"),
+            items = parseMapleMarketGoodsRewards(obj.optJSONArray("items")),
         )
     }
 

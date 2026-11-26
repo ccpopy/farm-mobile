@@ -25,6 +25,14 @@ import com.qqfarm.mobile.data.model.LoginResponse
 import com.qqfarm.mobile.data.model.MallCatalog
 import com.qqfarm.mobile.data.model.MallGoods
 import com.qqfarm.mobile.data.model.MallPurchaseResult
+import com.qqfarm.mobile.data.model.MapleMarketCommissionResult
+import com.qqfarm.mobile.data.model.MapleMarketExchangeResult
+import com.qqfarm.mobile.data.model.MapleMarketFriendQuotesState
+import com.qqfarm.mobile.data.model.MapleMarketPurchaseLogItem
+import com.qqfarm.mobile.data.model.MapleMarketSeedResult
+import com.qqfarm.mobile.data.model.MapleMarketSellResult
+import com.qqfarm.mobile.data.model.MapleMarketShareBoostResult
+import com.qqfarm.mobile.data.model.MapleMarketState
 import com.qqfarm.mobile.data.model.MilkTeaState
 import com.qqfarm.mobile.data.model.MugeState
 import com.qqfarm.mobile.data.model.MutationCatalogSnapshot
@@ -1224,6 +1232,124 @@ class FarmApiClient {
         )
         val rewards = FeatureJsonParsers.parseCommerceItems(json.optJSONObject("data")?.optJSONArray("rewards"))
         return rewards.joinToString("、") { "${it.name} ×${it.count}" }.ifBlank { "操作完成" }
+    }
+
+    suspend fun getMapleMarketState(accountId: String): MapleMarketState {
+        val json = executeJson("GET", "/api/activities/maple-market", accountIdOverride = accountId)
+        return FeatureJsonParsers.parseMapleMarketState(json.optJSONObject("data") ?: JSONObject())
+    }
+
+    suspend fun claimMapleMarketSeed(accountId: String): MapleMarketSeedResult {
+        val json = executeJson(
+            "POST",
+            "/api/activities/maple-market/claim-seed",
+            body = JSONObject(),
+            accountIdOverride = accountId,
+        )
+        return FeatureJsonParsers.parseMapleMarketSeedResult(json.optJSONObject("data") ?: JSONObject())
+    }
+
+    suspend fun shareBoostMapleMarket(accountId: String): MapleMarketShareBoostResult {
+        val json = executeJson(
+            "POST",
+            "/api/activities/maple-market/share-boost",
+            body = JSONObject(),
+            accountIdOverride = accountId,
+        )
+        return FeatureJsonParsers.parseMapleMarketShareBoostResult(json.optJSONObject("data") ?: JSONObject())
+    }
+
+    suspend fun claimMapleMarketCommission(accountId: String): MapleMarketCommissionResult {
+        val json = executeJson(
+            "POST",
+            "/api/activities/maple-market/claim-commission",
+            body = JSONObject(),
+            accountIdOverride = accountId,
+        )
+        return FeatureJsonParsers.parseMapleMarketCommissionResult(json.optJSONObject("data") ?: JSONObject())
+    }
+
+    suspend fun sellMapleMarketCrop(
+        accountId: String,
+        count: Long,
+        expectedUnitPrice: Long,
+    ): MapleMarketSellResult {
+        val body = JSONObject()
+            .put("count", count)
+            .put("expectedUnitPrice", expectedUnitPrice)
+        val json = executeJson(
+            "POST",
+            "/api/activities/maple-market/sell",
+            body = body,
+            accountIdOverride = accountId,
+        )
+        return FeatureJsonParsers.parseMapleMarketSellResult(json.optJSONObject("data") ?: JSONObject())
+    }
+
+    suspend fun exchangeMapleMarketGoods(
+        accountId: String,
+        goodsId: Int,
+        count: Int,
+        expectedUnitPrice: Long,
+    ): MapleMarketExchangeResult {
+        val body = JSONObject()
+            .put("goodsId", goodsId)
+            .put("count", count)
+            .put("expectedUnitPrice", expectedUnitPrice)
+        val json = executeJson(
+            "POST",
+            "/api/activities/maple-market/exchange",
+            body = body,
+            accountIdOverride = accountId,
+        )
+        return FeatureJsonParsers.parseMapleMarketExchangeResult(json.optJSONObject("data") ?: JSONObject())
+    }
+
+    suspend fun getMapleMarketPurchaseLog(accountId: String): List<MapleMarketPurchaseLogItem> {
+        val json = executeJson(
+            "GET",
+            "/api/activities/maple-market/purchase-log",
+            accountIdOverride = accountId,
+        )
+        return FeatureJsonParsers.parseMapleMarketPurchaseLog(json.optJSONObject("data") ?: JSONObject())
+    }
+
+    suspend fun getMapleMarketFriendQuotes(accountId: String): MapleMarketFriendQuotesState {
+        val json = executeJson(
+            "GET",
+            "/api/activities/maple-market/friend-quotes",
+            accountIdOverride = accountId,
+        )
+        return FeatureJsonParsers.parseMapleMarketFriendQuotes(json.optJSONObject("data") ?: JSONObject())
+    }
+
+    suspend fun refreshMapleMarketFriendQuotes(accountId: String): MapleMarketFriendQuotesState {
+        val json = executeJson(
+            "POST",
+            "/api/activities/maple-market/friend-quotes",
+            body = JSONObject(),
+            accountIdOverride = accountId,
+        )
+        return FeatureJsonParsers.parseMapleMarketFriendQuotes(json.optJSONObject("data") ?: JSONObject())
+    }
+
+    suspend fun sellMapleMarketToFriend(
+        accountId: String,
+        gid: Long,
+        count: Long,
+        expectedUnitPrice: Long,
+    ): MapleMarketSellResult {
+        val body = JSONObject()
+            .put("gid", gid)
+            .put("count", count)
+            .put("expectedUnitPrice", expectedUnitPrice)
+        val json = executeJson(
+            "POST",
+            "/api/activities/maple-market/friend-quotes/sell",
+            body = body,
+            accountIdOverride = accountId,
+        )
+        return FeatureJsonParsers.parseMapleMarketSellResult(json.optJSONObject("data") ?: JSONObject())
     }
 
     // ---- Illustrated Book & Collections ----

@@ -182,6 +182,16 @@ fun ActivityDetailScreen(
 
         Box(modifier = Modifier.weight(1f)) {
             when (gameplayKey) {
+                "maplemarket" -> MapleMarketDetailContent(
+                    accountId = accountId,
+                    apiClient = apiClient,
+                    clockTickMs = clockTickMs,
+                    refreshTrigger = refreshTrigger,
+                    onSubtitle = { headerSubtitle = it },
+                    onRules = { activeRules = it },
+                    onMessage = onMessage,
+                )
+
                 "muge" -> MugeDetailContent(
                     accountId = accountId,
                     apiClient = apiClient,

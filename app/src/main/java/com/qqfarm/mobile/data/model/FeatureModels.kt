@@ -799,6 +799,146 @@ data class WeatherState(
     val canAdvanceResearch: Boolean = false,
 )
 
+// ---- Maple Market (以薯换福) ----
+
+data class MapleMarketQuote(
+    val basePrice: Long = 0L,
+    val boost: Long = 0L,
+    val unitPrice: Long = 0L,
+    val priceRateBp: Int = 0,
+    val complete: Boolean = false,
+    val tier: String? = null,
+    val canSell: Boolean = false,
+    val remainingQuota: Long = 0L,
+    val ownerName: String = "",
+)
+
+data class MapleMarketGoodsReward(
+    val id: Int = 0,
+    val count: Long = 0L,
+    val name: String = "",
+    val image: String = "",
+) {
+    fun toCommerceItem(): CommerceItem = CommerceItem(
+        id = id,
+        count = count,
+        name = name,
+        image = image,
+    )
+}
+
+data class MapleMarketGoodsItem(
+    val id: Int = 0,
+    val name: String = "",
+    val items: List<MapleMarketGoodsReward> = emptyList(),
+    val price: Long = 0L,
+    val limitType: Int = 0,
+    val limitTimes: Int? = null,
+    val remaining: Int? = null,
+    val exchangeable: Boolean = false,
+)
+
+data class MapleMarketState(
+    val activityId: String = "",
+    val serverTimeMs: Long = 0L,
+    val receivedAtElapsedMs: Long = 0L,
+    val startTimeMs: Long = 0L,
+    val endTimeMs: Long = 0L,
+    val phase: String = "unavailable",
+    val seedClaimed: Boolean = false,
+    val canClaimSeed: Boolean = false,
+    val seedItemId: Int = 20307,
+    val cropItemId: Int = 1032,
+    val coinItemId: Int = 1033,
+    val shared: Boolean = false,
+    val canShare: Boolean = false,
+    val coinBalance: Long = 0L,
+    val pendingCommissionCoin: Long = 0L,
+    val pendingCommissionCount: Int = 0,
+    val canClaimCommission: Boolean = false,
+    val purchaseLogUnread: Boolean = false,
+    val rules: List<String> = emptyList(),
+    val quote: MapleMarketQuote? = null,
+    val goods: List<MapleMarketGoodsItem> = emptyList(),
+    val seedStock: Long = 0L,
+    val cropStock: Long = 0L,
+    val sellableCropStock: Long = 0L,
+)
+
+data class MapleMarketPurchaseLogItem(
+    val timestampMs: Long = 0L,
+    val sellerGid: Long = 0L,
+    val sellerName: String = "",
+    val sellerAvatar: String = "",
+    val sellerLevel: Int = 0,
+    val soldCount: Long = 0L,
+    val income: Long = 0L,
+    val commission: Long = 0L,
+)
+
+data class MapleMarketFriendQuoteRow(
+    val gid: Long = 0L,
+    val name: String = "",
+    val quote: MapleMarketQuote? = null,
+    val failed: Boolean = false,
+    val reused: Boolean = false,
+)
+
+data class MapleMarketFriendQuotesState(
+    val status: String = "idle",
+    val dayKey: String = "",
+    val total: Int = 0,
+    val checked: Int = 0,
+    val reused: Int = 0,
+    val queried: Int = 0,
+    val partial: Boolean = false,
+    val updatedAtMs: Long = 0L,
+    val rows: List<MapleMarketFriendQuoteRow> = emptyList(),
+    val error: String = "",
+)
+
+data class MapleMarketSeedResult(
+    val status: String = "",
+    val message: String = "",
+    val seedId: Int = 0,
+    val seedCount: Long = 0L,
+    val seedName: String = "红薯种子",
+)
+
+data class MapleMarketShareBoostResult(
+    val status: String = "",
+    val message: String = "",
+    val boost: Long = 0L,
+    val finalPrice: Long = 0L,
+    val priceRateBp: Int = 0,
+    val seedCount: Long = 0L,
+    val seedName: String = "红薯种子",
+)
+
+data class MapleMarketCommissionResult(
+    val status: String = "",
+    val message: String = "",
+    val claimedCoin: Long = 0L,
+    val claimedCount: Int = 0,
+    val coinBalance: Long = 0L,
+)
+
+data class MapleMarketSellResult(
+    val sold: Long = 0L,
+    val unitPrice: Long = 0L,
+    val income: Long = 0L,
+    val coinBalance: Long = 0L,
+    val remainingQuota: Long? = null,
+)
+
+data class MapleMarketExchangeResult(
+    val goodsId: Int = 0,
+    val count: Int = 0,
+    val cost: Long = 0L,
+    val coinBalance: Long = 0L,
+    val items: List<MapleMarketGoodsReward> = emptyList(),
+)
+
 // ---- Illustrated Book & Collections ----
 
 data class IllustratedShopSeed(
