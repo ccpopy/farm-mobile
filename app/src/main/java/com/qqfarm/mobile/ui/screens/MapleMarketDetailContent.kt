@@ -19,7 +19,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
@@ -29,16 +28,13 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.CardGiftcard
-import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.ChevronRight
 import androidx.compose.material.icons.rounded.Eco
 import androidx.compose.material.icons.rounded.Grass
 import androidx.compose.material.icons.rounded.History
 import androidx.compose.material.icons.rounded.Paid
-import androidx.compose.material.icons.rounded.People
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Schedule
-import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Sell
 import androidx.compose.material.icons.rounded.ShoppingBag
 import androidx.compose.material.icons.rounded.Storefront
@@ -70,8 +66,6 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import com.qqfarm.mobile.data.model.MapleMarketFriendQuoteRow
-import com.qqfarm.mobile.data.model.MapleMarketFriendQuotesState
 import com.qqfarm.mobile.data.model.MapleMarketGoodsItem
 import com.qqfarm.mobile.data.model.MapleMarketPurchaseLogItem
 import com.qqfarm.mobile.data.model.MapleMarketQuote
@@ -79,7 +73,6 @@ import com.qqfarm.mobile.data.model.MapleMarketState
 import com.qqfarm.mobile.data.network.FarmApiClient
 import com.qqfarm.mobile.ui.components.AppleAlertDialog
 import com.qqfarm.mobile.ui.components.AppleEmptyState
-import com.qqfarm.mobile.ui.components.AppleFilterChip
 import com.qqfarm.mobile.ui.components.AppleGroupedCard
 import com.qqfarm.mobile.ui.components.AppleHairlineDivider
 import com.qqfarm.mobile.ui.components.AppleLoadingState
@@ -98,10 +91,7 @@ import com.qqfarm.mobile.ui.components.swipeToSwitchTabs
 import com.qqfarm.mobile.ui.theme.LocalAppleColors
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
-import java.text.Collator
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -109,20 +99,9 @@ import java.util.TimeZone
 
 private const val MAPLE_DAILY_QUOTA_CAP = 8000L
 
-private enum class MapleCompareFilter(val label: String) {
-    ALL("全部"),
-    SELLABLE("可售"),
-    FULL("已满"),
-    UNBOOSTED("未加成"),
-    UNAVAILABLE("不可售"),
-}
-
 private data class MapleSellTarget(
-    val gid: Long,
-    val shopTitle: String,
     val quote: MapleMarketQuote,
     val saleMax: Int,
-    val saleLimitHint: String,
 )
 
 private data class MapleGoodsActionState(
@@ -154,12 +133,6 @@ fun MapleMarketDetailContent(
     var lastShareRateBp by remember(accountId) { mutableIntStateOf(0) }
     var selectedTab by remember(accountId) { mutableIntStateOf(0) }
 
-    var friendQuotes by remember(accountId) { mutableStateOf<MapleMarketFriendQuotesState?>(null) }
-    var compareStarting by remember(accountId) { mutableStateOf(false) }
-    var compareLoading by remember(accountId) { mutableStateOf(false) }
-    var compareError by remember(accountId) { mutableStateOf<String?>(null) }
-    var compareFilter by remember(accountId) { mutableStateOf(MapleCompareFilter.ALL) }
-
     var showPurchaseLog by remember(accountId) { mutableStateOf(false) }
     var purchaseLogLoading by remember(accountId) { mutableStateOf(false) }
     var purchaseLogError by remember(accountId) { mutableStateOf<String?>(null) }
@@ -169,7 +142,6 @@ fun MapleMarketDetailContent(
     var exchangeTarget by remember(accountId) { mutableStateOf<MapleMarketGoodsItem?>(null) }
 
     var loadJob by remember(accountId) { mutableStateOf<Job?>(null) }
-    var compareJob by remember(accountId) { mutableStateOf<Job?>(null) }
 
     fun lockActionsOnError(message: String) {
         actionLocked = true
@@ -183,13 +155,6 @@ fun MapleMarketDetailContent(
                 canClaimCommission = false,
                 quote = cur.quote?.copy(canSell = false),
                 goods = cur.goods.map { it.copy(exchangeable = false) },
-            )
-        }
-        friendQuotes = friendQuotes?.let { cur ->
-            cur.copy(
-                rows = cur.rows.map { row ->
-                    row.copy(quote = row.quote?.copy(canSell = false))
-                },
             )
         }
         onMessage(message)
@@ -217,36 +182,6 @@ fun MapleMarketDetailContent(
                     errorText = err.message ?: "读取以薯换福活动失败"
                 }
             loading = false
-        }
-    }
-
-    fun loadFriendQuotes(startScan: Boolean = false) {
-        if (compareLoading || compareStarting) return
-        compareJob?.cancel()
-        compareJob = scope.launch {
-            compareLoading = true
-            compareStarting = startScan
-            compareError = null
-            if (startScan) {
-                friendQuotes = null
-            }
-            runCatching {
-                if (startScan) {
-                    apiClient.refreshMapleMarketFriendQuotes(accountId)
-                } else {
-                    apiClient.getMapleMarketFriendQuotes(accountId)
-                }
-            }.onSuccess { res ->
-                friendQuotes = res
-                if (res.error.isNotBlank()) {
-                    compareError = res.error
-                }
-            }.onFailure { err ->
-                if (err is CancellationException) throw err
-                compareError = err.message ?: "读取好友报价失败"
-            }
-            compareStarting = false
-            compareLoading = false
         }
     }
 
@@ -286,9 +221,9 @@ fun MapleMarketDetailContent(
         }
     }
 
-    fun openSellDialogForRow(row: MapleMarketFriendQuoteRow) {
+    fun openSelfSellDialog() {
         val current = state ?: return
-        val quote = row.quote ?: return
+        val quote = current.quote ?: return
         if (actionLocked) {
             onMessage(actionLockError ?: "状态待核对，请先刷新")
             return
@@ -297,64 +232,23 @@ fun MapleMarketDetailContent(
             onMessage("当前暂无可出售的蜜薯")
             return
         }
-        if (!quote.canSell || (row.gid > 0L && quote.remainingQuota <= 0L)) {
+        if (!quote.canSell) {
             onMessage("当前小铺暂不可出售")
             return
         }
-        val maxRaw = if (row.gid == 0L) {
-            current.sellableCropStock
-        } else {
-            minOf(current.sellableCropStock, quote.remainingQuota)
-        }
-        val saleMax = maxRaw.coerceIn(0L, Int.MAX_VALUE.toLong()).toInt()
+        val saleMax = current.sellableCropStock.coerceIn(0L, Int.MAX_VALUE.toLong()).toInt()
         if (saleMax <= 0) {
             onMessage("当前无可售数量")
             return
         }
-        val limitHint = if (row.gid == 0L || current.sellableCropStock <= quote.remainingQuota) {
-            "受可卖蜜薯限制"
-        } else {
-            "受好友剩余额度限制"
-        }
         sellTarget = MapleSellTarget(
-            gid = row.gid,
-            shopTitle = if (row.gid == 0L) "出售给自家小铺" else "出售给 · ${row.name}",
             quote = quote,
             saleMax = saleMax,
-            saleLimitHint = limitHint,
         )
     }
 
     LaunchedEffect(accountId, refreshTrigger) {
         loadMarket()
-        if (selectedTab == 2 || friendQuotes != null) {
-            loadFriendQuotes(startScan = false)
-        }
-    }
-
-    LaunchedEffect(accountId, selectedTab, state?.phase) {
-        if (selectedTab == 2 && state?.phase == "active" && friendQuotes == null && !compareLoading) {
-            loadFriendQuotes(startScan = false)
-        }
-    }
-
-    val isCompareRunning = friendQuotes?.status == "running"
-    LaunchedEffect(accountId, isCompareRunning, state?.phase) {
-        if (state?.phase != "active" || !isCompareRunning) return@LaunchedEffect
-        while (isActive) {
-            delay(700L)
-            val latest = runCatching { apiClient.getMapleMarketFriendQuotes(accountId) }
-                .onFailure { err ->
-                    if (err is CancellationException) throw err
-                    compareError = err.message ?: "读取好友报价失败"
-                }
-                .getOrNull() ?: break
-            friendQuotes = latest
-            if (latest.error.isNotBlank()) {
-                compareError = latest.error
-            }
-            if (latest.status != "running") break
-        }
     }
 
     LaunchedEffect(state, clockTickMs) {
@@ -404,12 +298,7 @@ fun MapleMarketDetailContent(
 
     PullToRefreshBox(
         isRefreshing = loading && current != null,
-        onRefresh = {
-            loadMarket()
-            if (selectedTab == 2 && state?.phase == "active") {
-                loadFriendQuotes(startScan = false)
-            }
-        },
+        onRefresh = { loadMarket() },
         modifier = Modifier.fillMaxSize(),
     ) {
         if (current == null) {
@@ -456,12 +345,7 @@ fun MapleMarketDetailContent(
                             modifier = Modifier.weight(1f),
                         )
                         TextButton(
-                            onClick = {
-                                loadMarket()
-                                if (selectedTab == 2 && current.phase == "active") {
-                                    loadFriendQuotes(startScan = false)
-                                }
-                            },
+                            onClick = { loadMarket() },
                             contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
                         ) {
                             Text("刷新同步")
@@ -476,7 +360,7 @@ fun MapleMarketDetailContent(
                     .padding(horizontal = 16.dp, vertical = 2.dp),
             ) {
                 AppleSegmentedControl(
-                    options = listOf("红薯小铺", "兑换商店", "好友比价"),
+                    options = listOf("红薯小铺", "兑换商店"),
                     selectedIndex = selectedTab,
                     onSelect = { if (!busy) selectedTab = it },
                 )
@@ -486,7 +370,7 @@ fun MapleMarketDetailContent(
                 modifier = Modifier
                     .fillMaxWidth()
                     .weight(1f)
-                    .swipeToSwitchTabs(selectedTab, 3, !busy) { if (!busy) selectedTab = it },
+                    .swipeToSwitchTabs(selectedTab, 2, !busy) { if (!busy) selectedTab = it },
             ) {
                 when (selectedTab) {
                     0 -> MapleShopTab(
@@ -533,17 +417,7 @@ fun MapleMarketDetailContent(
                             }
                         },
                         onOpenPurchaseLog = { openPurchaseLog() },
-                        onOpenSelfSell = {
-                            val quote = current.quote ?: return@MapleShopTab
-                            openSellDialogForRow(
-                                MapleMarketFriendQuoteRow(
-                                    gid = 0L,
-                                    name = quote.ownerName.ifBlank { "自家小铺" },
-                                    quote = quote,
-                                )
-                            )
-                        },
-                        onJumpCompare = { selectedTab = 2 },
+                        onOpenSelfSell = { openSelfSellDialog() },
                     )
 
                     1 -> MapleExchangeTab(
@@ -551,21 +425,6 @@ fun MapleMarketDetailContent(
                         busy = busy,
                         actionLocked = actionLocked,
                         onSelectGoods = { exchangeTarget = it },
-                    )
-
-                    2 -> MapleCompareTab(
-                        state = current,
-                        comparison = friendQuotes,
-                        starting = compareStarting,
-                        loading = compareLoading,
-                        errorText = compareError,
-                        filter = compareFilter,
-                        busy = busy,
-                        actionLocked = actionLocked,
-                        hasOpenDialog = sellTarget != null,
-                        onFilterChange = { compareFilter = it },
-                        onRefreshQuotes = { loadFriendQuotes(startScan = true) },
-                        onSelectRow = { openSellDialogForRow(it) },
                     )
                 }
             }
@@ -593,30 +452,12 @@ fun MapleMarketDetailContent(
                 scope.launch {
                     busy = true
                     val result = runCatching {
-                        if (target.gid == 0L) {
-                            apiClient.sellMapleMarketCrop(accountId, count.toLong(), target.quote.unitPrice)
-                        } else {
-                            apiClient.sellMapleMarketToFriend(accountId, target.gid, count.toLong(), target.quote.unitPrice)
-                        }
+                        apiClient.sellMapleMarketCrop(accountId, count.toLong(), target.quote.unitPrice)
                     }
                     result.onSuccess { res ->
                         sellTarget = null
                         onMessage("已卖出 ${formatNumber(res.sold)} 个蜜薯，获得 ${formatNumber(res.income)} 福气币")
-                        res.remainingQuota?.let { nextQuota ->
-                            friendQuotes = friendQuotes?.let { cur ->
-                                cur.copy(
-                                    rows = cur.rows.map { row ->
-                                        if (row.gid == target.gid && row.quote != null) {
-                                            row.copy(quote = row.quote.copy(remainingQuota = nextQuota))
-                                        } else row
-                                    }
-                                )
-                            }
-                        }
                         loadMarket()
-                        if (target.gid > 0L) {
-                            loadFriendQuotes(startScan = false)
-                        }
                     }.onFailure { err ->
                         if (err is CancellationException) throw err
                         lockActionsOnError(err.message ?: "出售失败，请刷新确认最新报价")
@@ -843,7 +684,6 @@ private fun MapleShopTab(
     onClaimCommission: () -> Unit,
     onOpenPurchaseLog: () -> Unit,
     onOpenSelfSell: () -> Unit,
-    onJumpCompare: () -> Unit,
 ) {
     val apple = LocalAppleColors.current
     val quote = state.quote
@@ -1036,37 +876,25 @@ private fun MapleShopTab(
 
                     if (state.phase == "active") {
                         val canSelfSell = !busy && !actionLocked && quote?.canSell == true && state.sellableCropStock > 0L
-                        Row(
+                        Button(
+                            onClick = onOpenSelfSell,
+                            enabled = canSelfSell,
+                            shape = RoundedCornerShape(12.dp),
                             modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
                         ) {
-                            Button(
-                                onClick = onOpenSelfSell,
-                                enabled = canSelfSell,
-                                shape = RoundedCornerShape(12.dp),
-                                modifier = Modifier.weight(1f),
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Rounded.Sell,
-                                    contentDescription = null,
-                                    modifier = Modifier.size(17.dp),
-                                )
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Text(
-                                    if (state.sellableCropStock > 0L) {
-                                        "卖给自家 (${formatCompactCount(state.sellableCropStock)})"
-                                    } else {
-                                        "暂无可售蜜薯"
-                                    }
-                                )
-                            }
-                            OutlinedButton(
-                                onClick = onJumpCompare,
-                                enabled = !busy,
-                                shape = RoundedCornerShape(12.dp),
-                            ) {
-                                Text("好友比价")
-                            }
+                            Icon(
+                                imageVector = Icons.Rounded.Sell,
+                                contentDescription = null,
+                                modifier = Modifier.size(17.dp),
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                if (state.sellableCropStock > 0L) {
+                                    "卖给自家 (${formatCompactCount(state.sellableCropStock)})"
+                                } else {
+                                    "暂无可售蜜薯"
+                                }
+                            )
                         }
                     }
                 }
@@ -1321,6 +1149,15 @@ private fun MapleExchangeTab(
                                 style = MaterialTheme.typography.labelSmall.copy(fontFeatureSettings = "tnum"),
                                 color = apple.secondaryText,
                             )
+                            if (goods.description.isNotBlank()) {
+                                Text(
+                                    text = goods.description,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = apple.secondaryText,
+                                    maxLines = 2,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                            }
                             if (action.reason.isNotBlank()) {
                                 Text(
                                     text = action.reason,
@@ -1394,565 +1231,6 @@ private fun MapleExchangeTab(
                         )
                     }
                 }
-            }
-        }
-    }
-}
-
-@Composable
-private fun MapleCompareTab(
-    state: MapleMarketState,
-    comparison: MapleMarketFriendQuotesState?,
-    starting: Boolean,
-    loading: Boolean,
-    errorText: String?,
-    filter: MapleCompareFilter,
-    busy: Boolean,
-    actionLocked: Boolean,
-    hasOpenDialog: Boolean,
-    onFilterChange: (MapleCompareFilter) -> Unit,
-    onRefreshQuotes: () -> Unit,
-    onSelectRow: (MapleMarketFriendQuoteRow) -> Unit,
-) {
-    val apple = LocalAppleColors.current
-    if (state.phase != "active") {
-        AppleEmptyState(
-            icon = Icons.Rounded.Schedule,
-            title = "当前阶段暂不支持好友比价",
-            subtitle = "仅活动进行期间可查询并出售给好友红薯小铺",
-        )
-        return
-    }
-
-    val running = starting || comparison?.status == "running"
-    val collator = remember { Collator.getInstance(Locale.CHINA) }
-
-    val rankedRows = remember(comparison, state.quote) {
-        if (comparison?.status != "ready") {
-            emptyList()
-        } else {
-            val combined = buildList {
-                addAll(comparison.rows)
-                state.quote?.let { own ->
-                    add(
-                        MapleMarketFriendQuoteRow(
-                            gid = 0L,
-                            name = own.ownerName.ifBlank { "自家" },
-                            quote = own,
-                            failed = false,
-                            reused = false,
-                        )
-                    )
-                }
-            }
-            combined.sortedWith { a, b ->
-                val priceCmp = (b.quote?.unitPrice ?: -1L).compareTo(a.quote?.unitPrice ?: -1L)
-                if (priceCmp != 0) return@sortedWith priceCmp
-                val compCmp = (if (b.quote?.complete == true) 1 else 0).compareTo(if (a.quote?.complete == true) 1 else 0)
-                if (compCmp != 0) return@sortedWith compCmp
-                val aQuota = if (a.gid == 0L) Long.MAX_VALUE else (a.quote?.remainingQuota ?: -1L)
-                val bQuota = if (b.gid == 0L) Long.MAX_VALUE else (b.quote?.remainingQuota ?: -1L)
-                val quotaCmp = bQuota.compareTo(aQuota)
-                if (quotaCmp != 0) return@sortedWith quotaCmp
-                collator.compare(a.name, b.name)
-            }
-        }
-    }
-
-    val bestOffer = remember(rankedRows, state.quote) {
-        val ownPrice = state.quote?.unitPrice ?: 0L
-        rankedRows.firstOrNull { row ->
-            row.gid > 0L &&
-                row.quote?.canSell == true &&
-                row.quote.remainingQuota > 0L &&
-                row.quote.unitPrice > ownPrice
-        }
-    }
-
-    val filterCounts = remember(rankedRows) {
-        mapOf(
-            MapleCompareFilter.ALL to rankedRows.size,
-            MapleCompareFilter.SELLABLE to rankedRows.count {
-                it.quote?.canSell == true && (it.gid == 0L || it.quote.remainingQuota > 0L)
-            },
-            MapleCompareFilter.FULL to rankedRows.count {
-                it.gid > 0L && it.quote != null && it.quote.remainingQuota <= 0L
-            },
-            MapleCompareFilter.UNBOOSTED to rankedRows.count {
-                it.quote != null && !it.quote.complete
-            },
-            MapleCompareFilter.UNAVAILABLE to rankedRows.count {
-                it.quote == null || !it.quote.canSell || (it.gid > 0L && it.quote.remainingQuota <= 0L)
-            },
-        )
-    }
-
-    val visibleRows = remember(rankedRows, filter) {
-        when (filter) {
-            MapleCompareFilter.ALL -> rankedRows
-            MapleCompareFilter.SELLABLE -> rankedRows.filter {
-                it.quote?.canSell == true && (it.gid == 0L || it.quote.remainingQuota > 0L)
-            }
-            MapleCompareFilter.FULL -> rankedRows.filter {
-                it.gid > 0L && it.quote != null && it.quote.remainingQuota <= 0L
-            }
-            MapleCompareFilter.UNBOOSTED -> rankedRows.filter {
-                it.quote != null && !it.quote.complete
-            }
-            MapleCompareFilter.UNAVAILABLE -> rankedRows.filter {
-                it.quote == null || !it.quote.canSell || (it.gid > 0L && it.quote.remainingQuota <= 0L)
-            }
-        }
-    }
-
-    val incompleteCount = remember(comparison) {
-        if (comparison?.status == "ready") {
-            comparison.rows.count { it.quote?.complete != true }
-        } else 0
-    }
-    val queryBtnText = when {
-        running -> "正在获取报价"
-        comparison?.status == "ready" && comparison.total > 0 -> {
-            if (incompleteCount > 0) "补查未完整 ($incompleteCount)" else "重新核对好友"
-        }
-        else -> "查询全部好友"
-    }
-
-    LazyColumn(
-        modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 24.dp),
-        verticalArrangement = Arrangement.spacedBy(10.dp),
-    ) {
-        item {
-            AppleGroupedCard(contentPadding = PaddingValues(14.dp)) {
-                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                    ) {
-                        Column(
-                            modifier = Modifier.weight(1f),
-                            verticalArrangement = Arrangement.spacedBy(2.dp),
-                        ) {
-                            Text(
-                                text = "好友铺子比价",
-                                style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold),
-                                color = apple.primaryText,
-                            )
-                            Text(
-                                text = "按实际收购价排序，同日再查自动复用已暴击报价",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = apple.secondaryText,
-                            )
-                        }
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Button(
-                            onClick = onRefreshQuotes,
-                            enabled = !loading && !running && !busy && !hasOpenDialog,
-                            shape = RoundedCornerShape(10.dp),
-                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
-                        ) {
-                            if (running) {
-                                CircularProgressIndicator(
-                                    modifier = Modifier.size(14.dp),
-                                    strokeWidth = 2.dp,
-                                    color = MaterialTheme.colorScheme.onPrimary,
-                                )
-                            } else {
-                                Icon(
-                                    imageVector = Icons.Rounded.Search,
-                                    contentDescription = null,
-                                    modifier = Modifier.size(16.dp),
-                                )
-                            }
-                            Spacer(modifier = Modifier.width(5.dp))
-                            Text(queryBtnText)
-                        }
-                    }
-
-                    if (running) {
-                        val total = comparison?.total ?: 0
-                        val checked = comparison?.checked ?: 0
-                        val reused = comparison?.reused ?: 0
-                        val queried = comparison?.queried ?: 0
-                        val progressFrac = if (total > 0) {
-                            (checked.toFloat() / total.toFloat()).coerceIn(0.04f, 1f)
-                        } else {
-                            0.08f
-                        }
-                        AppleProgressBar(
-                            progress = { progressFrac },
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(6.dp),
-                            color = MaterialTheme.colorScheme.primary,
-                            trackColor = apple.track,
-                        )
-                        val statusLine = when {
-                            total <= 0 -> "正在拉取好友名单并分批获取报价…"
-                            reused > 0 -> "已查 $checked / $total（复用 $reused 位当日完整报价，补查 $queried 位）"
-                            else -> "已查 $checked / $total"
-                        }
-                        Text(
-                            text = statusLine,
-                            style = MaterialTheme.typography.labelSmall.copy(fontFeatureSettings = "tnum"),
-                            color = apple.secondaryText,
-                        )
-                    } else if (comparison?.status == "ready" && comparison.total > 0) {
-                        val ownQuote = state.quote
-                        if (bestOffer?.quote != null && ownQuote != null) {
-                            Surface(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clip(RoundedCornerShape(AppleRadius.tile))
-                                    .clickable(enabled = !actionLocked && !busy && state.sellableCropStock > 0L) {
-                                        onSelectRow(bestOffer)
-                                    },
-                                shape = RoundedCornerShape(AppleRadius.tile),
-                                color = MaterialTheme.colorScheme.primary.copy(alpha = 0.12f),
-                            ) {
-                                Row(
-                                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 9.dp),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Rounded.CheckCircle,
-                                        contentDescription = null,
-                                        tint = MaterialTheme.colorScheme.primary,
-                                        modifier = Modifier.size(18.dp),
-                                    )
-                                    val diff = bestOffer.quote.unitPrice - ownQuote.unitPrice
-                                    Text(
-                                        text = "推荐卖到 ${bestOffer.name}：${formatNumber(bestOffer.quote.unitPrice)} 福气币/个（比自家高 +${formatNumber(diff)}）",
-                                        style = MaterialTheme.typography.bodySmall.copy(
-                                            fontWeight = FontWeight.SemiBold,
-                                            fontFeatureSettings = "tnum",
-                                        ),
-                                        color = MaterialTheme.colorScheme.primary,
-                                        modifier = Modifier.weight(1f),
-                                    )
-                                }
-                            }
-                        } else if (ownQuote != null) {
-                            Surface(
-                                shape = RoundedCornerShape(AppleRadius.tile),
-                                color = apple.elevated,
-                            ) {
-                                Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(horizontal = 12.dp, vertical = 9.dp),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Rounded.Storefront,
-                                        contentDescription = null,
-                                        tint = apple.emerald,
-                                        modifier = Modifier.size(18.dp),
-                                    )
-                                    Text(
-                                        text = "当前自家收购价最高（${formatNumber(ownQuote.unitPrice)} 福气币/个）",
-                                        style = MaterialTheme.typography.bodySmall.copy(fontFeatureSettings = "tnum"),
-                                        color = apple.primaryText,
-                                    )
-                                }
-                            }
-                        }
-
-                        val metaParts = buildList {
-                            if (comparison.reused > 0) add("复用 ${comparison.reused} 位当日完整报价")
-                            if (comparison.queried > 0) add("本次查询 ${comparison.queried} 位")
-                            if (comparison.partial) add("好友列表仅返回部分数据")
-                        }
-                        if (metaParts.isNotEmpty()) {
-                            Text(
-                                text = metaParts.joinToString(" · "),
-                                style = MaterialTheme.typography.labelSmall.copy(fontFeatureSettings = "tnum"),
-                                color = apple.secondaryText,
-                            )
-                        }
-                    }
-                }
-            }
-        }
-
-        val effectiveError = errorText?.ifBlank { null } ?: comparison?.error?.ifBlank { null }
-        if (!effectiveError.isNullOrBlank()) {
-            item {
-                AppleGroupedCard(
-                    contentPadding = PaddingValues(12.dp),
-                    containerColor = apple.red.copy(alpha = 0.08f),
-                ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    ) {
-                        Icon(
-                            imageVector = Icons.Rounded.WarningAmber,
-                            contentDescription = null,
-                            tint = apple.red,
-                            modifier = Modifier.size(18.dp),
-                        )
-                        Text(
-                            text = effectiveError,
-                            style = MaterialTheme.typography.bodySmall,
-                            color = apple.red,
-                        )
-                    }
-                }
-            }
-        }
-
-        when {
-            running -> Unit
-            comparison == null || comparison.status == "idle" -> {
-                item {
-                    AppleEmptyState(
-                        icon = Icons.Rounded.People,
-                        title = "还没有查询好友报价",
-                        subtitle = "点击右上角「查询全部好友」读取好友小铺报价，点击报价行即可直接出售蜜薯",
-                    )
-                }
-            }
-            comparison.status == "failed" && rankedRows.isEmpty() -> {
-                item {
-                    AppleEmptyState(
-                        icon = Icons.Rounded.WarningAmber,
-                        title = "好友报价获取失败",
-                        subtitle = effectiveError ?: "请稍后重新查询好友报价",
-                        actionLabel = "重新查询",
-                        onAction = onRefreshQuotes,
-                    )
-                }
-            }
-            comparison.status == "ready" && comparison.total == 0 && rankedRows.isEmpty() -> {
-                item {
-                    AppleEmptyState(
-                        icon = Icons.Rounded.People,
-                        title = "暂无好友可查询",
-                        subtitle = "当前未获取到可比价的好友小铺",
-                    )
-                }
-            }
-            comparison.status == "ready" && rankedRows.isNotEmpty() -> {
-                item {
-                    LazyRow(
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        contentPadding = PaddingValues(vertical = 2.dp),
-                    ) {
-                        items(MapleCompareFilter.entries, key = { it.name }) { chip ->
-                            val count = filterCounts[chip] ?: 0
-                            AppleFilterChip(
-                                selected = filter == chip,
-                                onClick = { onFilterChange(chip) },
-                                label = { Text("${chip.label} $count") },
-                                accentColor = MaterialTheme.colorScheme.primary,
-                            )
-                        }
-                    }
-                }
-
-                if (visibleRows.isEmpty()) {
-                    item {
-                        AppleGroupedCard(contentPadding = PaddingValues(20.dp)) {
-                            Text(
-                                text = "当前筛选条件下没有匹配的小铺",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = apple.secondaryText,
-                            )
-                        }
-                    }
-                } else {
-                    itemsIndexed(visibleRows, key = { _, row -> row.gid }) { index, row ->
-                        MapleCompareRowCard(
-                            rank = index + 1,
-                            row = row,
-                            ownQuote = state.quote,
-                            isBestOffer = row.gid > 0L && row.gid == bestOffer?.gid,
-                            canSellStock = state.sellableCropStock > 0L,
-                            busy = busy,
-                            actionLocked = actionLocked,
-                            onClick = { onSelectRow(row) },
-                        )
-                    }
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun MapleCompareRowCard(
-    rank: Int,
-    row: MapleMarketFriendQuoteRow,
-    ownQuote: MapleMarketQuote?,
-    isBestOffer: Boolean,
-    canSellStock: Boolean,
-    busy: Boolean,
-    actionLocked: Boolean,
-    onClick: () -> Unit,
-) {
-    val apple = LocalAppleColors.current
-    val quote = row.quote
-    val rowSellable = quote != null && quote.canSell && (row.gid == 0L || quote.remainingQuota > 0L)
-    val clickable = rowSellable && !busy && !actionLocked
-
-    val bgColor = when {
-        isBestOffer -> MaterialTheme.colorScheme.primary.copy(alpha = 0.08f)
-        row.gid == 0L -> apple.elevated
-        else -> apple.card
-    }
-
-    AppleGroupedCard(
-        containerColor = bgColor,
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .then(if (clickable) Modifier.clickable(onClick = onClick) else Modifier)
-                .padding(horizontal = 14.dp, vertical = 12.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(10.dp),
-        ) {
-            val topRank = quote != null && rank <= 3
-            Box(
-                modifier = Modifier
-                    .size(28.dp)
-                    .clip(CircleShape)
-                    .background(if (topRank) apple.orange.copy(alpha = 0.16f) else apple.track),
-                contentAlignment = Alignment.Center,
-            ) {
-                Text(
-                    text = rank.toString(),
-                    style = MaterialTheme.typography.labelMedium.copy(
-                        fontWeight = FontWeight.Bold,
-                        fontFeatureSettings = "tnum",
-                    ),
-                    color = if (topRank) apple.orange else apple.secondaryText,
-                )
-            }
-
-            Column(
-                modifier = Modifier.weight(1f),
-                verticalArrangement = Arrangement.spacedBy(3.dp),
-            ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                ) {
-                    Text(
-                        text = row.name,
-                        style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold),
-                        color = apple.primaryText,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.weight(1f, fill = false),
-                    )
-                    if (row.gid == 0L) {
-                        AppleStatusPill(text = "自家", color = apple.emerald, showDot = false)
-                    } else if (isBestOffer) {
-                        AppleStatusPill(text = "最高", color = MaterialTheme.colorScheme.primary, showDot = false)
-                    }
-                }
-
-                if (quote != null) {
-                    val detailText = buildString {
-                        if (quote.boost > 0L) {
-                            append("${formatNumber(quote.basePrice)} + ${formatNumber(quote.boost)}")
-                        } else if (row.failed) {
-                            append("复查失败")
-                        } else {
-                            append("未加成")
-                        }
-                        append(" · ")
-                        if (row.gid == 0L) {
-                            append("额度不限")
-                        } else {
-                            append("余 ${formatNumber(quote.remainingQuota)}")
-                        }
-                    }
-                    Text(
-                        text = detailText,
-                        style = MaterialTheme.typography.labelSmall.copy(fontFeatureSettings = "tnum"),
-                        color = if (row.failed && quote.boost <= 0L) apple.red else apple.secondaryText,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                } else {
-                    Text(
-                        text = if (row.failed) "报价查询失败" else "暂无收购报价",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = if (row.failed) apple.red else apple.secondaryText,
-                    )
-                }
-            }
-
-            if (quote != null) {
-                Column(
-                    horizontalAlignment = Alignment.End,
-                    verticalArrangement = Arrangement.spacedBy(3.dp),
-                ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(4.dp),
-                    ) {
-                        Text(
-                            text = formatNumber(quote.unitPrice),
-                            style = MaterialTheme.typography.titleMedium.copy(
-                                fontWeight = FontWeight.Bold,
-                                fontFeatureSettings = "tnum",
-                            ),
-                            color = apple.primaryText,
-                        )
-                        if (row.gid > 0L && ownQuote != null) {
-                            val diff = quote.unitPrice - ownQuote.unitPrice
-                            val diffStr = when {
-                                diff > 0L -> "+${formatNumber(diff)}"
-                                diff < 0L -> "-${formatNumber(-diff)}"
-                                else -> "持平"
-                            }
-                            val diffCol = when {
-                                diff > 0L -> apple.green
-                                diff < 0L -> apple.red
-                                else -> apple.secondaryText
-                            }
-                            Text(
-                                text = diffStr,
-                                style = MaterialTheme.typography.labelSmall.copy(
-                                    fontWeight = FontWeight.SemiBold,
-                                    fontFeatureSettings = "tnum",
-                                ),
-                                color = diffCol,
-                            )
-                        }
-                    }
-                    when {
-                        rowSellable && !actionLocked -> AppleStatusPill(
-                            text = if (canSellStock) "点击出售" else "无蜜薯",
-                            color = if (canSellStock) MaterialTheme.colorScheme.primary else apple.secondaryText,
-                            showDot = false,
-                        )
-                        row.gid > 0L && quote.remainingQuota <= 0L -> AppleStatusPill(
-                            text = "额度已满",
-                            color = apple.secondaryText,
-                            showDot = false,
-                        )
-                        else -> AppleStatusPill(
-                            text = "暂不可售",
-                            color = apple.secondaryText,
-                            showDot = false,
-                        )
-                    }
-                }
-            } else {
-                AppleStatusPill(
-                    text = if (row.failed) "失败" else "无报价",
-                    color = if (row.failed) apple.red else apple.secondaryText,
-                    showDot = false,
-                )
             }
         }
     }
@@ -2076,7 +1354,7 @@ private fun MapleSellDialog(
     onConfirm: (Int) -> Unit,
 ) {
     val apple = LocalAppleColors.current
-    var count by remember(target.gid, target.saleMax) {
+    var count by remember(target.saleMax) {
         mutableIntStateOf(if (target.saleMax > 0) 1 else 0)
     }
     val clampedCount = if (target.saleMax > 0) count.coerceIn(1, target.saleMax) else 0
@@ -2084,7 +1362,7 @@ private fun MapleSellDialog(
 
     AppleAlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(target.shopTitle) },
+        title = { Text("卖给自家小铺") },
         text = {
             Column(
                 modifier = Modifier
@@ -2130,7 +1408,7 @@ private fun MapleSellDialog(
                         ) {
                             Text("最多可卖", style = MaterialTheme.typography.bodySmall, color = apple.secondaryText)
                             Text(
-                                text = "${formatNumber(target.saleMax.toLong())} 个（${target.saleLimitHint}）",
+                                text = "${formatNumber(target.saleMax.toLong())} 个（受可卖蜜薯限制）",
                                 style = MaterialTheme.typography.labelSmall.copy(fontFeatureSettings = "tnum"),
                                 color = apple.secondaryText,
                             )
@@ -2144,13 +1422,25 @@ private fun MapleSellDialog(
                     horizontalArrangement = Arrangement.SpaceBetween,
                 ) {
                     Text("出售数量", style = MaterialTheme.typography.titleSmall, color = apple.primaryText)
-                    AppleQuantityStepper(
-                        value = clampedCount,
-                        min = 1,
-                        max = target.saleMax,
-                        onChange = { count = it },
-                        enabled = !busy && !actionLocked && target.saleMax > 0,
-                    )
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
+                        AppleQuantityStepper(
+                            value = clampedCount,
+                            min = 1,
+                            max = target.saleMax,
+                            onChange = { count = it },
+                            enabled = !busy && !actionLocked && target.saleMax > 0,
+                        )
+                        TextButton(
+                            onClick = { count = target.saleMax },
+                            enabled = !busy && !actionLocked && target.saleMax > 0 && clampedCount < target.saleMax,
+                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                        ) {
+                            Text("全部")
+                        }
+                    }
                 }
 
                 Text(
@@ -2200,6 +1490,9 @@ private fun MapleExchangeDialog(
     }
     val clampedQty = if (maxQty > 0) count.coerceIn(1, maxQty) else 0
     val totalCost = clampedQty.toLong() * offer.price
+    val detailDesc = offer.description.ifBlank {
+        if (offer.items.size == 1) offer.items.first().description else ""
+    }
 
     AppleAlertDialog(
         onDismissRequest = onDismiss,
@@ -2219,6 +1512,22 @@ private fun MapleExchangeDialog(
                         style = MaterialTheme.typography.bodySmall,
                         color = apple.secondaryText,
                     )
+                }
+                if (detailDesc.isNotBlank()) {
+                    Surface(
+                        shape = RoundedCornerShape(AppleRadius.tile),
+                        color = apple.elevated,
+                        border = BorderStroke(0.5.dp, apple.separator),
+                    ) {
+                        Text(
+                            text = detailDesc,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = apple.secondaryText,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(10.dp),
+                        )
+                    }
                 }
                 Text(
                     text = "单价：${formatNumber(offer.price)} 福气币 · 当前持有 ${formatNumber(coinBalance)}",

@@ -28,8 +28,6 @@ import com.qqfarm.mobile.data.model.MallMembership
 import com.qqfarm.mobile.data.model.MallPurchaseResult
 import com.qqfarm.mobile.data.model.MapleMarketCommissionResult
 import com.qqfarm.mobile.data.model.MapleMarketExchangeResult
-import com.qqfarm.mobile.data.model.MapleMarketFriendQuoteRow
-import com.qqfarm.mobile.data.model.MapleMarketFriendQuotesState
 import com.qqfarm.mobile.data.model.MapleMarketGoodsItem
 import com.qqfarm.mobile.data.model.MapleMarketGoodsReward
 import com.qqfarm.mobile.data.model.MapleMarketPurchaseLogItem
@@ -1496,6 +1494,7 @@ object FeatureJsonParsers {
                         count = item.optLongFlex("count"),
                         name = item.optStringClean("name"),
                         image = item.optStringClean("image"),
+                        description = item.optStringClean("description"),
                     )
                 )
             }
@@ -1514,6 +1513,7 @@ object FeatureJsonParsers {
                     MapleMarketGoodsItem(
                         id = g.optIntFlex("id"),
                         name = g.optStringClean("name"),
+                        description = g.optStringClean("description"),
                         items = parseMapleMarketGoodsRewards(g.optJSONArray("items")),
                         price = g.optLongFlex("price"),
                         limitType = g.optIntFlex("limitType"),
@@ -1572,37 +1572,6 @@ object FeatureJsonParsers {
                 )
             }
         }
-    }
-
-    fun parseMapleMarketFriendQuotes(obj: JSONObject): MapleMarketFriendQuotesState {
-        val rowsArr = obj.optJSONArray("rows") ?: JSONArray()
-        val rows = buildList(rowsArr.length()) {
-            for (i in 0 until rowsArr.length()) {
-                val r = rowsArr.optJSONObject(i) ?: continue
-                val gid = r.optLongFlex("gid")
-                add(
-                    MapleMarketFriendQuoteRow(
-                        gid = gid,
-                        name = r.optStringClean("name").ifBlank { "GID:$gid" },
-                        quote = parseMapleMarketQuote(r.optJSONObject("quote")),
-                        failed = r.optBoolFlex("failed"),
-                        reused = r.optBoolFlex("reused"),
-                    )
-                )
-            }
-        }
-        return MapleMarketFriendQuotesState(
-            status = obj.optStringClean("status", "idle").ifBlank { "idle" },
-            dayKey = obj.optStringClean("dayKey"),
-            total = obj.optIntFlex("total"),
-            checked = obj.optIntFlex("checked"),
-            reused = obj.optIntFlex("reused"),
-            queried = obj.optIntFlex("queried"),
-            partial = obj.optBoolFlex("partial"),
-            updatedAtMs = normalizeTimestampMs(obj.optLongFlex("updatedAt")),
-            rows = rows,
-            error = obj.optStringClean("error"),
-        )
     }
 
     fun parseMapleMarketSeedResult(obj: JSONObject): MapleMarketSeedResult {

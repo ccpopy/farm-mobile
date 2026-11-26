@@ -27,7 +27,6 @@ import com.qqfarm.mobile.data.model.MallGoods
 import com.qqfarm.mobile.data.model.MallPurchaseResult
 import com.qqfarm.mobile.data.model.MapleMarketCommissionResult
 import com.qqfarm.mobile.data.model.MapleMarketExchangeResult
-import com.qqfarm.mobile.data.model.MapleMarketFriendQuotesState
 import com.qqfarm.mobile.data.model.MapleMarketPurchaseLogItem
 import com.qqfarm.mobile.data.model.MapleMarketSeedResult
 import com.qqfarm.mobile.data.model.MapleMarketSellResult
@@ -1312,44 +1311,6 @@ class FarmApiClient {
             accountIdOverride = accountId,
         )
         return FeatureJsonParsers.parseMapleMarketPurchaseLog(json.optJSONObject("data") ?: JSONObject())
-    }
-
-    suspend fun getMapleMarketFriendQuotes(accountId: String): MapleMarketFriendQuotesState {
-        val json = executeJson(
-            "GET",
-            "/api/activities/maple-market/friend-quotes",
-            accountIdOverride = accountId,
-        )
-        return FeatureJsonParsers.parseMapleMarketFriendQuotes(json.optJSONObject("data") ?: JSONObject())
-    }
-
-    suspend fun refreshMapleMarketFriendQuotes(accountId: String): MapleMarketFriendQuotesState {
-        val json = executeJson(
-            "POST",
-            "/api/activities/maple-market/friend-quotes",
-            body = JSONObject(),
-            accountIdOverride = accountId,
-        )
-        return FeatureJsonParsers.parseMapleMarketFriendQuotes(json.optJSONObject("data") ?: JSONObject())
-    }
-
-    suspend fun sellMapleMarketToFriend(
-        accountId: String,
-        gid: Long,
-        count: Long,
-        expectedUnitPrice: Long,
-    ): MapleMarketSellResult {
-        val body = JSONObject()
-            .put("gid", gid)
-            .put("count", count)
-            .put("expectedUnitPrice", expectedUnitPrice)
-        val json = executeJson(
-            "POST",
-            "/api/activities/maple-market/friend-quotes/sell",
-            body = body,
-            accountIdOverride = accountId,
-        )
-        return FeatureJsonParsers.parseMapleMarketSellResult(json.optJSONObject("data") ?: JSONObject())
     }
 
     // ---- Illustrated Book & Collections ----

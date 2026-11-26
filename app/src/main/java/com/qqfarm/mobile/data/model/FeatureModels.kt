@@ -818,6 +818,7 @@ data class MapleMarketGoodsReward(
     val count: Long = 0L,
     val name: String = "",
     val image: String = "",
+    val description: String = "",
 ) {
     fun toCommerceItem(): CommerceItem = CommerceItem(
         id = id,
@@ -830,6 +831,7 @@ data class MapleMarketGoodsReward(
 data class MapleMarketGoodsItem(
     val id: Int = 0,
     val name: String = "",
+    val description: String = "",
     val items: List<MapleMarketGoodsReward> = emptyList(),
     val price: Long = 0L,
     val limitType: Int = 0,
@@ -874,27 +876,6 @@ data class MapleMarketPurchaseLogItem(
     val soldCount: Long = 0L,
     val income: Long = 0L,
     val commission: Long = 0L,
-)
-
-data class MapleMarketFriendQuoteRow(
-    val gid: Long = 0L,
-    val name: String = "",
-    val quote: MapleMarketQuote? = null,
-    val failed: Boolean = false,
-    val reused: Boolean = false,
-)
-
-data class MapleMarketFriendQuotesState(
-    val status: String = "idle",
-    val dayKey: String = "",
-    val total: Int = 0,
-    val checked: Int = 0,
-    val reused: Int = 0,
-    val queried: Int = 0,
-    val partial: Boolean = false,
-    val updatedAtMs: Long = 0L,
-    val rows: List<MapleMarketFriendQuoteRow> = emptyList(),
-    val error: String = "",
 )
 
 data class MapleMarketSeedResult(
