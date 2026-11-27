@@ -25,7 +25,7 @@
 
 ## 服务端兼容说明
 
-- 直接配合 **[liyangpengs/qq-farm-bot](https://github.com/liyangpengs/qq-farm-bot)** 使用，**无需修改服务端源码**，也不需要安装额外扩展插件。
+- ~~直接配合 **[liyangpengs/qq-farm-bot](https://github.com/liyangpengs/qq-farm-bot)** 使用~~，上游暂时换成[ccpopy/qq-farm-bot-upstream](https://github.com/ccpopy/qq-farm-bot-upstream)，**建议后续需要的自己做好适配**。**无需修改服务端源码**，也不需要安装额外扩展插件。
 - 支持使用服务端管理员**账号密码登录**，或直接填写已登录 Web 管理面板的 **`x-admin-token` 会话凭证**。
 - 支持局域网 IP、域名与 HTTPS 反向代理，连接页默认留空并提供 `https://` 输入提示与 `/api/game-version` 连通性测试。
 
