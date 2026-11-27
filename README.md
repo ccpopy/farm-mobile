@@ -1,6 +1,6 @@
 # Farm Mobile（农场助手）
 
-面向开源自托管农场服务 **[liyangpengs/qq-farm-bot](https://github.com/liyangpengs/qq-farm-bot)** 的原生 Android 客户端，基于 **Kotlin + Jetpack Compose + Material 3** 构建，直接对接后端 HTTP REST 与 Socket.IO 实时接口，不依赖 Web 套壳。
+面向开源自托管农场服务 ~~[liyangpengs/qq-farm-bot](https://github.com/liyangpengs/qq-farm-bot)~~(上游暂时换成[ccpopy/qq-farm-bot-upstream](https://github.com/ccpopy/qq-farm-bot-upstream))的原生 Android 客户端，基于 **Kotlin + Jetpack Compose + Material 3** 构建，直接对接后端 HTTP REST 与 Socket.IO 实时接口，不依赖 Web 套壳。
 
 - 运行环境：**Android 8.0+（API 26+）**
 - 应用包名：`io.github.ccpopy.farmmobile`
